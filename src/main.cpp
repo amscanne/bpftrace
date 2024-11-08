@@ -892,11 +892,9 @@ int main(int argc, char* argv[])
 
   bpftrace.fentry_recursion_check(ast_ctx->root);
 
-  auto pmresult = pm.Run(ast_ctx->root, ctx);
+  auto pmresult = pm.Run(*ast_ctx->root, ctx);
   if (!pmresult.Ok())
     return 1;
-
-  auto* ast_root = pmresult.Root();
 
   err = bpftrace.create_pcaps();
   if (err) {
@@ -904,7 +902,7 @@ int main(int argc, char* argv[])
     return err;
   }
 
-  ast::CodegenLLVM llvm(ast_root, bpftrace);
+  ast::CodegenLLVM llvm(*ast_ctx->root, bpftrace);
   BpfBytecode bytecode;
   try {
     llvm.generate_ir();

@@ -2031,9 +2031,9 @@ std::string BPFtrace::get_string_literal(const ast::Expression *expr) const
     else if (auto *str_call = dynamic_cast<const ast::Call *>(expr)) {
       // Positional parameters in the form str($1) can be used as literals
       if (str_call->func == "str") {
-        if (auto *pos_param = dynamic_cast<const ast::PositionalParameter *>(
-                str_call->vargs.at(0)))
-          return get_param(pos_param->n, true);
+        if (auto *pos_param = std::get_if<ast::PositionalParameter *>(
+                &(str_call->vargs.at(0))))
+          return get_param((*pos_param)->n, true);
       }
     }
   }

@@ -13,10 +13,6 @@
 namespace bpftrace {
 namespace ast {
 
-class VisitorBase;
-
-#define DEFINE_ACCEPT void accept(VisitorBase &v) override;
-
 enum class JumpType {
   INVALID = 0,
   RETURN,
@@ -73,13 +69,12 @@ public:
   Node(Node &&) = delete;
   Node &operator=(Node &&) = delete;
 
-  virtual void accept(VisitorBase &v) = 0;
-
   location loc;
 };
 
 class Map;
 class Variable;
+
 class Expression : public Node {
 public:
   Expression() = default;
@@ -99,12 +94,47 @@ public:
   bool is_variable = false;
   bool is_map = false;
 };
-using ExpressionList = std::vector<Expression *>;
+
+class Integer;
+class PositionalParameter;
+class String;
+class StackMode;
+class Identifier;
+class Builtin;
+class Call;
+class Sizeof;
+class Offsetof;
+class Binop;
+class Unop;
+class FieldAccess;
+class ArrayAccess;
+class Cast;
+class Tuple;
+class Ternary;
+
+using ExpressionVariant = std::variant<Integer *,
+                                       PositionalParameter *,
+                                       String *,
+                                       StackMode *,
+                                       Identifier *,
+                                       Builtin *,
+                                       Call *,
+                                       Sizeof *,
+                                       Offsetof *,
+                                       Map *,
+                                       Variable *,
+                                       Binop *,
+                                       Unop *,
+                                       FieldAccess *,
+                                       ArrayAccess *,
+                                       Cast *,
+                                       Tuple *,
+                                       Ternary *>;
+
+using ExpressionList = std::vector<ExpressionVariant>;
 
 class Integer : public Expression {
 public:
-  DEFINE_ACCEPT
-
   explicit Integer(int64_t n, location loc, bool is_negative = true);
 
   int64_t n;
@@ -116,8 +146,6 @@ private:
 
 class PositionalParameter : public Expression {
 public:
-  DEFINE_ACCEPT
-
   explicit PositionalParameter(PositionalParameterType ptype,
                                long n,
                                location loc);
@@ -132,8 +160,6 @@ private:
 
 class String : public Expression {
 public:
-  DEFINE_ACCEPT
-
   explicit String(const std::string &str, location loc);
 
   std::string str;
@@ -144,8 +170,6 @@ private:
 
 class StackMode : public Expression {
 public:
-  DEFINE_ACCEPT
-
   explicit StackMode(const std::string &mode, location loc);
 
   std::string mode;
@@ -156,8 +180,6 @@ private:
 
 class Identifier : public Expression {
 public:
-  DEFINE_ACCEPT
-
   explicit Identifier(const std::string &ident, location loc);
 
   std::string ident;
@@ -168,8 +190,6 @@ private:
 
 class Builtin : public Expression {
 public:
-  DEFINE_ACCEPT
-
   explicit Builtin(const std::string &ident, location loc);
 
   std::string ident;
@@ -188,8 +208,6 @@ private:
 
 class Call : public Expression {
 public:
-  DEFINE_ACCEPT
-
   explicit Call(const std::string &func, location loc);
   Call(const std::string &func, ExpressionList &&vargs, location loc);
 
@@ -202,12 +220,10 @@ private:
 
 class Sizeof : public Expression {
 public:
-  DEFINE_ACCEPT
-
   Sizeof(SizedType type, location loc);
-  Sizeof(Expression *expr, location loc);
+  Sizeof(ExpressionVariant expr, location loc);
 
-  Expression *expr = nullptr;
+  std::optional<ExpressionVariant> expr;
   SizedType argtype;
 
 private:
@@ -216,13 +232,11 @@ private:
 
 class Offsetof : public Expression {
 public:
-  DEFINE_ACCEPT
-
   Offsetof(SizedType record, std::string &field, location loc);
-  Offsetof(Expression *expr, std::string &field, location loc);
+  Offsetof(ExpressionVariant expr, std::string &field, location loc);
 
   SizedType record;
-  Expression *expr = nullptr;
+  std::optional<ExpressionVariant> expr;
   std::string field;
 
 private:
@@ -231,13 +245,11 @@ private:
 
 class Map : public Expression {
 public:
-  DEFINE_ACCEPT
-
   explicit Map(const std::string &ident, location loc);
-  Map(const std::string &ident, Expression &expr, location loc);
+  Map(const std::string &ident, ExpressionVariant expr, location loc);
 
   std::string ident;
-  Expression *key_expr = nullptr;
+  std::optional<ExpressionVariant> key_expr;
   SizedType key_type;
   bool skip_key_validation = false;
 
@@ -247,8 +259,6 @@ private:
 
 class Variable : public Expression {
 public:
-  DEFINE_ACCEPT
-
   explicit Variable(const std::string &ident, location loc);
 
   std::string ident;
@@ -259,12 +269,13 @@ private:
 
 class Binop : public Expression {
 public:
-  DEFINE_ACCEPT
+  Binop(ExpressionVariant left,
+        Operator op,
+        ExpressionVariant right,
+        location loc);
 
-  Binop(Expression *left, Operator op, Expression *right, location loc);
-
-  Expression *left = nullptr;
-  Expression *right = nullptr;
+  ExpressionVariant left;
+  ExpressionVariant right;
   Operator op;
 
 private:
@@ -273,15 +284,13 @@ private:
 
 class Unop : public Expression {
 public:
-  DEFINE_ACCEPT
-
-  Unop(Operator op, Expression *expr, location loc = location());
+  Unop(Operator op, ExpressionVariant expr, location loc = location());
   Unop(Operator op,
-       Expression *expr,
+       ExpressionVariant expr,
        bool is_post_op = false,
        location loc = location());
 
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
   Operator op;
   bool is_post_op;
 
@@ -291,13 +300,11 @@ private:
 
 class FieldAccess : public Expression {
 public:
-  DEFINE_ACCEPT
+  FieldAccess(ExpressionVariant expr, const std::string &field);
+  FieldAccess(ExpressionVariant expr, const std::string &field, location loc);
+  FieldAccess(ExpressionVariant expr, ssize_t index, location loc);
 
-  FieldAccess(Expression *expr, const std::string &field);
-  FieldAccess(Expression *expr, const std::string &field, location loc);
-  FieldAccess(Expression *expr, ssize_t index, location loc);
-
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
   std::string field;
   ssize_t index = -1;
 
@@ -307,13 +314,11 @@ private:
 
 class ArrayAccess : public Expression {
 public:
-  DEFINE_ACCEPT
+  ArrayAccess(ExpressionVariant expr, ExpressionVariant indexpr);
+  ArrayAccess(ExpressionVariant expr, ExpressionVariant indexpr, location loc);
 
-  ArrayAccess(Expression *expr, Expression *indexpr);
-  ArrayAccess(Expression *expr, Expression *indexpr, location loc);
-
-  Expression *expr = nullptr;
-  Expression *indexpr = nullptr;
+  ExpressionVariant expr;
+  ExpressionVariant indexpr;
 
 private:
   ArrayAccess(const ArrayAccess &other) = default;
@@ -321,11 +326,9 @@ private:
 
 class Cast : public Expression {
 public:
-  DEFINE_ACCEPT
+  Cast(SizedType type, ExpressionVariant expr, location loc);
 
-  Cast(SizedType type, Expression *expr, location loc);
-
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
 
 private:
   Cast(const Cast &other) = default;
@@ -333,8 +336,6 @@ private:
 
 class Tuple : public Expression {
 public:
-  DEFINE_ACCEPT
-
   Tuple(ExpressionList &&elems, location loc);
 
   ExpressionList elems;
@@ -355,15 +356,39 @@ public:
   Statement &operator=(Statement &&) = delete;
 };
 
-using StatementList = std::vector<Statement *>;
+class ExprStatement;
+class VarDeclStatement;
+class AssignMapStatement;
+class AssignVarStatement;
+class AssignConfigVarStatement;
+class Block;
+class If;
+class Unroll;
+class Jump;
+class While;
+class For;
+class Config;
+
+using StatementVariant = std::variant<ExprStatement *,
+                                      VarDeclStatement *,
+                                      AssignMapStatement *,
+                                      AssignVarStatement *,
+                                      AssignConfigVarStatement *,
+                                      Block *,
+                                      If *,
+                                      Unroll *,
+                                      Jump *,
+                                      While *,
+                                      For *,
+                                      Config *>;
+
+using StatementList = std::vector<StatementVariant>;
 
 class ExprStatement : public Statement {
 public:
-  DEFINE_ACCEPT
+  explicit ExprStatement(ExpressionVariant expr, location loc);
 
-  explicit ExprStatement(Expression *expr, location loc);
-
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
 
 private:
   ExprStatement(const ExprStatement &other) = default;
@@ -371,8 +396,6 @@ private:
 
 class VarDeclStatement : public Statement {
 public:
-  DEFINE_ACCEPT
-
   VarDeclStatement(Variable *var, SizedType type, location loc = location());
   VarDeclStatement(Variable *var, location loc = location());
 
@@ -385,12 +408,12 @@ private:
 
 class AssignMapStatement : public Statement {
 public:
-  DEFINE_ACCEPT
-
-  AssignMapStatement(Map *map, Expression *expr, location loc = location());
+  AssignMapStatement(Map *map,
+                     ExpressionVariant expr,
+                     location loc = location());
 
   Map *map = nullptr;
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
 
 private:
   AssignMapStatement(const AssignMapStatement &other) = default;
@@ -398,18 +421,16 @@ private:
 
 class AssignVarStatement : public Statement {
 public:
-  DEFINE_ACCEPT
-
   AssignVarStatement(Variable *var,
-                     Expression *expr,
+                     ExpressionVariant expr,
                      location loc = location());
   AssignVarStatement(VarDeclStatement *var_decl_stmt,
-                     Expression *expr,
+                     ExpressionVariant expr,
                      location loc = location());
 
   VarDeclStatement *var_decl_stmt = nullptr;
   Variable *var = nullptr;
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
 
 private:
   AssignVarStatement(const AssignVarStatement &other) = default;
@@ -417,14 +438,12 @@ private:
 
 class AssignConfigVarStatement : public Statement {
 public:
-  DEFINE_ACCEPT
-
   AssignConfigVarStatement(const std::string &config_var,
-                           Expression *expr,
+                           ExpressionVariant expr,
                            location loc = location());
 
   std::string config_var;
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
 
 private:
   AssignConfigVarStatement(const AssignConfigVarStatement &other) = default;
@@ -432,8 +451,6 @@ private:
 
 class Block : public Statement {
 public:
-  DEFINE_ACCEPT
-
   Block(StatementList &&stmts);
 
   StatementList stmts;
@@ -444,12 +461,10 @@ private:
 
 class If : public Statement {
 public:
-  DEFINE_ACCEPT
+  If(ExpressionVariant cond, StatementList &&stmts);
+  If(ExpressionVariant cond, StatementList &&stmts, StatementList &&else_stmts);
 
-  If(Expression *cond, StatementList &&stmts);
-  If(Expression *cond, StatementList &&stmts, StatementList &&else_stmts);
-
-  Expression *cond = nullptr;
+  ExpressionVariant cond;
   Block if_block;
   Block else_block;
 
@@ -459,12 +474,10 @@ private:
 
 class Unroll : public Statement {
 public:
-  DEFINE_ACCEPT
-
-  Unroll(Expression *expr, StatementList &&stmts, location loc);
+  Unroll(ExpressionVariant expr, StatementList &&stmts, location loc);
 
   long int var = 0;
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
   Block block;
 
 private:
@@ -473,19 +486,18 @@ private:
 
 class Jump : public Statement {
 public:
-  DEFINE_ACCEPT
-
-  Jump(JumpType ident, Expression *return_value, location loc = location())
+  Jump(JumpType ident,
+       ExpressionVariant return_value,
+       location loc = location())
       : Statement(loc), ident(ident), return_value(return_value)
   {
   }
-  Jump(JumpType ident, location loc = location())
-      : Statement(loc), ident(ident), return_value(nullptr)
+  Jump(JumpType ident, location loc = location()) : Statement(loc), ident(ident)
   {
   }
 
   JumpType ident = JumpType::INVALID;
-  Expression *return_value;
+  std::optional<ExpressionVariant> return_value;
 
 private:
   Jump(const Jump &other) = default;
@@ -493,11 +505,9 @@ private:
 
 class Predicate : public Node {
 public:
-  DEFINE_ACCEPT
+  explicit Predicate(ExpressionVariant expr, location loc);
 
-  explicit Predicate(Expression *expr, location loc);
-
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
 
 private:
   Predicate(const Predicate &other) = default;
@@ -505,25 +515,24 @@ private:
 
 class Ternary : public Expression {
 public:
-  DEFINE_ACCEPT
+  Ternary(ExpressionVariant cond,
+          ExpressionVariant left,
+          ExpressionVariant right,
+          location loc);
 
-  Ternary(Expression *cond, Expression *left, Expression *right, location loc);
-
-  Expression *cond = nullptr;
-  Expression *left = nullptr;
-  Expression *right = nullptr;
+  ExpressionVariant cond;
+  ExpressionVariant left;
+  ExpressionVariant right;
 };
 
 class While : public Statement {
 public:
-  DEFINE_ACCEPT
-
-  While(Expression *cond, StatementList &&stmts, location loc)
+  While(ExpressionVariant cond, StatementList &&stmts, location loc)
       : Statement(loc), cond(cond), block(std::move(stmts))
   {
   }
 
-  Expression *cond = nullptr;
+  ExpressionVariant cond;
   Block block;
 
 private:
@@ -532,15 +541,16 @@ private:
 
 class For : public Statement {
 public:
-  DEFINE_ACCEPT
-
-  For(Variable *decl, Expression *expr, StatementList &&stmts, location loc)
+  For(Variable *decl,
+      ExpressionVariant expr,
+      StatementList &&stmts,
+      location loc)
       : Statement(loc), decl(decl), expr(expr), stmts(std::move(stmts))
   {
   }
 
   Variable *decl = nullptr;
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
   StatementList stmts;
   SizedType ctx_type;
 
@@ -550,8 +560,6 @@ private:
 
 class Config : public Statement {
 public:
-  DEFINE_ACCEPT
-
   Config(StatementList &&stmts) : stmts(std::move(stmts))
   {
   }
@@ -564,8 +572,6 @@ private:
 
 class AttachPoint : public Node {
 public:
-  DEFINE_ACCEPT
-
   explicit AttachPoint(const std::string &raw_input, location loc = location());
   AttachPoint(const std::string &raw_input, bool ignore_invalid)
       : AttachPoint(raw_input)
@@ -611,8 +617,6 @@ using AttachPointList = std::vector<AttachPoint *>;
 
 class Probe : public Node {
 public:
-  DEFINE_ACCEPT
-
   Probe(AttachPointList &&attach_points,
         Predicate *pred,
         StatementList &&stmts);
@@ -640,8 +644,6 @@ using ProbeList = std::vector<Probe *>;
 
 class SubprogArg : public Node {
 public:
-  DEFINE_ACCEPT
-
   SubprogArg(std::string name, SizedType type);
 
   std::string name() const;
@@ -655,8 +657,6 @@ using SubprogArgList = std::vector<SubprogArg *>;
 
 class Subprog : public Node {
 public:
-  DEFINE_ACCEPT
-
   Subprog(std::string name,
           SizedType return_type,
           SubprogArgList &&args,
@@ -676,8 +676,6 @@ using SubprogList = std::vector<Subprog *>;
 
 class Program : public Node {
 public:
-  DEFINE_ACCEPT
-
   Program(const std::string &c_definitions,
           Config *config,
           SubprogList &&functions,
@@ -726,8 +724,6 @@ public:
 private:
   std::vector<std::unique_ptr<Node>> nodes_;
 };
-
-#undef DEFINE_ACCEPT
 
 } // namespace ast
 } // namespace bpftrace

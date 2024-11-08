@@ -3,7 +3,7 @@
 #include <functional>
 #include <vector>
 
-#include "ast/visitors.h"
+#include "ast/visitor.h"
 
 namespace bpftrace::ast {
 
@@ -14,32 +14,31 @@ namespace bpftrace::ast {
  * requested type which match a predicate.
  */
 template <typename NodeT>
-class CollectNodes : public Visitor {
+class CollectNodes : public Visitor<CollectNodes<NodeT>> {
 public:
-  void run(
-      Node &node,
-      std::function<bool(const NodeT &)> pred = [](const auto &) {
-        return true;
-      })
+  CollectNodes() : pred_([](const auto &) { return true; })
   {
-    pred_ = pred;
-    node.accept(*this);
   }
+  CollectNodes(std::function<bool(const NodeT &)> pred) : pred_(pred)
+  {
+  }
+
   const std::vector<std::reference_wrapper<NodeT>> &nodes() const
   {
     return nodes_;
   }
 
-private:
-  void visit(NodeT &node) override
+  // Override just the method for the specific node type that we would like to
+  // visit. The super class will handle all the other traversal.
+  void visit(NodeT &node)
   {
     if (pred_(node)) {
       nodes_.push_back(node);
     }
-
-    Visitor::visit(node);
+    Visitor<CollectNodes<NodeT>>::visit(node);
   }
 
+private:
   std::vector<std::reference_wrapper<NodeT>> nodes_;
   std::function<bool(const NodeT &)> pred_;
 };

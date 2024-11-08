@@ -2,55 +2,10 @@
 
 #include <algorithm>
 
-#include "ast/visitors.h"
+#include "ast/visitor.h"
 #include "log.h"
 
 namespace bpftrace::ast {
-
-#define MAKE_ACCEPT(Ty)                                                        \
-  void Ty::accept(VisitorBase &v)                                              \
-  {                                                                            \
-    v.visit(*this);                                                            \
-  };
-
-MAKE_ACCEPT(Integer)
-MAKE_ACCEPT(String)
-MAKE_ACCEPT(StackMode)
-MAKE_ACCEPT(Builtin)
-MAKE_ACCEPT(Identifier)
-MAKE_ACCEPT(PositionalParameter)
-MAKE_ACCEPT(Call)
-MAKE_ACCEPT(Sizeof)
-MAKE_ACCEPT(Offsetof)
-MAKE_ACCEPT(Map)
-MAKE_ACCEPT(Variable)
-MAKE_ACCEPT(Binop)
-MAKE_ACCEPT(Unop)
-MAKE_ACCEPT(Ternary)
-MAKE_ACCEPT(FieldAccess)
-MAKE_ACCEPT(ArrayAccess)
-MAKE_ACCEPT(Cast)
-MAKE_ACCEPT(Tuple)
-MAKE_ACCEPT(ExprStatement)
-MAKE_ACCEPT(AssignMapStatement)
-MAKE_ACCEPT(AssignVarStatement)
-MAKE_ACCEPT(AssignConfigVarStatement)
-MAKE_ACCEPT(VarDeclStatement)
-MAKE_ACCEPT(Predicate)
-MAKE_ACCEPT(AttachPoint)
-MAKE_ACCEPT(If)
-MAKE_ACCEPT(Unroll)
-MAKE_ACCEPT(While)
-MAKE_ACCEPT(For)
-MAKE_ACCEPT(Config)
-MAKE_ACCEPT(Block)
-MAKE_ACCEPT(Jump)
-MAKE_ACCEPT(Probe)
-MAKE_ACCEPT(SubprogArg)
-MAKE_ACCEPT(Subprog)
-MAKE_ACCEPT(Program)
-
-#undef MAKE_ACCEPT
 
 Integer::Integer(int64_t n, location loc, bool is_negative)
     : Expression(loc), n(n), is_negative(is_negative)
@@ -101,7 +56,8 @@ Sizeof::Sizeof(SizedType type, location loc) : Expression(loc), argtype(type)
 {
 }
 
-Sizeof::Sizeof(Expression *expr, location loc) : Expression(loc), expr(expr)
+Sizeof::Sizeof(ExpressionVariant expr, location loc)
+    : Expression(loc), expr(expr)
 {
 }
 
@@ -110,7 +66,7 @@ Offsetof::Offsetof(SizedType record, std::string &field, location loc)
 {
 }
 
-Offsetof::Offsetof(Expression *expr, std::string &field, location loc)
+Offsetof::Offsetof(ExpressionVariant expr, std::string &field, location loc)
     : Expression(loc), expr(expr), field(field)
 {
 }
@@ -120,11 +76,11 @@ Map::Map(const std::string &ident, location loc) : Expression(loc), ident(ident)
   is_map = true;
 }
 
-Map::Map(const std::string &ident, Expression &expr, location loc)
-    : Expression(loc), ident(ident), key_expr(&expr)
+Map::Map(const std::string &ident, ExpressionVariant expr, location loc)
+    : Expression(loc), ident(ident), key_expr(expr)
 {
   is_map = true;
-  key_expr->key_for_map = this;
+  std::visit([this](auto expr) { expr->key_for_map = this; }, expr);
 }
 
 Variable::Variable(const std::string &ident, location loc)
@@ -133,47 +89,52 @@ Variable::Variable(const std::string &ident, location loc)
   is_variable = true;
 }
 
-Binop::Binop(Expression *left, Operator op, Expression *right, location loc)
+Binop::Binop(ExpressionVariant left,
+             Operator op,
+             ExpressionVariant right,
+             location loc)
     : Expression(loc), left(left), right(right), op(op)
 {
 }
 
-Unop::Unop(Operator op, Expression *expr, location loc)
+Unop::Unop(Operator op, ExpressionVariant expr, location loc)
     : Expression(loc), expr(expr), op(op), is_post_op(false)
 {
 }
 
-Unop::Unop(Operator op, Expression *expr, bool is_post_op, location loc)
+Unop::Unop(Operator op, ExpressionVariant expr, bool is_post_op, location loc)
     : Expression(loc), expr(expr), op(op), is_post_op(is_post_op)
 {
 }
 
-Ternary::Ternary(Expression *cond,
-                 Expression *left,
-                 Expression *right,
+Ternary::Ternary(ExpressionVariant cond,
+                 ExpressionVariant left,
+                 ExpressionVariant right,
                  location loc)
     : Expression(loc), cond(cond), left(left), right(right)
 {
 }
 
-FieldAccess::FieldAccess(Expression *expr,
+FieldAccess::FieldAccess(ExpressionVariant expr,
                          const std::string &field,
                          location loc)
     : Expression(loc), expr(expr), field(field)
 {
 }
 
-FieldAccess::FieldAccess(Expression *expr, ssize_t index, location loc)
+FieldAccess::FieldAccess(ExpressionVariant expr, ssize_t index, location loc)
     : Expression(loc), expr(expr), index(index)
 {
 }
 
-ArrayAccess::ArrayAccess(Expression *expr, Expression *indexpr, location loc)
+ArrayAccess::ArrayAccess(ExpressionVariant expr,
+                         ExpressionVariant indexpr,
+                         location loc)
     : Expression(loc), expr(expr), indexpr(indexpr)
 {
 }
 
-Cast::Cast(SizedType cast_type, Expression *expr, location loc)
+Cast::Cast(SizedType cast_type, ExpressionVariant expr, location loc)
     : Expression(loc), expr(expr)
 {
   type = cast_type;
@@ -184,39 +145,41 @@ Tuple::Tuple(ExpressionList &&elems, location loc)
 {
 }
 
-ExprStatement::ExprStatement(Expression *expr, location loc)
+ExprStatement::ExprStatement(ExpressionVariant expr, location loc)
     : Statement(loc), expr(expr)
 {
 }
 
-AssignMapStatement::AssignMapStatement(Map *map, Expression *expr, location loc)
+AssignMapStatement::AssignMapStatement(Map *map,
+                                       ExpressionVariant expr,
+                                       location loc)
     : Statement(loc), map(map), expr(expr)
 {
-  expr->map = map;
+  std::visit([map](auto expr) { expr->map = map; }, expr);
 };
 
 AssignVarStatement::AssignVarStatement(Variable *var,
-                                       Expression *expr,
+                                       ExpressionVariant expr,
                                        location loc)
     : Statement(loc), var(var), expr(expr)
 {
-  expr->var = var;
+  std::visit([var](auto expr) { expr->var = var; }, expr);
 }
 
 AssignVarStatement::AssignVarStatement(VarDeclStatement *var_decl_stmt,
-                                       Expression *expr,
+                                       ExpressionVariant expr,
                                        location loc)
     : Statement(loc),
       var_decl_stmt(var_decl_stmt),
       var(var_decl_stmt->var),
       expr(expr)
 {
-  expr->var = var;
+  std::visit([this](auto expr) { expr->var = var; }, expr);
 }
 
 AssignConfigVarStatement::AssignConfigVarStatement(
     const std::string &config_var,
-    Expression *expr,
+    ExpressionVariant expr,
     location loc)
     : Statement(loc), config_var(config_var), expr(expr)
 {
@@ -234,7 +197,8 @@ VarDeclStatement::VarDeclStatement(Variable *var, location loc)
   var->type = CreateNone();
 }
 
-Predicate::Predicate(Expression *expr, location loc) : Node(loc), expr(expr)
+Predicate::Predicate(ExpressionVariant expr, location loc)
+    : Node(loc), expr(expr)
 {
 }
 
@@ -247,19 +211,21 @@ Block::Block(StatementList &&stmts) : stmts(std::move(stmts))
 {
 }
 
-If::If(Expression *cond, StatementList &&stmts)
+If::If(ExpressionVariant cond, StatementList &&stmts)
     : cond(cond), if_block(Block(std::move(stmts))), else_block(Block({}))
 {
 }
 
-If::If(Expression *cond, StatementList &&stmts, StatementList &&else_stmts)
+If::If(ExpressionVariant cond,
+       StatementList &&stmts,
+       StatementList &&else_stmts)
     : cond(cond),
       if_block(Block(std::move(stmts))),
       else_block(Block(std::move(else_stmts)))
 {
 }
 
-Unroll::Unroll(Expression *expr, StatementList &&stmts, location loc)
+Unroll::Unroll(ExpressionVariant expr, StatementList &&stmts, location loc)
     : Statement(loc), expr(expr), block(std::move(stmts))
 {
 }
