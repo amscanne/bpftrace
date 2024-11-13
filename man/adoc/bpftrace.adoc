@@ -978,6 +978,7 @@ These exist for the lifetime of `bpftrace` itself and can be accessed from all a
 Map names always start with a `@`, e.g. `@mymap`.
 
 All valid identifiers can be used as `name`.
+ Note that there are restrictions on the use of identifiers beyond C, e.g. `config` is reserved as a language keyword and may not be used directly.
 
 The data type of a variable is automatically determined during first assignment and cannot be changed afterwards.
 
