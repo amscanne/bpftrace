@@ -93,7 +93,44 @@ public:
   bool is_variable = false;
   bool is_map = false;
 };
-using ExpressionList = std::vector<Expression *>;
+
+class Integer;
+class PositionalParameter;
+class String;
+class StackMode;
+class Identifier;
+class Builtin;
+class Call;
+class Sizeof;
+class Offsetof;
+class Binop;
+class Unop;
+class FieldAccess;
+class ArrayAccess;
+class Cast;
+class Tuple;
+class Ternary;
+
+using ExpressionVariant = std::variant<Integer *,
+                                       PositionalParameter *,
+                                       String *,
+                                       StackMode *,
+                                       Identifier *,
+                                       Builtin *,
+                                       Call *,
+                                       Sizeof *,
+                                       Offsetof *,
+                                       Map *,
+                                       Variable *,
+                                       Binop *,
+                                       Unop *,
+                                       FieldAccess *,
+                                       ArrayAccess *,
+                                       Cast *,
+                                       Tuple *,
+                                       Ternary *>;
+
+using ExpressionList = std::vector<ExpressionVariant>;
 
 class Integer : public Expression {
 public:
@@ -183,9 +220,9 @@ private:
 class Sizeof : public Expression {
 public:
   Sizeof(SizedType type, location loc);
-  Sizeof(Expression *expr, location loc);
+  Sizeof(ExpressionVariant expr, location loc);
 
-  Expression *expr = nullptr;
+  std::optional<ExpressionVariant> expr;
   SizedType argtype;
 
 private:
@@ -195,10 +232,10 @@ private:
 class Offsetof : public Expression {
 public:
   Offsetof(SizedType record, std::string &field, location loc);
-  Offsetof(Expression *expr, std::string &field, location loc);
+  Offsetof(ExpressionVariant expr, std::string &field, location loc);
 
   SizedType record;
-  Expression *expr = nullptr;
+  std::optional<ExpressionVariant> expr;
   std::string field;
 
 private:
@@ -208,10 +245,10 @@ private:
 class Map : public Expression {
 public:
   explicit Map(const std::string &ident, location loc);
-  Map(const std::string &ident, Expression &expr, location loc);
+  Map(const std::string &ident, ExpressionVariant expr, location loc);
 
   std::string ident;
-  Expression *key_expr = nullptr;
+  std::optional<ExpressionVariant> key_expr;
   SizedType key_type;
   bool skip_key_validation = false;
 
@@ -231,10 +268,13 @@ private:
 
 class Binop : public Expression {
 public:
-  Binop(Expression *left, Operator op, Expression *right, location loc);
+  Binop(ExpressionVariant left,
+        Operator op,
+        ExpressionVariant right,
+        location loc);
 
-  Expression *left = nullptr;
-  Expression *right = nullptr;
+  ExpressionVariant left;
+  ExpressionVariant right;
   Operator op;
 
 private:
@@ -243,13 +283,13 @@ private:
 
 class Unop : public Expression {
 public:
-  Unop(Operator op, Expression *expr, location loc = location());
+  Unop(Operator op, ExpressionVariant expr, location loc = location());
   Unop(Operator op,
-       Expression *expr,
+       ExpressionVariant expr,
        bool is_post_op = false,
        location loc = location());
 
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
   Operator op;
   bool is_post_op;
 
@@ -259,11 +299,11 @@ private:
 
 class FieldAccess : public Expression {
 public:
-  FieldAccess(Expression *expr, const std::string &field);
-  FieldAccess(Expression *expr, const std::string &field, location loc);
-  FieldAccess(Expression *expr, ssize_t index, location loc);
+  FieldAccess(ExpressionVariant expr, const std::string &field);
+  FieldAccess(ExpressionVariant expr, const std::string &field, location loc);
+  FieldAccess(ExpressionVariant expr, ssize_t index, location loc);
 
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
   std::string field;
   ssize_t index = -1;
 
@@ -273,11 +313,11 @@ private:
 
 class ArrayAccess : public Expression {
 public:
-  ArrayAccess(Expression *expr, Expression *indexpr);
-  ArrayAccess(Expression *expr, Expression *indexpr, location loc);
+  ArrayAccess(ExpressionVariant expr, ExpressionVariant indexpr);
+  ArrayAccess(ExpressionVariant expr, ExpressionVariant indexpr, location loc);
 
-  Expression *expr = nullptr;
-  Expression *indexpr = nullptr;
+  ExpressionVariant expr;
+  ExpressionVariant indexpr;
 
 private:
   ArrayAccess(const ArrayAccess &other) = default;
@@ -285,9 +325,9 @@ private:
 
 class Cast : public Expression {
 public:
-  Cast(SizedType type, Expression *expr, location loc);
+  Cast(SizedType type, ExpressionVariant expr, location loc);
 
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
 
 private:
   Cast(const Cast &other) = default;
@@ -315,13 +355,39 @@ public:
   Statement &operator=(Statement &&) = delete;
 };
 
-using StatementList = std::vector<Statement *>;
+class ExprStatement;
+class VarDeclStatement;
+class AssignMapStatement;
+class AssignVarStatement;
+class AssignConfigVarStatement;
+class Block;
+class If;
+class Unroll;
+class Jump;
+class While;
+class For;
+class Config;
+
+using StatementVariant = std::variant<ExprStatement *,
+                                      VarDeclStatement *,
+                                      AssignMapStatement *,
+                                      AssignVarStatement *,
+                                      AssignConfigVarStatement *,
+                                      Block *,
+                                      If *,
+                                      Unroll *,
+                                      Jump *,
+                                      While *,
+                                      For *,
+                                      Config *>;
+
+using StatementList = std::vector<StatementVariant>;
 
 class ExprStatement : public Statement {
 public:
-  explicit ExprStatement(Expression *expr, location loc);
+  explicit ExprStatement(ExpressionVariant expr, location loc);
 
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
 
 private:
   ExprStatement(const ExprStatement &other) = default;
@@ -341,10 +407,12 @@ private:
 
 class AssignMapStatement : public Statement {
 public:
-  AssignMapStatement(Map *map, Expression *expr, location loc = location());
+  AssignMapStatement(Map *map,
+                     ExpressionVariant expr,
+                     location loc = location());
 
   Map *map = nullptr;
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
 
 private:
   AssignMapStatement(const AssignMapStatement &other) = default;
@@ -353,15 +421,15 @@ private:
 class AssignVarStatement : public Statement {
 public:
   AssignVarStatement(Variable *var,
-                     Expression *expr,
+                     ExpressionVariant expr,
                      location loc = location());
   AssignVarStatement(VarDeclStatement *var_decl_stmt,
-                     Expression *expr,
+                     ExpressionVariant expr,
                      location loc = location());
 
   VarDeclStatement *var_decl_stmt = nullptr;
   Variable *var = nullptr;
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
 
 private:
   AssignVarStatement(const AssignVarStatement &other) = default;
@@ -370,11 +438,11 @@ private:
 class AssignConfigVarStatement : public Statement {
 public:
   AssignConfigVarStatement(const std::string &config_var,
-                           Expression *expr,
+                           ExpressionVariant expr,
                            location loc = location());
 
   std::string config_var;
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
 
 private:
   AssignConfigVarStatement(const AssignConfigVarStatement &other) = default;
@@ -392,9 +460,9 @@ private:
 
 class If : public Statement {
 public:
-  If(Expression *cond, Block *if_block, Block *else_block);
+  If(ExpressionVariant cond, Block *if_block, Block *else_block);
 
-  Expression *cond = nullptr;
+  ExpressionVariant cond;
   Block *if_block = nullptr;
   Block *else_block = nullptr;
 
@@ -404,10 +472,10 @@ private:
 
 class Unroll : public Statement {
 public:
-  Unroll(Expression *expr, Block *block, location loc);
+  Unroll(ExpressionVariant expr, Block *block, location loc);
 
   long int var = 0;
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
   Block *block = nullptr;
 
 private:
@@ -416,17 +484,18 @@ private:
 
 class Jump : public Statement {
 public:
-  Jump(JumpType ident, Expression *return_value, location loc = location())
+  Jump(JumpType ident,
+       ExpressionVariant return_value,
+       location loc = location())
       : Statement(loc), ident(ident), return_value(return_value)
   {
   }
-  Jump(JumpType ident, location loc = location())
-      : Statement(loc), ident(ident), return_value(nullptr)
+  Jump(JumpType ident, location loc = location()) : Statement(loc), ident(ident)
   {
   }
 
   JumpType ident = JumpType::INVALID;
-  Expression *return_value;
+  std::optional<ExpressionVariant> return_value;
 
 private:
   Jump(const Jump &other) = default;
@@ -434,9 +503,9 @@ private:
 
 class Predicate : public Node {
 public:
-  explicit Predicate(Expression *expr, location loc);
+  explicit Predicate(ExpressionVariant expr, location loc);
 
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
 
 private:
   Predicate(const Predicate &other) = default;
@@ -444,21 +513,24 @@ private:
 
 class Ternary : public Expression {
 public:
-  Ternary(Expression *cond, Expression *left, Expression *right, location loc);
+  Ternary(ExpressionVariant cond,
+          ExpressionVariant left,
+          ExpressionVariant right,
+          location loc);
 
-  Expression *cond = nullptr;
-  Expression *left = nullptr;
-  Expression *right = nullptr;
+  ExpressionVariant cond;
+  ExpressionVariant left;
+  ExpressionVariant right;
 };
 
 class While : public Statement {
 public:
-  While(Expression *cond, Block *block, location loc)
+  While(ExpressionVariant cond, Block *block, location loc)
       : Statement(loc), cond(cond), block(block)
   {
   }
 
-  Expression *cond = nullptr;
+  ExpressionVariant cond;
   Block *block = nullptr;
 
 private:
@@ -467,13 +539,16 @@ private:
 
 class For : public Statement {
 public:
-  For(Variable *decl, Expression *expr, StatementList &&stmts, location loc)
+  For(Variable *decl,
+      ExpressionVariant expr,
+      StatementList &&stmts,
+      location loc)
       : Statement(loc), decl(decl), expr(expr), stmts(std::move(stmts))
   {
   }
 
   Variable *decl = nullptr;
-  Expression *expr = nullptr;
+  ExpressionVariant expr;
   StatementList stmts;
   SizedType ctx_type;
 

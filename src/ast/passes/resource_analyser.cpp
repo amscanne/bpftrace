@@ -25,10 +25,25 @@ ProbeType single_provider_type_postsema(Probe *probe)
   return ProbeType::invalid;
 }
 
-std::string get_literal_string(Expression &expr)
+std::string get_literal_string(ExpressionVariant &expr)
 {
-  String &str = static_cast<String &>(expr);
-  return str.str;
+  auto str = std::get_if<String*>(&expr);
+  if (str)
+    return (*str)->str;
+  // FIXME(amscanne): This presently does not have any type checks, and
+  // therefore cases like `printf` assume the first argument is always a
+  // literal. This can be fixed in a future change, but for now return a string
+  // that makes the mistake at least more tractable?
+  return "<not-a-string>";
+}
+
+int get_literal_integer(ExpressionVariant &expr)
+{
+  auto integer = std::get_if<Integer*>(&expr);
+  if (integer)
+    return (*integer)->n;
+  // FIXME(amscanne): Same issue as above.
+  return -1;
 }
 
 } // namespace
@@ -141,7 +156,7 @@ void ResourceAnalyser::visit(Call &call)
     // NOTE: the same logic can be found in the semantic_analyser pass
     for (auto it = call.vargs.begin() + 1; it != call.vargs.end(); it++) {
       // Promote to 64-bit if it's not an aggregate type
-      SizedType ty = (*it)->type; // copy
+      SizedType ty = exprType(*it); // copy
       if (!ty.IsAggregate() && !ty.IsTimestampTy())
         ty.SetSize(8);
 
@@ -172,7 +187,7 @@ void ResourceAnalyser::visit(Call &call)
           static_cast<uint64_t>(tuple_size));
     }
 
-    auto fmtstr = get_literal_string(*call.vargs.at(0));
+    auto fmtstr = get_literal_string(call.vargs.at(0));
     if (call.func == "printf") {
       if (probe_ != nullptr &&
           single_provider_type_postsema(probe_) == ProbeType::iter) {
@@ -188,7 +203,7 @@ void ResourceAnalyser::visit(Call &call)
       resources_.cat_args.emplace_back(fmtstr, tuple->fields);
     }
   } else if (call.func == "join") {
-    auto delim = call.vargs.size() > 1 ? get_literal_string(*call.vargs.at(1))
+    auto delim = call.vargs.size() > 1 ? get_literal_string(call.vargs.at(1))
                                        : " ";
     resources_.join_args.push_back(delim);
   } else if (call.func == "count" || call.func == "sum" || call.func == "min" ||
@@ -197,7 +212,7 @@ void ResourceAnalyser::visit(Call &call)
         bpftrace::globalvars::GlobalVar::NUM_CPUS);
   } else if (call.func == "hist") {
     auto &map_info = resources_.maps_info[call.map->ident];
-    int bits = static_cast<Integer *>(call.vargs.at(1))->n;
+    int bits = get_literal_integer(call.vargs.at(1));
 
     if (map_info.hist_bits_arg.has_value() && *map_info.hist_bits_arg != bits) {
       LOG(ERROR, call.loc, err_) << "Different bits in a single hist, had "
@@ -206,12 +221,12 @@ void ResourceAnalyser::visit(Call &call)
       map_info.hist_bits_arg = bits;
     }
   } else if (call.func == "lhist") {
-    Expression &min_arg = *call.vargs.at(1);
-    Expression &max_arg = *call.vargs.at(2);
-    Expression &step_arg = *call.vargs.at(3);
-    Integer &min = static_cast<Integer &>(min_arg);
-    Integer &max = static_cast<Integer &>(max_arg);
-    Integer &step = static_cast<Integer &>(step_arg);
+    ExpressionVariant &min_arg = call.vargs.at(1);
+    ExpressionVariant &max_arg = call.vargs.at(2);
+    ExpressionVariant &step_arg = call.vargs.at(3);
+    Integer &min = **std::get_if<Integer*>(&min_arg);
+    Integer &max = **std::get_if<Integer*>(&max_arg);
+    Integer &step = **std::get_if<Integer*>(&step_arg);
 
     auto args = LinearHistogramArgs{
       .min = min.n,
@@ -229,24 +244,25 @@ void ResourceAnalyser::visit(Call &call)
     }
   } else if (call.func == "time") {
     if (call.vargs.size() > 0)
-      resources_.time_args.push_back(get_literal_string(*call.vargs.at(0)));
+      resources_.time_args.push_back(get_literal_string(call.vargs.at(0)));
     else
       resources_.time_args.push_back("%H:%M:%S\n");
   } else if (call.func == "strftime") {
-    resources_.strftime_args.push_back(get_literal_string(*call.vargs.at(0)));
+    resources_.strftime_args.push_back(get_literal_string(call.vargs.at(0)));
   } else if (call.func == "print") {
     constexpr auto nonmap_headroom = sizeof(AsyncEvent::PrintNonMap);
-    auto &arg = *call.vargs.at(0);
-    if (!arg.is_map) {
-      resources_.non_map_print_args.push_back(arg.type);
+    auto &arg = call.vargs.at(0);
+    auto *maybeMapPtr = std::get_if<Map*>(&arg);
+    if (!maybeMapPtr) {
+      resources_.non_map_print_args.push_back(exprType(arg));
 
-      const size_t fmtstring_args_size = nonmap_headroom + arg.type.GetSize();
+      const auto fmtstring_args_size = nonmap_headroom + exprType(arg).GetSize();
       if (exceeds_stack_limit(fmtstring_args_size)) {
         resources_.max_fmtstring_args_size = std::max<uint64_t>(
             resources_.max_fmtstring_args_size, fmtstring_args_size);
       }
     } else {
-      auto &map = static_cast<Map &>(arg);
+      auto &map = *(*maybeMapPtr);
       if (map.key_expr) {
         resources_.non_map_print_args.push_back(map.type);
 
@@ -260,21 +276,18 @@ void ResourceAnalyser::visit(Call &call)
   } else if (call.func == "cgroup_path") {
     if (call.vargs.size() > 1)
       resources_.cgroup_path_args.push_back(
-          get_literal_string(*call.vargs.at(1)));
+          get_literal_string(call.vargs.at(1)));
     else
       resources_.cgroup_path_args.push_back("*");
   } else if (call.func == "skboutput") {
-    auto &file_arg = *call.vargs.at(0);
-    String &file = static_cast<String &>(file_arg);
+    std::string file = get_literal_string(call.vargs.at(0));
+    int offset = get_literal_integer(call.vargs.at(3));
 
-    auto &offset_arg = *call.vargs.at(3);
-    Integer &offset = static_cast<Integer &>(offset_arg);
-
-    resources_.skboutput_args_.emplace_back(file.str, offset.n);
+    resources_.skboutput_args_.emplace_back(file, offset);
     resources_.needs_perf_event_map = true;
   } else if (call.func == "delete") {
-    auto &arg0 = *call.vargs.at(0);
-    auto &map = static_cast<Map &>(arg0);
+    auto &arg0 = call.vargs.at(0);
+    auto &map = **std::get_if<Map*>(&arg0);
     if (exceeds_stack_limit(map.type.GetSize())) {
       resources_.max_write_map_value_size = std::max(
           resources_.max_write_map_value_size, map.type.GetSize());
@@ -282,9 +295,10 @@ void ResourceAnalyser::visit(Call &call)
   }
 
   if (call.func == "print" || call.func == "clear" || call.func == "zero") {
-    auto &arg = *call.vargs.at(0);
-    if (arg.is_map) {
-      auto &name = static_cast<Map &>(arg).ident;
+    auto &arg = call.vargs.at(0);
+    auto *maybeMapPtr = std::get_if<Map*>(&arg);
+    if (maybeMapPtr) {
+      auto &name = (*maybeMapPtr)->ident;
       auto &map_info = resources_.maps_info[name];
       if (map_info.id == -1)
         map_info.id = next_map_id_++;
@@ -326,8 +340,8 @@ void ResourceAnalyser::visit(Call &call)
                                              map_key_size);
     }
   } else if (call.func == "has_key") {
-    auto &arg0 = *call.vargs.at(0);
-    auto &map = static_cast<Map &>(arg0);
+    auto &arg0 = call.vargs.at(0);
+    auto &map = **std::get_if<Map*>(&arg0);
     // has_key does not work on scalar maps (e.g. @a = 1), so we
     // don't need to check if map.key_expr is set
     if (needMapKeyAllocation(map, call.vargs.at(1)) &&
@@ -337,8 +351,8 @@ void ResourceAnalyser::visit(Call &call)
                                              map.key_type.GetSize());
     }
   } else if (call.func == "delete") {
-    auto &arg0 = *call.vargs.at(0);
-    auto &map = static_cast<Map &>(arg0);
+    auto &arg0 = call.vargs.at(0);
+    auto &map = **std::get_if<Map*>(&arg0);
     const auto deleteNeedMapKeyAllocation =
         call.vargs.size() > 1 ? needMapKeyAllocation(map, call.vargs.at(1))
                               : needMapKeyAllocation(map);
@@ -418,8 +432,8 @@ void ResourceAnalyser::visit(AssignMapStatement &assignment)
    * skip calling ResourceAnalser::visit(a.map) and do the AST traversal
    * ourselves.
    */
-  visit(*assignment.expr);
-  visit(*assignment.map);
+  visit(assignment.expr);
+  visit(assignment.map);
 
   update_map_info(*assignment.map);
 

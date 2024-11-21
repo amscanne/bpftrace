@@ -61,8 +61,7 @@ void FieldAnalyser::visit(Builtin &builtin)
 
 void FieldAnalyser::visit(Map &map)
 {
-  if (map.key_expr)
-    visit(*map.key_expr);
+  visit(map.key_expr);
 
   auto it = var_types_.find(map.ident);
   if (it != var_types_.end())
@@ -80,7 +79,7 @@ void FieldAnalyser::visit(FieldAccess &acc)
 {
   has_builtin_args_ = false;
 
-  visit(*acc.expr);
+  visit(acc.expr);
 
   if (has_builtin_args_) {
     auto arg = bpftrace_.structs.GetProbeArg(*probe_, acc.field);
@@ -108,8 +107,8 @@ void FieldAnalyser::visit(FieldAccess &acc)
 
 void FieldAnalyser::visit(ArrayAccess &arr)
 {
-  visit(*arr.indexpr);
-  visit(*arr.expr);
+  visit(arr.indexpr);
+  visit(arr.expr);
   if (sized_type_.IsPtrTy()) {
     sized_type_ = *sized_type_.GetPointeeTy();
     resolve_fields(sized_type_);
@@ -121,38 +120,38 @@ void FieldAnalyser::visit(ArrayAccess &arr)
 
 void FieldAnalyser::visit(Cast &cast)
 {
-  visit(*cast.expr);
+  visit(cast.expr);
   resolve_type(cast.type);
 }
 
 void FieldAnalyser::visit(Sizeof &szof)
 {
-  visit(*szof.expr);
+  visit(szof.expr);
   resolve_type(szof.argtype);
 }
 
 void FieldAnalyser::visit(Offsetof &ofof)
 {
-  visit(*ofof.expr);
+  visit(ofof.expr);
   resolve_type(ofof.record);
 }
 
 void FieldAnalyser::visit(AssignMapStatement &assignment)
 {
-  visit(*assignment.map);
-  visit(*assignment.expr);
+  visit(assignment.map);
+  visit(assignment.expr);
   var_types_.emplace(assignment.map->ident, sized_type_);
 }
 
 void FieldAnalyser::visit(AssignVarStatement &assignment)
 {
-  visit(*assignment.expr);
+  visit(assignment.expr);
   var_types_.emplace(assignment.var->ident, sized_type_);
 }
 
 void FieldAnalyser::visit(Unop &unop)
 {
-  visit(*unop.expr);
+  visit(unop.expr);
   if (unop.op == Operator::MUL && sized_type_.IsPtrTy()) {
     sized_type_ = *sized_type_.GetPointeeTy();
     resolve_fields(sized_type_);
@@ -319,10 +318,7 @@ void FieldAnalyser::visit(Probe &probe)
 void FieldAnalyser::visit(Subprog &subprog)
 {
   probe_ = nullptr;
-
-  for (Statement *stmt : subprog.stmts) {
-    visit(*stmt);
-  }
+  visit(subprog.stmts);
 }
 
 int FieldAnalyser::analyse()

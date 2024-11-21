@@ -21,7 +21,7 @@ namespace bpftrace::ast {
 bool needAssignMapStatementAllocation(const AssignMapStatement &assignment)
 {
   const auto &map = *assignment.map;
-  const auto &expr_type = assignment.expr->type;
+  const auto &expr_type = exprType(assignment.expr);
   if (shouldBeInBpfMemoryAlready(expr_type)) {
     return !expr_type.IsSameSizeRecursive(map.type);
   } else if (map.type.IsRecordTy() || map.type.IsArrayTy()) {
@@ -35,10 +35,14 @@ bool needMapKeyAllocation(const Map &map)
   return needMapKeyAllocation(map, map.key_expr);
 }
 
-bool needMapKeyAllocation(const Map &map, Expression *key_expr)
+bool needMapKeyAllocation(const Map &map,
+                          std::optional<ExpressionVariant> key_expr)
 {
-  if (key_expr && inBpfMemory(key_expr->type)) {
-    return !key_expr->type.IsSameSizeRecursive(map.key_type);
+  if (key_expr) {
+    auto &expr_type = exprType(*key_expr);
+    if (inBpfMemory(expr_type)) {
+      return !expr_type.IsSameSizeRecursive(map.key_type);
+    }
   }
   return true;
 }

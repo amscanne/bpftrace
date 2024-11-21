@@ -140,7 +140,7 @@ private:
   void binop_ptr(Binop &op);
   void binop_int(Binop &op);
   void binop_array(Binop &op);
-  Expression *dereference_if_needed(Expression *expr);
+  ExpressionVariant dereference_if_needed(ExpressionVariant expr);
 
   bool has_error() const;
   bool in_loop(void)

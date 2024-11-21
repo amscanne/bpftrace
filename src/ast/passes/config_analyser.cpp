@@ -4,6 +4,7 @@
 #include <string>
 
 #include "ast/ast.h"
+#include "ast/codegen_helper.h"
 #include "config.h"
 #include "log.h"
 #include "types.h"
@@ -30,25 +31,27 @@ void ConfigAnalyser::log_type_error(SizedType &type,
 void ConfigAnalyser::set_uint64_config(AssignConfigVarStatement &assignment,
                                        ConfigKeyInt key)
 {
-  auto &assignTy = assignment.expr->type;
+  auto &assignTy = exprType(assignment.expr);
   if (!assignTy.IsIntegerTy()) {
     log_type_error(assignTy, Type::integer, assignment);
     return;
   }
 
-  config_setter_.set(key, dynamic_cast<Integer *>(assignment.expr)->n);
+  auto expr = *std::get_if<Integer *>(&assignment.expr);
+  config_setter_.set(key, expr->n);
 }
 
 void ConfigAnalyser::set_bool_config(AssignConfigVarStatement &assignment,
                                      ConfigKeyBool key)
 {
-  auto &assignTy = assignment.expr->type;
+  auto &assignTy = exprType(assignment.expr);
   if (!assignTy.IsIntegerTy()) {
     log_type_error(assignTy, Type::integer, assignment);
     return;
   }
 
-  auto val = dynamic_cast<Integer *>(assignment.expr)->n;
+  auto expr = *std::get_if<Integer *>(&assignment.expr);
+  auto val = expr->n;
   if (val == 0) {
     config_setter_.set(key, false);
   } else if (val == 1) {
@@ -62,18 +65,19 @@ void ConfigAnalyser::set_bool_config(AssignConfigVarStatement &assignment,
 void ConfigAnalyser::set_string_config(AssignConfigVarStatement &assignment,
                                        ConfigKeyString key)
 {
-  auto &assignTy = assignment.expr->type;
+  auto &assignTy = exprType(assignment.expr);
   if (!assignTy.IsStringTy()) {
     log_type_error(assignTy, Type::string, assignment);
     return;
   }
 
-  config_setter_.set(key, dynamic_cast<String *>(assignment.expr)->str);
+  auto expr = *std::get_if<String *>(&assignment.expr);
+  config_setter_.set(key, expr->str);
 }
 
 void ConfigAnalyser::set_stack_mode_config(AssignConfigVarStatement &assignment)
 {
-  auto &assignTy = assignment.expr->type;
+  auto &assignTy = exprType(assignment.expr);
   if (!assignTy.IsStackModeTy()) {
     log_type_error(assignTy, Type::stack_mode, assignment);
     return;
@@ -85,43 +89,46 @@ void ConfigAnalyser::set_stack_mode_config(AssignConfigVarStatement &assignment)
 void ConfigAnalyser::set_user_symbol_cache_type_config(
     AssignConfigVarStatement &assignment)
 {
-  auto &assignTy = assignment.expr->type;
+  auto &assignTy = exprType(assignment.expr);
   if (!assignTy.IsStringTy()) {
     log_type_error(assignTy, Type::string, assignment);
     return;
   }
 
-  auto val = dynamic_cast<String *>(assignment.expr)->str;
+  auto expr = *std::get_if<String *>(&assignment.expr);
+  auto val = expr->str;
   if (!config_setter_.set_user_symbol_cache_type(val))
-    LOG(ERROR, assignment.expr->loc, err_);
+    LOG(ERROR, expr->loc, err_);
 }
 
 void ConfigAnalyser::set_symbol_source_config(
     AssignConfigVarStatement &assignment)
 {
-  auto &assignTy = assignment.expr->type;
+  auto &assignTy = exprType(assignment.expr);
   if (!assignTy.IsStringTy()) {
     log_type_error(assignTy, Type::string, assignment);
     return;
   }
 
-  auto val = dynamic_cast<String *>(assignment.expr)->str;
+  auto expr = *std::get_if<String *>(&assignment.expr);
+  auto val = expr->str;
   if (!config_setter_.set_symbol_source_config(val))
-    LOG(ERROR, assignment.expr->loc, err_);
+    LOG(ERROR, expr->loc, err_);
 }
 
 void ConfigAnalyser::set_missing_probes_config(
     AssignConfigVarStatement &assignment)
 {
-  auto &assignTy = assignment.expr->type;
+  auto &assignTy = exprType(assignment.expr);
   if (!assignTy.IsStringTy()) {
     log_type_error(assignTy, Type::string, assignment);
     return;
   }
 
-  auto val = dynamic_cast<String *>(assignment.expr)->str;
+  auto expr = *std::get_if<String *>(&assignment.expr);
+  auto val = expr->str;
   if (!config_setter_.set_missing_probes_config(val))
-    LOG(ERROR, assignment.expr->loc, err_);
+    LOG(ERROR, expr->loc, err_);
 }
 
 void ConfigAnalyser::visit(Integer &integer)
@@ -160,7 +167,10 @@ void ConfigAnalyser::visit(AssignConfigVarStatement &assignment)
     return;
   }
 
-  if (!assignment.expr->is_literal) {
+  if (!std::holds_alternative<Integer*>(assignment.expr) &&
+      !std::holds_alternative<String*>(assignment.expr) &&
+      !std::holds_alternative<StackMode*>(assignment.expr) &&
+      !std::holds_alternative<PositionalParameter*>(assignment.expr)) {
     LOG(ERROR, assignment.loc, err_)
         << "Assignment for " << assignment.config_var << " must be literal.";
     return;

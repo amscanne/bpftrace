@@ -138,8 +138,8 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %type <ast::Call *> call
 %type <ast::Sizeof *> sizeof_expr
 %type <ast::Offsetof *> offsetof_expr
-%type <ast::Expression *> and_expr addi_expr primary_expr cast_expr conditional_expr equality_expr expr logical_and_expr muli_expr
-%type <ast::Expression *> logical_or_expr map_or_var or_expr postfix_expr relational_expr shift_expr tuple_access_expr unary_expr xor_expr
+%type <ast::ExpressionVariant> and_expr addi_expr cast_expr conditional_expr equality_expr expr logical_and_expr map_or_var muli_expr
+%type <ast::ExpressionVariant> logical_or_expr or_expr postfix_expr primary_expr relational_expr shift_expr tuple_access_expr unary_expr xor_expr
 %type <ast::ExpressionList> vargs
 %type <ast::Subprog *> subprog
 %type <ast::SubprogArg *> subprog_arg
@@ -151,7 +151,7 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %type <ast::Probe *> probe
 %type <std::pair<ast::ProbeList, ast::SubprogList>> probes_and_subprogs
 %type <ast::Config *> config
-%type <ast::Statement *> assign_stmt block_stmt expr_stmt if_stmt jump_stmt loop_stmt config_assign_stmt for_stmt
+%type <ast::StatementVariant> assign_stmt block_stmt expr_stmt if_stmt jump_stmt loop_stmt config_assign_stmt for_stmt
 %type <ast::VarDeclStatement *> var_decl_stmt
 %type <ast::StatementList> block block_or_if stmt_list config_block config_assign_stmt_list
 %type <SizedType> type int_type pointer_type struct_type
@@ -685,9 +685,9 @@ map:
         |       MAP "[" vargs "]" {
                         if ($3.size() > 1) {
                           auto t = driver.ctx.make_node<ast::Tuple>(std::move($3), @$);
-                          $$ = driver.ctx.make_node<ast::Map>($1, *t, @$);
+                          $$ = driver.ctx.make_node<ast::Map>($1, t, @$);
                         } else {
-                          $$ = driver.ctx.make_node<ast::Map>($1, *$3.back(), @$);
+                          $$ = driver.ctx.make_node<ast::Map>($1, $3.back(), @$);
                         }
                 }
                 ;

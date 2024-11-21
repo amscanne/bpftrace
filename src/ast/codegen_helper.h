@@ -5,6 +5,16 @@
 namespace bpftrace {
 namespace ast {
 
+inline SizedType &exprType(ExpressionVariant expr)
+{
+  return std::visit([](auto expr) -> SizedType & { return expr->type; }, expr);
+}
+
+inline location &exprLoc(ExpressionVariant expr)
+{
+  return std::visit([](auto expr) -> location & { return expr->loc; }, expr);
+}
+
 inline bool needMemcpy(const SizedType &stype)
 {
   return stype.IsAggregate() || stype.IsTimestampTy() || stype.IsCgroupPathTy();
@@ -36,7 +46,8 @@ inline AddrSpace find_addrspace_stack(const SizedType &ty)
 bool needAssignMapStatementAllocation(const AssignMapStatement &assignment);
 
 bool needMapKeyAllocation(const Map &map);
-bool needMapKeyAllocation(const Map &map, Expression *key_expr);
+bool needMapKeyAllocation(const Map &map,
+                          std::optional<ExpressionVariant> key_expr);
 
 } // namespace ast
 } // namespace bpftrace

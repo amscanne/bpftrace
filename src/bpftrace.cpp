@@ -36,6 +36,7 @@
 #endif
 
 #include "ast/async_event_types.h"
+#include "ast/codegen_helper.h"
 #include "bpfmap.h"
 #include "bpfprogram.h"
 #include "bpftrace.h"
@@ -1983,49 +1984,46 @@ void BPFtrace::sort_by_key(
   }
 }
 
-std::string BPFtrace::get_string_literal(const ast::Expression *expr) const
+std::string BPFtrace::get_string_literal(const ast::ExpressionVariant expr) const
 {
-  if (expr->is_literal) {
-    if (auto *string = dynamic_cast<const ast::String *>(expr))
-      return string->str;
-    else if (auto *str_call = dynamic_cast<const ast::Call *>(expr)) {
-      // Positional parameters in the form str($1) can be used as literals
-      if (str_call->func == "str") {
-        if (auto *pos_param = dynamic_cast<const ast::PositionalParameter *>(
-                str_call->vargs.at(0)))
-          return get_param(pos_param->n, true);
-      }
+  if (auto maybeStringPtr = std::get_if<ast::String*>(&expr)) {
+    return (*maybeStringPtr)->str;
+  } else if (auto maybeCallPtr = std::get_if<ast::Call*>(&expr)) {
+    // Positional parameters in the form str($1) can be used as literals
+    if ((*maybeCallPtr)->func == "str") {
+      if (auto *pos_param = std::get_if<ast::PositionalParameter *>(
+              &((*maybeCallPtr)->vargs.at(0))))
+        return get_param((*pos_param)->n, true);
     }
   }
 
-  LOG(ERROR) << "Expected string literal, got " << expr->type;
+  LOG(ERROR) << "Expected string literal, got " << exprType(expr);
   return "";
 }
 
 std::optional<int64_t> BPFtrace::get_int_literal(
-    const ast::Expression *expr) const
+    const ast::ExpressionVariant expr) const
 {
-  if (expr->is_literal) {
-    if (auto *integer = dynamic_cast<const ast::Integer *>(expr))
-      return integer->n;
-    else if (auto *pos_param = dynamic_cast<const ast::PositionalParameter *>(
-                 expr)) {
-      if (pos_param->ptype == PositionalParameterType::positional) {
-        auto param_str = get_param(pos_param->n, false);
-        auto param_int = get_int_from_str(param_str);
-        if (!param_int.has_value()) {
-          LOG(ERROR, pos_param->loc)
-              << "$" << pos_param->n << " used numerically but given \""
-              << param_str << "\"";
-          return std::nullopt;
-        }
-        if (std::holds_alternative<int64_t>(*param_int)) {
-          return std::get<int64_t>(*param_int);
-        } else {
-          return static_cast<int64_t>(std::get<uint64_t>(*param_int));
-        }
-      } else
-        return static_cast<int64_t>(num_params());
+  if (auto maybeIntegerPtr = std::get_if<ast::Integer*>(&expr)) {
+    return (*maybeIntegerPtr)->n;
+  } else if (auto maybePosParamPtr = std::get_if<ast::PositionalParameter*>(&expr)) {
+    auto *pos_param = (*maybePosParamPtr);
+    if (pos_param->ptype == PositionalParameterType::positional) {
+      auto param_str = get_param(pos_param->n, false);
+      auto param_int = get_int_from_str(param_str);
+      if (!param_int.has_value()) {
+        LOG(ERROR, pos_param->loc)
+            << "$" << pos_param->n << " used numerically but given \""
+            << param_str << "\"";
+        return std::nullopt;
+      }
+      if (std::holds_alternative<int64_t>(*param_int)) {
+        return std::get<int64_t>(*param_int);
+      } else {
+        return static_cast<int64_t>(std::get<uint64_t>(*param_int));
+      }
+    } else {
+      return static_cast<int64_t>(num_params());
     }
   }
 

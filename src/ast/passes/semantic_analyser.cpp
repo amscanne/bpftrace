@@ -10,6 +10,7 @@
 #include "arch/arch.h"
 #include "ast/ast.h"
 #include "ast/async_event_types.h"
+#include "ast/codegen_helper.h"
 #include "ast/signal_bt.h"
 #include "collect_nodes.h"
 #include "config.h"
@@ -639,14 +640,14 @@ void SemanticAnalyser::visit(Call &call)
   func_setter scope_bound_func_setter{ *this, call.func };
 
   for (size_t i = 0; i < call.vargs.size(); ++i) {
-    auto &expr = *call.vargs[i];
+    auto &expr = call.vargs[i];
     func_arg_idx_ = i;
 
-    if (expr.is_map) {
-      Map &map = static_cast<Map &>(expr);
+    if (std::holds_alternative<Map*>(expr)) {
+      Map &map = **std::get_if<Map*>(&expr);
 
       // If the map is indexed, don't skip key validation
-      if (map.key_expr == nullptr) {
+      if (!map.key_expr) {
         // These calls expect just a map reference for the first argument
         if ((call.func == "delete" || call.func == "has_key") && i == 0) {
           map.skip_key_validation = true;
@@ -791,16 +792,17 @@ void SemanticAnalyser::visit(Call &call)
     call.type = CreateStats(true);
   } else if (call.func == "delete") {
     check_assignment(call, false, false, false);
+    auto &arg = call.vargs.at(0);
     if (check_varargs(call, 1, 2)) {
-      if (!call.vargs.at(0)->is_map) {
+      if (!std::holds_alternative<Map*>(arg) {
         LOG(ERROR, call.vargs.at(0)->loc, err_) << DELETE_ERROR;
       } else {
-        Map &map = static_cast<Map &>(*call.vargs.at(0));
+        Map &map = **std::get_if<Map*>(&arg);
         if (call.vargs.size() == 1) {
           if (map.key_expr) {
             // We're modifying the AST here to support the deprecated delete
             // API. Once we remove the old API, we can delete this.
-            call.vargs.push_back(map.key_expr);
+            call.vargs.push_back(*map.key_expr);
             map.key_expr = nullptr;
           } else if (is_final_pass()) {
             auto *map_key_type = get_map_key_type(map);
@@ -827,11 +829,11 @@ void SemanticAnalyser::visit(Call &call)
   } else if (call.func == "has_key") {
     if (check_varargs(call, 2, 2)) {
       auto &arg0 = *call.vargs.at(0);
-      if (!arg0.is_map) {
+      if (!std::holds_alternative<Map*>(arg0)) {
         LOG(ERROR, arg0.loc, err_)
             << "has_key() expects the first argument to be a map";
       } else {
-        Map &map = static_cast<Map &>(arg0);
+        Map &map = **std::get_if<Map*>(&arg0);
         if (map.key_expr) {
           LOG(ERROR, arg0.loc, err_)
               << "has_key() expects the first argument to be a map. Not a map "
@@ -873,8 +875,8 @@ void SemanticAnalyser::visit(Call &call)
 
       if (call.vargs.size() == 2 && check_arg(call, Type::integer, 1, false)) {
         auto &size_arg = *call.vargs.at(1);
-        if (size_arg.is_literal) {
-          auto &integer = static_cast<Integer &>(size_arg);
+        if (auto maybeIntegerPtr = std::get_if<Integer*>(&size_arg)) {
+          auto &integer = **maybeIntegerPtr;
           long value = integer.n;
           if (value < 0) {
             if (is_final_pass())
@@ -1216,7 +1218,7 @@ void SemanticAnalyser::visit(Call &call)
       check_arg(call, Type::integer, 0);
   } else if (call.func == "print") {
     check_assignment(call, false, false, false);
-    if (in_loop() && is_final_pass() && call.vargs.at(0)->is_map) {
+    if (in_loop() && is_final_pass() && std::holds_alternative<Map*>(call.vargs.at(0))) {
       LOG(WARNING, call.loc, out_)
           << "Due to it's asynchronous nature using 'print()' in a loop can "
              "lead to unexpected behavior. The map will likely be updated "
@@ -1224,8 +1226,8 @@ void SemanticAnalyser::visit(Call &call)
     }
     if (check_varargs(call, 1, 3)) {
       auto &arg = *call.vargs.at(0);
-      if (arg.is_map) {
-        Map &map = static_cast<Map &>(arg);
+      if (std::holds_alternative<Map*>(arg)) {
+        Map &map = **std::get_if<Map*>(&arg);
         if (map.key_expr) {
           if (call.vargs.size() > 1) {
             LOG(ERROR, call.loc, err_) << "Single-value (i.e. indexed) map "
@@ -1280,10 +1282,10 @@ void SemanticAnalyser::visit(Call &call)
     check_assignment(call, false, false, false);
     if (check_nargs(call, 1)) {
       auto &arg = *call.vargs.at(0);
-      if (!arg.is_map)
+      if (!std::holds_alternative<Map*>(arg))
         LOG(ERROR, call.loc, err_) << "clear() expects a map to be provided";
       else {
-        Map &map = static_cast<Map &>(arg);
+        Map &map = **std::get_if<Map*>(&arg);
         if (map.key_expr) {
           LOG(ERROR, call.loc, err_)
               << "The map passed to " << call.func << "() should not be "
@@ -1295,10 +1297,10 @@ void SemanticAnalyser::visit(Call &call)
     check_assignment(call, false, false, false);
     if (check_nargs(call, 1)) {
       auto &arg = *call.vargs.at(0);
-      if (!arg.is_map)
+      if (!std::holds_alternative<Map*>(arg))
         LOG(ERROR, call.loc, err_) << "zero() expects a map to be provided";
       else {
-        Map &map = static_cast<Map &>(arg);
+        Map &map = **std::get_if<Map*>(&arg);
         if (map.key_expr) {
           LOG(ERROR, call.loc, err_)
               << "The map passed to " << call.func << "() should not be "
@@ -1309,10 +1311,10 @@ void SemanticAnalyser::visit(Call &call)
   } else if (call.func == "len") {
     if (check_nargs(call, 1)) {
       auto &arg = *call.vargs.at(0);
-      if (!arg.is_map)
+      if (!std::holds_alternative<Map*>(arg))
         LOG(ERROR, call.loc, err_) << "len() expects a map to be provided";
       else {
-        Map &map = static_cast<Map &>(arg);
+        Map &map = **std::get_if<Map*>(&arg);
         if (map.key_expr) {
           LOG(ERROR, call.loc, err_)
               << "The map passed to " << call.func << "() should not be "
@@ -1707,8 +1709,8 @@ void SemanticAnalyser::visit(Map &map)
   bool key_is_map = false;
   if (map.key_expr) {
     map.key_expr = dereference_if_needed(map.key_expr);
-    key_is_map = map.key_expr->is_map;
-    new_key_type = create_key_type(map.key_expr->type, map.key_expr->loc);
+    key_is_map = std::holds_alternative<Map*>(map.key_expr);
+    new_key_type = create_key_type(exprType(map.key_Expr), exprLoc(map.key_expr));
   }
 
   if (!map.skip_key_validation) {
@@ -2119,14 +2121,14 @@ void SemanticAnalyser::visit(Unop &unop)
   if (unop.op == Operator::INCREMENT || unop.op == Operator::DECREMENT) {
     // Handle ++ and -- before visiting unop.expr, because these
     // operators should be able to work with undefined maps.
-    if (!unop.expr->is_map && !unop.expr->is_variable) {
+    if (!std::holds_alternative<Map*, Variant*>(unop.expr)) {
       LOG(ERROR, unop.loc, err_)
           << "The " << opstr(unop)
           << " operator must be applied to a map or variable";
     }
 
-    if (unop.expr->is_map) {
-      Map &map = static_cast<Map &>(*unop.expr);
+    if (std::holds_alternative<Map*>(unop.expr)) {
+      Map &map = **std::get_if<Map*>(&unop.expr);
       auto *maptype = get_map_type(map);
       if (!maptype)
         assign_map_type(map, CreateInt64());
@@ -2207,9 +2209,9 @@ void SemanticAnalyser::visit(Ternary &ternary)
   ternary.left = dereference_if_needed(ternary.left);
   ternary.right = dereference_if_needed(ternary.right);
 
-  const Type &cond = ternary.cond->type.GetTy();
-  const Type &lhs = ternary.left->type.GetTy();
-  const Type &rhs = ternary.right->type.GetTy();
+  const Type &cond = exprType(ternary.cond).GetTy();
+  const Type &lhs = exprType(ternary.left).GetTy();
+  const Type &rhs = exprType(ternary.right).GetTy();
   if (is_final_pass()) {
     if (lhs != rhs) {
       LOG(ERROR, ternary.loc, err_)
@@ -2410,14 +2412,14 @@ void SemanticAnalyser::visit(For &f)
   }
 
   // Validate expr
-  if (!f.expr->is_map) {
-    LOG(ERROR, f.expr->loc, err_) << "Loop expression must be a map";
+  if (!std::holds_alternative<Map*>(f.expr)) {
+    LOG(ERROR, exprLoc(f.expr), err_) << "Loop expression must be a map";
     return;
   }
   Map &map = static_cast<Map &>(*f.expr);
 
   if (!map.type.IsMapIterableTy()) {
-    LOG(ERROR, f.expr->loc, err_)
+    LOG(ERROR, exprLoc(f.expr), err_)
         << "Loop expression does not support type: " << map.type;
     return;
   }
@@ -2812,7 +2814,7 @@ void SemanticAnalyser::visit(AssignMapStatement &assignment)
 
   auto type = assignment.expr->type;
 
-  if (!IsValidAssignment(type, assignment.expr->is_map)) {
+  if (!IsValidAssignment(type, std::holds_alternative<Map*>(assignment.expr))) {
     auto hint = "";
     if (type.IsHistTy()) {
       hint = "hist(retval)";
@@ -2897,7 +2899,7 @@ void SemanticAnalyser::visit(AssignMapStatement &assignment)
 
   if (is_final_pass()) {
     if (type.IsNoneTy())
-      LOG(ERROR, assignment.expr->loc, err_)
+      LOG(ERROR, exprLoc(assignment.expr), err_)
           << "Invalid expression for assignment: " << type;
   }
 }
@@ -2912,7 +2914,7 @@ void SemanticAnalyser::visit(AssignVarStatement &assignment)
   std::string var_ident = assignment.var->ident;
   auto &assignTy = assignment.expr->type;
 
-  if (!IsValidAssignment(assignTy, assignment.expr->is_map)) {
+  if (!IsValidAssignment(assignTy, std::holds_alternative<Map*>(assignment.expr))) {
     LOG(ERROR, assignment.loc, err_)
         << "Map value '" << assignTy
         << "' cannot be assigned to a scratch variable.";
@@ -2935,8 +2937,8 @@ void SemanticAnalyser::visit(AssignVarStatement &assignment)
         type_mismatch_error = true;
       }
     } else if (storedTy.IsIntegerTy()) {
-      if (assignment.expr->is_literal) {
-        auto integer = static_cast<Integer *>(assignment.expr);
+      if (auto maybeIntegerPtr = std::get_if<Integer*>(&assignment.expr)) {
+        auto integer = *maybeIntegerPtr;
         if (!storedTy.IsEqual(assignTy)) {
           int64_t value = integer->n;
           bool can_fit = false;
@@ -3037,7 +3039,7 @@ void SemanticAnalyser::visit(AssignVarStatement &assignment)
 
   if (is_final_pass()) {
     if (storedTy.IsNoneTy())
-      LOG(ERROR, assignment.expr->loc, err_)
+      LOG(ERROR, exprLoc(assignment.expr), err_)
           << "Invalid expression for assignment: " << storedTy;
   }
 }
@@ -3599,7 +3601,7 @@ bool SemanticAnalyser::check_arg(const Call &call,
                                  bool want_literal,
                                  bool fail)
 {
-  auto &arg = *call.vargs.at(arg_num);
+  auto &arg = call.vargs.at(arg_num);
   if (want_literal && (!arg.is_literal || arg.type.GetTy() != type)) {
     if (fail) {
       LOG(ERROR, call.loc, err_)
@@ -3790,12 +3792,10 @@ void SemanticAnalyser::accept_statements(StatementList &stmts)
     visit(stmts.at(i));
     auto stmt = stmts.at(i);
 
-    if (is_final_pass()) {
-      auto *jump = dynamic_cast<Jump *>(stmt);
-      if (jump && i < (stmts.size() - 1)) {
-        LOG(WARNING, jump->loc, out_)
-            << "All code after a '" << opstr(*jump) << "' is unreachable.";
-      }
+    if (is_final_pass() && i < (stmts.size() - 1) && std::holds_alternative<Jump*>(stmt)) {
+      auto jump = *std::get_if<Jump*>(&stmt);
+      LOG(WARNING, jump->loc, out_)
+          << "All code after a '" << opstr(*jump) << "' is unreachable.";
     }
   }
 }
@@ -3944,17 +3944,18 @@ Pass CreateSemanticPass()
   return Pass("Semantic", fn);
 };
 
-Expression *SemanticAnalyser::dereference_if_needed(Expression *expr)
+ExpressionVariant SemanticAnalyser::dereference_if_needed(ExpressionVariant expr)
 {
-  visit(*expr);
-  if (expr->type.IsRefTy()) {
-    expr->type.IntoPointer();
-    const SizedType &ptr_type = expr->type;
-    Expression *ptr_expr = expr;
+  visit(expr);
+  auto typ = exprType(expr);
+  if (typ.IsRefTy()) {
+    typ.IntoPointer();
+    const SizedType &ptr_type = exprType(expr);
+    ExpressionVariant ptr_expr = expr;
 
     Unop *deref_expr = ctx_.make_node<Unop>(Operator::MUL,
                                             ptr_expr,
-                                            ptr_expr->loc);
+                                            exprLoc(ptr_expr));
     deref_expr->type = *ptr_type.GetPointeeTy();
     deref_expr->type.is_internal = ptr_type.is_internal;
     deref_expr->type.SetAS(ptr_type.GetAS());
