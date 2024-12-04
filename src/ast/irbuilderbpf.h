@@ -266,6 +266,11 @@ public:
                                llvm::Value *index,
                                AddrSpace as);
 
+  // Wrap a Value with a call to the intrinsic `preserve_static_offset`, which
+  // will ensure that LLVM does not apply certain basic optimizations. This is
+  // required for the context pointer, which cannot be modified.
+  llvm::Value *preserveStaticOffset(Value *ptr);
+
   StoreInst *createAlignedStore(Value *val, Value *ptr, unsigned align);
   // moves the insertion point to the start of the function you're inside,
   // invokes functor, then moves the insertion point back to its original
@@ -349,6 +354,7 @@ private:
                        const SizedType &type);
 
   std::map<std::string, StructType *> structs_;
+  Function *preserve_static_offset_ = nullptr;
 };
 
 } // namespace ast

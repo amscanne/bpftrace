@@ -1373,7 +1373,6 @@ Value *IRBuilderBPF::CreateUSDTReadArgument(Value *ctx,
                                             AddrSpace as,
                                             const location &loc)
 {
-  assert(ctx && ctx->getType() == GET_PTR_TY());
   // Argument size must be 1, 2, 4, or 8. See
   // https://sourceware.org/systemtap/wiki/UserSpaceProbeImplementation
   int abs_size = std::abs(argument->size);
@@ -2483,8 +2482,6 @@ Value *IRBuilderBPF::CreatKFuncArg(Value *ctx,
                                    SizedType &type,
                                    std::string &name)
 {
-  assert(type.IsIntTy() || type.IsPtrTy());
-  ctx = CreatePointerCast(ctx, getInt64Ty()->getPointerTo());
   Value *expr = CreateLoad(
       GetType(type),
       CreateGEP(getInt64Ty(), ctx, getInt64(type.funcarg_idx)),
@@ -2503,7 +2500,6 @@ Value *IRBuilderBPF::CreateRawTracepointArg(Value *ctx,
   int offset = atoi(builtin.substr(3).c_str());
   llvm::Type *type = getInt64Ty();
 
-  ctx = CreatePointerCast(ctx, type->getPointerTo());
   Value *expr = CreateLoad(type,
                            CreateGEP(type, ctx, getInt64(offset)),
                            builtin);
@@ -2564,12 +2560,11 @@ Value *IRBuilderBPF::CreateRegisterRead(Value *ctx,
   // Bitwidth of register values in struct pt_regs is the same as the kernel
   // pointer width on all supported architectures.
   llvm::Type *registerTy = getKernelPointerStorageTy();
-  Value *ctx_ptr = CreatePointerCast(ctx, registerTy->getPointerTo());
   // LLVM optimization is possible to transform `(uint64*)ctx` into
   // `(uint8*)ctx`, but sometimes this causes invalid context access.
   // Mark every context access to suppress any LLVM optimization.
   Value *result = CreateLoad(registerTy,
-                             CreateGEP(registerTy, ctx_ptr, getInt64(offset)),
+                             CreateGEP(registerTy, ctx, getInt64(offset)),
                              name);
   // LLVM 7.0 <= does not have CreateLoad(*Ty, *Ptr, isVolatile, Name),
   // so call setVolatile() manually
@@ -2805,6 +2800,15 @@ llvm::Value *IRBuilderBPF::CreatePtrOffset(const SizedType &type,
                          : type.GetSize();
 
   return CreateMul(index, getInt64(elem_size));
+}
+
+llvm::Value *IRBuilderBPF::preserveStaticOffset(llvm::Value *ptr)
+{
+  if (!preserve_static_offset_) {
+    preserve_static_offset_ = llvm::Intrinsic::getDeclaration(
+        &module_, llvm::Intrinsic::preserve_static_offset);
+  }
+  return CreateCall(preserve_static_offset_, ptr);
 }
 
 llvm::Type *IRBuilderBPF::getPointerStorageTy(AddrSpace as)
