@@ -22,7 +22,7 @@ bool ReturnPathAnalyser::visit(Subprog &subprog)
   if (subprog.return_type.IsVoidTy())
     return true;
 
-  for (Statement *stmt : subprog.stmts) {
+  for (StatementVariant stmt : subprog.stmts) {
     if (visit(*stmt))
       return true;
   }
@@ -38,7 +38,7 @@ bool ReturnPathAnalyser::visit(Jump &jump)
 bool ReturnPathAnalyser::visit(If &if_node)
 {
   bool result = false;
-  for (Statement *stmt : if_node.if_block->stmts) {
+  for (StatementVariant stmt : if_node.if_block->stmts) {
     if (visit(stmt))
       result = true;
   }
@@ -47,7 +47,7 @@ bool ReturnPathAnalyser::visit(If &if_node)
     return false;
   }
 
-  for (Statement *stmt : if_node.else_block->stmts) {
+  for (StatementVariant stmt : if_node.else_block->stmts) {
     if (visit(stmt)) {
       // both blocks have a return
       return true;

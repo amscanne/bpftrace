@@ -2274,7 +2274,7 @@ void SemanticAnalyser::visit(Jump &jump)
   switch (jump.ident) {
     case JumpType::RETURN:
       if (jump.return_value) {
-        jump.return_value = dereference_if_needed(jump.return_value);
+        jump.return_value = dereference_if_needed(*jump.return_value);
       }
       if (auto subprog = dynamic_cast<Subprog *>(top_level_node_)) {
         if ((subprog->return_type.IsVoidTy() !=
