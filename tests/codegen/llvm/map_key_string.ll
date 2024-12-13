@@ -34,6 +34,7 @@ entry:
   call void @llvm.memcpy.p0.p0.i64(ptr align 1 %2, ptr align 1 %str1, i64 2, i1 false)
   call void @llvm.lifetime.end.p0(i64 -1, ptr %str)
   call void @llvm.lifetime.end.p0(i64 -1, ptr %str1)
+  call void @llvm.lifetime.end.p0(i64 -1, ptr %tuple)
   call void @llvm.lifetime.start.p0(i64 -1, ptr %"@x_val")
   store i64 44, ptr %"@x_val", align 8
   %update_elem = call i64 inttoptr (i64 2 to ptr)(ptr @AT_x, ptr %tuple, ptr %"@x_val", i64 0)

@@ -27,6 +27,7 @@ entry:
   store i64 0, ptr %1, align 8
   %2 = ptrtoint ptr %1 to i64
   store i64 %2, ptr %"$a", align 8
+  call void @llvm.lifetime.end.p0(i64 -1, ptr %1)
   %3 = load i64, ptr %"$a", align 8
   %4 = inttoptr i64 %3 to ptr
   %5 = getelementptr [8 x i8], ptr %4, i32 0, i64 0

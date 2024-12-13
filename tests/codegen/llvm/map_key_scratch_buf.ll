@@ -61,6 +61,7 @@ lookup_merge:                                     ; preds = %lookup_failure, %lo
   %10 = load i64, ptr %8, align 8
   call void @llvm.lifetime.start.p0(i64 -1, ptr %str)
   store [5 x i8] c"yyyy\00", ptr %str, align 1
+  call void @llvm.lifetime.end.p0(i64 -1, ptr %str)
   %get_cpu_id7 = call i64 inttoptr (i64 8 to ptr)()
   %11 = load i64, ptr @max_cpu_id, align 8
   %cpu.id.bounded8 = and i64 %get_cpu_id7, %11
@@ -72,6 +73,9 @@ lookup_merge:                                     ; preds = %lookup_failure, %lo
 
 ; Function Attrs: nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
 declare void @llvm.lifetime.start.p0(i64 immarg %0, ptr nocapture %1) #1
+
+; Function Attrs: nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
+declare void @llvm.lifetime.end.p0(i64 immarg %0, ptr nocapture %1) #1
 
 attributes #0 = { nounwind }
 attributes #1 = { nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }

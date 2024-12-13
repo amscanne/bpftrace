@@ -28,6 +28,7 @@ entry:
   store i64 22, ptr %2, align 8
   %3 = getelementptr %int64_int64_int64__tuple_t, ptr %tuple, i32 0, i32 2
   store i64 33, ptr %3, align 8
+  call void @llvm.lifetime.end.p0(i64 -1, ptr %tuple)
   call void @llvm.lifetime.start.p0(i64 -1, ptr %"@x_val")
   store i64 44, ptr %"@x_val", align 8
   %update_elem = call i64 inttoptr (i64 2 to ptr)(ptr @AT_x, ptr %tuple, ptr %"@x_val", i64 0)

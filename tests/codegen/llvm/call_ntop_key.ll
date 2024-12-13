@@ -26,6 +26,7 @@ entry:
   %2 = getelementptr %inet, ptr %inet, i32 0, i32 1
   call void @llvm.memset.p0.i64(ptr align 1 %2, i8 0, i64 16, i1 false)
   store i32 -1, ptr %2, align 4
+  call void @llvm.lifetime.end.p0(i64 -1, ptr %inet)
   call void @llvm.lifetime.start.p0(i64 -1, ptr %"@x_val")
   store i64 1, ptr %"@x_val", align 8
   %update_elem = call i64 inttoptr (i64 2 to ptr)(ptr @AT_x, ptr %inet, ptr %"@x_val", i64 0)
