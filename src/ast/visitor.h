@@ -214,7 +214,7 @@ public:
                       var);
   }
   template <typename T>
-  R visit(std::vector<T> &var)
+  R visit(const std::vector<T> &var)
   {
     for (const auto &value : var) {
       _visit(value);
