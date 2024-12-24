@@ -40,7 +40,10 @@ class Node;
 #include "driver.h"
 #include "lexer.h"
 
-void yyerror(bpftrace::Driver &driver, const char *s);
+static void yyerror(bpftrace::Driver &driver, const char *s)
+{
+  driver.error(s);
+}
 %}
 
 %token

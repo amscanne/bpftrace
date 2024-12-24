@@ -28,6 +28,7 @@ public:
   void take_input(LogType type,
                   const std::optional<location>& loc,
                   std::ostream& out,
+                  bool colorize,
                   std::string&& input);
   inline void set_source(std::string_view filename, std::string_view source)
   {
@@ -66,6 +67,7 @@ private:
   void log_with_location(LogType,
                          const location&,
                          std::ostream&,
+                         bool colorize,
                          const std::string&);
   std::unordered_map<LogType, bool> enabled_map_;
 };
@@ -75,12 +77,12 @@ public:
   LogStream(const std::string& file,
             int line,
             LogType type,
-            std::ostream& out = std::cerr);
+            std::ostream* out = &std::cerr);
   LogStream(const std::string& file,
             int line,
             LogType type,
             const location& loc,
-            std::ostream& out = std::cerr);
+            std::ostream* out = &std::cerr);
   template <typename T>
   LogStream& operator<<(const T& v)
   {
@@ -97,6 +99,7 @@ protected:
   LogType type_;
   const std::optional<location> loc_;
   std::ostream& out_;
+  bool colorize_;
   std::string log_file_;
   int log_line_;
   std::ostringstream buf_;
@@ -107,14 +110,14 @@ public:
   LogStreamBug(const std::string& file,
                int line,
                __attribute__((unused)) LogType,
-               std::ostream& out = std::cerr)
-      : LogStream(file, line, LogType::BUG, out){};
+               std::ostream* out = &std::cerr)
+      : LogStream(file, line, LogType::BUG, out) {};
   LogStreamBug(const std::string& file,
                int line,
                __attribute__((unused)) LogType,
                const location& loc,
-               std::ostream& out = std::cerr)
-      : LogStream(file, line, LogType::BUG, loc, out){};
+               std::ostream* out = &std::cerr)
+      : LogStream(file, line, LogType::BUG, loc, out) {};
   [[noreturn]] ~LogStreamBug();
 };
 

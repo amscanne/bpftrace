@@ -1,18 +1,33 @@
 #include "log.h"
 
+#include <unistd.h>
+
 namespace bpftrace {
 
-std::string logtype_str(LogType t)
+std::string logtype_str(LogType t, bool colorize)
 {
-  switch (t) {
-    // clang-format off
-    case LogType::DEBUG   : return "";
-    case LogType::V1      : return "";
-    case LogType::HINT    : return "HINT: ";
-    case LogType::WARNING : return "WARNING: ";
-    case LogType::ERROR   : return "ERROR: ";
-    case LogType::BUG     : return "BUG: ";
-      // clang-format on
+  if (colorize) {
+    switch (t) {
+        // clang-format off
+      case LogType::DEBUG   : return "";
+      case LogType::V1      : return "";
+      case LogType::HINT    : return "\033[33mHINT:\033[0m ";
+      case LogType::WARNING : return "\033[34mWARNING:\033[0m ";
+      case LogType::ERROR   : return "\033[31mERROR:\033[0m ";
+      case LogType::BUG     : return "\033[31mBUG:\033[0m ";
+        // clang-format on
+    }
+  } else {
+    switch (t) {
+        // clang-format off
+      case LogType::DEBUG   : return "";
+      case LogType::V1      : return "";
+      case LogType::HINT    : return "HINT: ";
+      case LogType::WARNING : return "WARNING: ";
+      case LogType::ERROR   : return "ERROR: ";
+      case LogType::BUG     : return "BUG: ";
+        // clang-format on
+    }
   }
 
   return {}; // unreached
@@ -37,9 +52,12 @@ Log& Log::get()
 void Log::take_input(LogType type,
                      const std::optional<location>& loc,
                      std::ostream& out,
+                     bool colorize,
                      std::string&& input)
 {
-  auto print_out = [&]() { out << logtype_str(type) << input << std::endl; };
+  auto print_out = [&]() {
+    out << logtype_str(type, colorize) << input << std::endl;
+  };
 
   if (loc) {
     if (src_.empty()) {
@@ -54,7 +72,7 @@ void Log::take_input(LogType type,
                 << std::endl;
       print_out();
     } else {
-      log_with_location(type, loc.value(), out, input);
+      log_with_location(type, loc.value(), out, colorize, input);
     }
   } else {
     print_out();
@@ -80,6 +98,7 @@ const std::string Log::get_source_line(unsigned int n)
 void Log::log_with_location(LogType type,
                             const location& l,
                             std::ostream& out,
+                            bool colorize,
                             const std::string& m)
 {
   if (filename_.size()) {
@@ -87,7 +106,7 @@ void Log::log_with_location(LogType type,
   }
 
   std::string msg(m);
-  const std::string& typestr = logtype_str(type);
+  const std::string& typestr = logtype_str(type, colorize);
 
   if (!msg.empty() && msg.back() == '\n') {
     msg.pop_back();
@@ -147,14 +166,27 @@ void Log::log_with_location(LogType type,
   out << std::endl;
 }
 
+static bool shouldColorize(std::ostream* out)
+{
+  // As a special case, if we are emitting to std::cerr (implementation-defined
+  // wrapping of the stderr FILE* stream) and this is connected to a terminal
+  // then we emit colors. Note that the user could pass a construct separately
+  // that points to stderr, but anything outside the default constructor we
+  // will just emit the strings without the control codes.
+  std::cerr << "cerr == " << reinterpret_cast<long>(&std::cerr) << "\n";
+  std::cerr << "out == " << reinterpret_cast<long>(out) << "\n";
+  return true; // (&out == &cerr) && isatty(fileno(stderr));
+}
+
 LogStream::LogStream(const std::string& file,
                      int line,
                      LogType type,
-                     std::ostream& out)
+                     std::ostream* out)
     : sink_(Log::get()),
       type_(type),
       loc_(std::nullopt),
-      out_(out),
+      out_(*out),
+      colorize_(shouldColorize(out)),
       log_file_(file),
       log_line_(line)
 {
@@ -164,11 +196,12 @@ LogStream::LogStream(const std::string& file,
                      int line,
                      LogType type,
                      const location& loc,
-                     std::ostream& out)
+                     std::ostream* out)
     : sink_(Log::get()),
       type_(type),
       loc_(loc),
-      out_(out),
+      out_(*out),
+      colorize_(shouldColorize(out)),
       log_file_(file),
       log_line_(line)
 {
@@ -191,7 +224,7 @@ LogStream::~LogStream()
     if (type_ == LogType::DEBUG)
       msg = internal_location() + msg;
 
-    sink_.take_input(type_, loc_, out_, std::move(msg));
+    sink_.take_input(type_, loc_, out_, colorize_, std::move(msg));
   }
 }
 
@@ -204,7 +237,8 @@ std::string LogStream::internal_location()
 
 [[noreturn]] LogStreamBug::~LogStreamBug()
 {
-  sink_.take_input(type_, loc_, out_, internal_location() + buf_.str());
+  sink_.take_input(
+      type_, loc_, out_, colorize_, internal_location() + buf_.str());
   abort();
 }
 
