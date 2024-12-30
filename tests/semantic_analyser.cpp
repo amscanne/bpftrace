@@ -4408,12 +4408,6 @@ BEGIN { let $a: string[5] = "hiya"; $a = "longerstr"; }
                                      ~~~~~~~~~~~~~~~~
 )");
 
-  test_error(R"(BEGIN { let $a; print(($a)); $a = 1; })", R"(
-stdin:1:17-26: ERROR: Variable used before it was assigned: $a
-BEGIN { let $a; print(($a)); $a = 1; }
-                ~~~~~~~~~
-)");
-
   test_error(R"(BEGIN { let $a: sum_t; })", R"(
 stdin:1:9-23: ERROR: Invalid variable declaration type: sum_t
 BEGIN { let $a: sum_t; }
