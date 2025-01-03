@@ -832,6 +832,10 @@ void CodegenLLVM::visit(Call &call)
       auto &arg = *call.vargs.at(1);
       auto scoped_del = accept(&arg);
 
+      // Note that this may be a literal (presumably to extend the size of the
+      // buffer), but as of f026198df5d9023225e4a7a15840010e4a2af46a this size
+      // is capped by the semantic analyzer anyways. So effectively, this same
+      // check will always exist and we would expect a constant to be folded.
       Value *proposed_length = expr_;
       if (arg.type.GetSize() != 8)
         proposed_length = b_.CreateZExt(proposed_length, max_length->getType());
@@ -839,10 +843,6 @@ void CodegenLLVM::visit(Call &call)
           CmpInst::ICMP_ULE, proposed_length, max_length, "length.cmp");
       length = b_.CreateSelect(
           cmp, proposed_length, max_length, "length.select");
-
-      auto literal_length = bpftrace_.get_int_literal(&arg);
-      if (literal_length)
-        fixed_buffer_length = *literal_length;
     } else {
       auto &arg = *call.vargs.at(0);
       fixed_buffer_length = arg.type.GetNumElements() *
