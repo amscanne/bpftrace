@@ -118,16 +118,21 @@ class PositionalParameter : public Expression {
 public:
   DEFINE_ACCEPT
 
-  explicit PositionalParameter(PositionalParameterType ptype,
-                               long n,
-                               location loc);
-
-  PositionalParameterType ptype;
+  explicit PositionalParameter(long n, location loc);
   long n;
-  bool is_in_str = false;
 
 private:
   PositionalParameter(const PositionalParameter &other) = default;
+};
+
+class CountParameter : public Expression {
+public:
+  DEFINE_ACCEPT
+
+  explicit CountParameter(location loc);
+
+private:
+  CountParameter(const CountParameter &other) = default;
 };
 
 class String : public Expression {

@@ -1983,55 +1983,6 @@ void BPFtrace::sort_by_key(
   }
 }
 
-std::string BPFtrace::get_string_literal(const ast::Expression *expr) const
-{
-  if (expr->is_literal) {
-    if (auto *string = dynamic_cast<const ast::String *>(expr))
-      return string->str;
-    else if (auto *str_call = dynamic_cast<const ast::Call *>(expr)) {
-      // Positional parameters in the form str($1) can be used as literals
-      if (str_call->func == "str") {
-        if (auto *pos_param = dynamic_cast<const ast::PositionalParameter *>(
-                str_call->vargs.at(0)))
-          return get_param(pos_param->n, true);
-      }
-    }
-  }
-
-  LOG(ERROR) << "Expected string literal, got " << expr->type;
-  return "";
-}
-
-std::optional<int64_t> BPFtrace::get_int_literal(
-    const ast::Expression *expr) const
-{
-  if (expr->is_literal) {
-    if (auto *integer = dynamic_cast<const ast::Integer *>(expr))
-      return integer->n;
-    else if (auto *pos_param = dynamic_cast<const ast::PositionalParameter *>(
-                 expr)) {
-      if (pos_param->ptype == PositionalParameterType::positional) {
-        auto param_str = get_param(pos_param->n, false);
-        auto param_int = get_int_from_str(param_str);
-        if (!param_int.has_value()) {
-          LOG(ERROR, pos_param->loc)
-              << "$" << pos_param->n << " used numerically but given \""
-              << param_str << "\"";
-          return std::nullopt;
-        }
-        if (std::holds_alternative<int64_t>(*param_int)) {
-          return std::get<int64_t>(*param_int);
-        } else {
-          return static_cast<int64_t>(std::get<uint64_t>(*param_int));
-        }
-      } else
-        return static_cast<int64_t>(num_params());
-    }
-  }
-
-  return std::nullopt;
-}
-
 const FuncsModulesMap &BPFtrace::get_traceable_funcs() const
 {
   if (traceable_funcs_.empty())

@@ -1383,10 +1383,11 @@ void CodegenLLVM::visit(Call &call)
   } else if (call.func == "strerror") {
     auto scoped_del = accept(call.vargs.front());
   } else if (call.func == "strncmp") {
-    auto size_opt = bpftrace_.get_int_literal(call.vargs.at(2));
-    if (!size_opt.has_value())
+    auto size = dynamic_cast<Integer*>(call.vargs.at(2));
+    if (size == nullptr)
       LOG(BUG) << "Int literal should have been checked in semantic analysis";
-    uint64_t size = static_cast<uint64_t>(*size_opt);
+
+    uint64_t size = static_cast<uint64_t>(size->n);
     const auto &left_arg = call.vargs.at(0);
     const auto &right_arg = call.vargs.at(1);
 

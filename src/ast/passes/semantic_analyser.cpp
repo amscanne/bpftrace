@@ -872,10 +872,8 @@ void SemanticAnalyser::visit(Call &call)
       auto strlen = bpftrace_.config_.get(ConfigKeyInt::max_strlen);
 
       if (call.vargs.size() == 2 && check_arg(call, Type::integer, 1, false)) {
-        auto &size_arg = *call.vargs.at(1);
-        if (size_arg.is_literal) {
-          auto &integer = static_cast<Integer &>(size_arg);
-          long value = integer.n;
+        if (auto size_arg = dynamic_cast<Integer*>(call.vargs.at(1))) {
+          long value = size_arg->n;
           if (value < 0) {
             if (is_final_pass())
               LOG(ERROR, call.loc, err_)
@@ -913,7 +911,6 @@ void SemanticAnalyser::visit(Call &call)
       // Required for cases like strncmp(str($1), str(2), 4))
       call.type.SetAS(AddrSpace::kernel);
     }
-    has_pos_param_ = false;
   } else if (call.func == "buf") {
     const uint64_t max_strlen = bpftrace_.config_.get(ConfigKeyInt::max_strlen);
     if (max_strlen >

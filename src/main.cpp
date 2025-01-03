@@ -424,6 +424,7 @@ static void parse_env(BPFtrace& bpftrace)
 ast::PassManager CreateDynamicPM()
 {
   ast::PassManager pm;
+  pm.AddPass(ast::CreateFoldConstantsPass());
   pm.AddPass(ast::CreateConfigPass());
   pm.AddPass(ast::CreateSemanticPass());
   pm.AddPass(ast::CreateCounterPass());
@@ -436,8 +437,14 @@ ast::PassManager CreateDynamicPM()
 ast::PassManager CreateAotPM()
 {
   ast::PassManager pm;
-  pm.AddPass(ast::CreateSemanticPass());
+
+  // Inlining passes will currently resolve all positional parameters, so the
+  // portability pass must be the first pass done to ensure that none of these
+  // features are used. The configuration is not serialized and therefore
+  // cannot currently be used for ahead-of-time compilation.
   pm.AddPass(ast::CreatePortabilityPass());
+  pm.AddPass(ast::CreateFoldConstantsPass());
+  pm.AddPass(ast::CreateSemanticPass());
   pm.AddPass(ast::CreateResourcePass());
   pm.AddPass(ast::CreateReturnPathPass());
 

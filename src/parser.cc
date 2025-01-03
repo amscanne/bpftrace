@@ -1,48 +1,3 @@
-%skeleton "lalr1.cc"
-%require "3.0.4"
-%defines
-%define api.namespace { bpftrace }
-// Pretend like the following %define is uncommented. We set the actual
-// definition from cmake to handle older versions of bison.
-// %define api.parser.class { Parser }
-%define api.token.constructor
-%define api.value.type variant
-%define define_location_comparison
-%define parse.assert
-%define parse.trace
-%expect 5
-
-%define parse.error verbose
-
-%param { bpftrace::Driver &driver }
-%param { void *yyscanner }
-%locations
-
-// Forward declarations of classes referenced in the parser
-%code requires
-{
-#include <cstdint>
-#include <limits>
-#include <regex>
-
-namespace bpftrace {
-class Driver;
-namespace ast {
-class Node;
-} // namespace ast
-} // namespace bpftrace
-#include "ast/ast.h"
-}
-
-%{
-#include <iostream>
-
-#include "driver.h"
-#include "lexer.h"
-
-void yyerror(bpftrace::Driver &driver, const char *s);
-%}
-
 %token
   END 0      "end of file"
   COLON      ":"
@@ -140,14 +95,13 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %type <ast::Offsetof *> offsetof_expr
 %type <ast::Expression *> and_expr addi_expr primary_expr cast_expr conditional_expr equality_expr expr logical_and_expr muli_expr
 %type <ast::Expression *> logical_or_expr map_or_var or_expr postfix_expr relational_expr shift_expr tuple_access_expr unary_expr xor_expr
-%type <ast::Expression *> param
 %type <ast::ExpressionList> vargs
 %type <ast::Subprog *> subprog
 %type <ast::SubprogArg *> subprog_arg
 %type <ast::SubprogArgList> subprog_args
 %type <ast::Integer *> int
 %type <ast::Map *> map
-%type <ast::PositionalParameter *> param_value
+%type <ast::PositionalParameter *> param
 %type <ast::Predicate *> pred
 %type <ast::Probe *> probe
 %type <std::pair<ast::ProbeList, ast::SubprogList>> probes_and_subprogs
@@ -363,8 +317,13 @@ attach_point_def:
         |       attach_point_def MUL      { $$ = $1 + "*"; }
         |       attach_point_def LBRACKET { $$ = $1 + "["; }
         |       attach_point_def RBRACKET { $$ = $1 + "]"; }
-        |       attach_point_def param_value
+        |       attach_point_def param
                 {
+                  if ($2->ptype != PositionalParameterType::positional)
+                  {
+                    error(@$, "Not a positional parameter");
+                    YYERROR;
+                  }
                   // "Un-parse" the positional parameter back into text so
                   // we can give it to the AttachPointParser. This is kind of
                   // a hack but there doesn't look to be any other way.
@@ -380,22 +339,18 @@ pred:
 
 
 param:
-                param_value { $$ = $1; }
-        |       PARAMCOUNT  { $$ = driver.ctx.make_node<ast::CountParameter>(@$); }
-                ;
-
-param_value:
                 PARAM {
                         try {
                           long n = std::stol($1.substr(1, $1.size()-1));
                           if (n == 0) throw std::exception();
-                          $$ = driver.ctx.make_node<ast::PositionalParameter>(n, @$);
+                          $$ = driver.ctx.make_node<ast::PositionalParameter>(PositionalParameterType::positional, n, @$);
                         } catch (std::exception const& e) {
                           error(@1, "param " + $1 + " is out of integer range [1, " +
                                 std::to_string(std::numeric_limits<long>::max()) + "]");
                           YYERROR;
                         }
                       }
+        |       PARAMCOUNT { $$ = driver.ctx.make_node<ast::PositionalParameter>(PositionalParameterType::count, 0, @$); }
                 ;
 
 /*
@@ -437,9 +392,9 @@ jump_stmt:
                 ;
 
 loop_stmt:
-                UNROLL "(" int ")" block   { $$ = driver.ctx.make_node<ast::Unroll>($3, driver.ctx.make_node<ast::Block>(std::move($5)), @1 + @4); }
-        |       UNROLL "(" param ")" block { $$ = driver.ctx.make_node<ast::Unroll>($3, driver.ctx.make_node<ast::Block>(std::move($5)), @1 + @4); }
-        |       WHILE  "(" expr ")" block  { $$ = driver.ctx.make_node<ast::While>($3, driver.ctx.make_node<ast::Block>(std::move($5)), @1); }
+                UNROLL "(" int ")" block             { $$ = driver.ctx.make_node<ast::Unroll>($3, driver.ctx.make_node<ast::Block>(std::move($5)), @1 + @4); }
+        |       UNROLL "(" param ")" block           { $$ = driver.ctx.make_node<ast::Unroll>($3, driver.ctx.make_node<ast::Block>(std::move($5)), @1 + @4); }
+        |       WHILE  "(" expr ")" block            { $$ = driver.ctx.make_node<ast::While>($3, driver.ctx.make_node<ast::Block>(std::move($5)), @1); }
                 ;
 
 for_stmt:
@@ -481,6 +436,60 @@ var_decl_stmt:
                  LET var {  $$ = driver.ctx.make_node<ast::VarDeclStatement>($2, @$); }
         |        LET var COLON type {  $$ = driver.ctx.make_node<ast::VarDeclStatement>($2, $4, @$); }
         ;
+
+template <typename Token, typename Func>
+struct AlternatingTypes {
+    using First = T1;
+    using Second = T2;
+    using Rest = AlternatingTypes<Ts...>; 
+};
+
+class Parser {
+  struct Spec {
+    Token token;
+    void  (Parser::*method)(const std::string&);
+  };
+
+  bool parse() {
+    return false; // Parse error.
+  }
+
+  template <typename T, typename ...Ts>
+  bool parse(const T arg, const T ...args) {
+    if (lexer.token() == arg.token)
+      (this.*arg.method)(lexer.value());
+    return parse(args...);
+  }
+
+  parseProgram() {
+    parse(Spec {
+      }, Spec {
+      },
+    );
+template <typename T1, typename T2>
+struct AlternatingTypes<T1, T2> {
+    using First = T1;
+    using Second = T2;
+};
+
+  template <typename... Ts>
+  void (void(Parser::*method)(std::string&)) {
+
+    // Access the first and second types
+    using FirstType = typename AlternatingTypes<Ts...>::First;
+    using SecondType = typename AlternatingTypes<Ts...>::Second;
+
+    // Do something with the types
+    std::cout << typeid(FirstType).name() << std::endl;
+    std::cout << typeid(SecondType).name() << std::endl;
+
+    // Recursively process the rest of the types
+    if constexpr (sizeof...(Ts) > 2) {
+        printAlternating(std::get<2>(std::forward_as_tuple(args...))...);
+    }
+
+maybeParse<
+    Token::identifier,
 
 primary_expr:
                 IDENT              { $$ = driver.ctx.make_node<ast::Identifier>($1, @$); }

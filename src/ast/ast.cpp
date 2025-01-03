@@ -19,6 +19,7 @@ MAKE_ACCEPT(StackMode)
 MAKE_ACCEPT(Builtin)
 MAKE_ACCEPT(Identifier)
 MAKE_ACCEPT(PositionalParameter)
+MAKE_ACCEPT(CountParameter)
 MAKE_ACCEPT(Call)
 MAKE_ACCEPT(Sizeof)
 MAKE_ACCEPT(Offsetof)
@@ -79,10 +80,14 @@ Identifier::Identifier(const std::string &ident, location loc)
 {
 }
 
-PositionalParameter::PositionalParameter(PositionalParameterType ptype,
-                                         long n,
-                                         location loc)
-    : Expression(loc), ptype(ptype), n(n)
+PositionalParameter::PositionalParameter(long n, location loc)
+    : Expression(loc), n(n)
+{
+  is_literal = true;
+}
+
+CountParameter::CountParameter(location loc)
+    : Expression(loc)
 {
   is_literal = true;
 }
