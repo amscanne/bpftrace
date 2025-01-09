@@ -115,7 +115,7 @@ int fuzz_main(const char* data, size_t sz)
     return 1;
 
   // Field Analyzer
-  ast::FieldAnalyser fields(driver.root.get(), bpftrace, devnull);
+  ast::FieldAnalyser fields(driver.ctx, bpftrace, devnull);
   err = fields.analyse();
   if (err)
     return err;

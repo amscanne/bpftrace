@@ -38,7 +38,7 @@ static auto parse_probe(const std::string &str,
   Driver driver(bpftrace);
   ASSERT_EQ(driver.parse_str(str), 0);
 
-  ast::FieldAnalyser fields(driver.ctx.root, bpftrace);
+  ast::FieldAnalyser fields(driver.ctx, bpftrace);
   ASSERT_EQ(fields.analyse(), 0);
 
   ClangParser clang;

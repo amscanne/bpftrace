@@ -2283,13 +2283,13 @@ void SemanticAnalyser::visit(Jump &jump)
         Visit(jump.return_value);
       }
       if (auto subprog = dynamic_cast<Subprog *>(top_level_node_)) {
-        if ((subprog->return_type->resolved.IsVoidTy() !=
+        if ((subprog->return_type->type.IsVoidTy() !=
              (jump.return_value == nullptr)) ||
             (jump.return_value &&
-             jump.return_value->type != subprog->return_type->resolved)) {
+             jump.return_value->type != subprog->return_type->type)) {
           LOG(ERROR, jump.loc, err_)
               << "Function " << subprog->name() << " is of type "
-              << subprog->return_type->resolved << ", cannot return "
+              << subprog->return_type->type << ", cannot return "
               << (jump.return_value ? jump.return_value->type : CreateVoid());
         }
       }
@@ -3435,7 +3435,7 @@ void SemanticAnalyser::visit(Subprog &subprog)
   top_level_node_ = &subprog;
   for (SubprogArg *arg : subprog.args) {
     variables_[scope_stack_.back()].insert({ arg->name(),
-                                             { .type = arg->spec->resolved,
+                                             { .type = arg->spec->type,
                                                .can_resize = true,
                                                .was_assigned = true } });
   }

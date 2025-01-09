@@ -104,7 +104,7 @@ find_package(FLEX REQUIRED)
 # But `api.parser.class` is not supported in bison < 3.3. So we must inject
 # the %define based on the bison version here.
 if(${BISON_VERSION} VERSION_GREATER_EQUAL 3.3)
-  set(BISON_FLAGS "-Dapi.parser.class={Parser}")
+  set(BISON_FLAGS "-Dapi.parser.class={Parser} -Wcounterexamples")
 else()
   set(BISON_FLAGS "-Dparser_class_name={Parser}")
 endif()

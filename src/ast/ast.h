@@ -78,16 +78,15 @@ public:
   location loc;
 };
 
-class TypeSpec : public Node {
+class TypeSpec : public Expression {
 public:
   TypeSpec() = default;
   TypeSpec(location loc) : Node(loc){};
   virtual ~TypeSpec() = default;
 
-  // The resolved type should be set for all TypeSpec nodes during the field
-  // analyzer phase. If there is no spec provided, then the standard semantic
-  // anlayzer passes need to do that job.
-  SizedType resolved;
+  // Note that each TypeSpec is an expression, and therefore carries a type.
+  // Once it is resolved, the type field will be set on the spec. This can be
+  // used as with any other expression.
 };
 
 class PointerTypeSpec : public TypeSpec {
@@ -253,10 +252,8 @@ class Sizeof : public Expression {
 public:
   DEFINE_ACCEPT
 
-  Sizeof(TypeSpec *spec, location loc);
   Sizeof(Expression *expr, location loc);
 
-  TypeSpec *spec = nullptr;
   Expression *expr = nullptr;
   SizedType argtype;
 
@@ -268,10 +265,8 @@ class Offsetof : public Expression {
 public:
   DEFINE_ACCEPT
 
-  Offsetof(TypeSpec *spec, std::string &field, location loc);
   Offsetof(Expression *expr, std::string &field, location loc);
 
-  TypeSpec *spec = nullptr;
   Expression *expr = nullptr;
   SizedType record;
   std::string field;

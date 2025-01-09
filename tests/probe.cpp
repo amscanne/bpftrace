@@ -26,7 +26,7 @@ void gen_bytecode(const std::string &input, std::stringstream &out)
 
   ASSERT_EQ(driver.parse_str(input), 0);
 
-  ast::FieldAnalyser fields(driver.ctx.root, *bpftrace);
+  ast::FieldAnalyser fields(driver.ctx, *bpftrace);
   EXPECT_EQ(fields.analyse(), 0);
 
   ClangParser clang;

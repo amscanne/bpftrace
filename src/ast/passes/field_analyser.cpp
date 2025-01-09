@@ -13,8 +13,7 @@ namespace bpftrace::ast {
 void FieldAnalyser::visit(PointerTypeSpec &ty)
 {
   Visit(*ty.elem);
-  ty.resolved = CreatePointer(ty.resolved);
-  return;
+  ty.type = CreatePointer(ty.elem->type);
 }
 
 void FieldAnalyser::visit(ArrayTypeSpec &ty)
@@ -22,30 +21,29 @@ void FieldAnalyser::visit(ArrayTypeSpec &ty)
   auto elem = dynamic_cast<NamedTypeSpec *>(ty.elem);
   if (elem == nullptr) {
     Visit(*ty.elem);
-    ty.resolved = CreateArray(ty.count, ty.resolved);
+    ty.type = CreateArray(ty.count, ty.typ.elem->type);
   } else {
     // Array types are only legal for integer types, and have special meaning
     // with a small set of builtins.
     if (elem->name == "string") {
-      ty.resolved = CreateString(ty.count);
+      ty.type = CreateString(ty.count);
     } else if (elem->name == "inet") {
-      ty.resolved = CreateInet(ty.count);
+      ty.type = CreateInet(ty.count);
     } else if (elem->name == "buffer") {
-      ty.resolved = CreateBuffer(ty.count);
+      ty.type = CreateBuffer(ty.count);
     } else {
       Visit(*ty.elem);
-      if (!ty.elem->resolved.IsIntTy()) {
+      if (!ty.elem->type.IsIntTy()) {
         LOG(ERROR, ty.loc, err_) << "only integer array types are permitted";
-        ty.resolved = CreateNone();
+        ty.type = CreateNone();
       } else {
-        ty.resolved = CreateArray(ty.count, ty.elem->resolved);
+        ty.type = CreateArray(ty.count, ty.elem->type);
       }
     }
   }
 }
 
-void FieldAnalyser::visit(NamedTypeSpec &ty)
-{
+static std::optional<SizedType> nameToType(ASTContext &ctx, std::string &name) {
   static std::unordered_map<std::string, SizedType> type_map = {
     { "bool", CreateBool() },
     { "uint8", CreateUInt(8) },
@@ -74,22 +72,32 @@ void FieldAnalyser::visit(NamedTypeSpec &ty)
     { "cgroup_path_t", CreateCgroupPath() },
     { "strerror_t", CreateStrerror() },
   };
-  if (type_map.find(ty.name) != type_map.end()) {
-    ty.resolved = type_map[ty.name];
-  } else if (ty.name == "string") {
-    ty.resolved = CreateString(0);
-  } else if (ty.name == "inet") {
-    ty.resolved = CreateInet(0);
-  } else if (ty.name == "buffer") {
-    ty.resolved = CreateBuffer(0);
+  if (type_map.find(name) != type_map.end()) {
+    return type_map[name];
+  } else if (name == "string") {
+    return CreateString(0);
+  } else if (name == "inet") {
+    return CreateInet(0);
+  } else if (name == "buffer") {
+    return CreateBuffer(0);
+  }
+  return std::nullopt;
+}
+
+void FieldAnalyser::visit(NamedTypeSpec &ty)
+{
+  auto maybeType = nameToType(ctx, ty.name);
+  if (maybeType) {
+    ty.type = *maybeType;
   } else {
-    ty.resolved = CreateNone();
+    ty.type = CreateNone();
   }
 }
 
 void FieldAnalyser::visit(StructTypeSpec &ty)
 {
-  ty.resolved = CreateRecord(ty.name, std::weak_ptr<Struct>());
+  ty.type = CreateRecord(ty.name, std::weak_ptr<Struct>());
+  resolve_type(ty.type);
 }
 
 void FieldAnalyser::visit(Identifier &identifier)
@@ -205,42 +213,53 @@ void FieldAnalyser::visit(Cast &cast)
 {
   Visit(*cast.spec);
   Visit(*cast.expr);
-  resolve_type(cast.spec->resolved);
-  cast.type = cast.spec->resolved;
+  cast.type = cast.spec->type;
+}
+
+static Expression *maybeConvertToTypeSpec(ASTContext& ctx, const Expression *expr)
+{
+  // If it is an array then it could be a type expression. We check to see if
+  // this resolves, and then convert to a suitable type spec.
+  if (auto arr = dynamic_cast<ArrayAccess*>(expr)) {
+    if ((auto index = dynamic_cast<Integer*>(arr->indexpr)) && !index->is_negative) {
+      auto sub = maybeConvertToTypeSpec(expr);
+      if (auto ts = dynamic_cast<TypeSpec*>(sub)) {
+        return ctx.make_node<ArrayTypeSpec>(ctx_index->n, sub);
+      }
+    }
+  }
+  if (auto id = dynamic_cast<Identifier*>(expr)) {
+    auto maybeType = nameToType(ctx, id->ident);
+    if (maybeType) {
+      return ctx.make_node<NamedTypeSpec>(id->ident);
+    }
+  }
+  return expr; // Leave the expression alone.
 }
 
 void FieldAnalyser::visit(Sizeof &szof)
 {
-  if (szof.expr) {
-    Visit(*szof.expr);
-    szof.argtype = szof.expr->type;
-  }
-  if (szof.spec) {
-    Visit(*szof.spec);
-    resolve_type(szof.spec->resolved);
-    szof.argtype = szof.spec->resolved;
-  }
+  // If this is an expression, then we can attempt to convert to a TypeSpec in
+  // order to evaluate. This is context-sensitive, so can't be done by the
+  // parser directly. This is also true for Offsetof, below.
+  szof.expr = maybeConvertToTypeSpec(ctx_, szof.expr);
+  Visit(*szof.expr);
+  szof.argtype = szof.expr->type;
 }
 
 void FieldAnalyser::visit(Offsetof &ofof)
 {
-  if (ofof.expr) {
-    Visit(*ofof.expr);
-    ofof.record = ofof.expr->type;
-  }
-  if (ofof.spec) {
-    Visit(*ofof.spec);
-    resolve_type(ofof.spec->resolved);
-    ofof.record = ofof.spec->resolved;
-  }
+  // See above.
+  ofof.expr = maybeConvertToTypeSpec(ctx_, szof.expr);
+  Visit(*ofof.expr);
+  ofof.record = ofof.expr->type;
 }
 
 void FieldAnalyser::visit(VarDeclStatement &decl)
 {
   if (decl.spec) {
     Visit(*decl.spec);
-    resolve_type(decl.spec->resolved);
-    decl.var->type = decl.spec->resolved;
+    decl.var->type = decl.spec->type;
   }
 }
 
@@ -426,7 +445,6 @@ void FieldAnalyser::visit(Probe &probe)
 void FieldAnalyser::visit(SubprogArg &arg)
 {
   Visit(*arg.spec);
-  resolve_type(arg.spec->resolved);
 }
 
 void FieldAnalyser::visit(Subprog &subprog)
@@ -444,7 +462,7 @@ void FieldAnalyser::visit(Subprog &subprog)
 
 int FieldAnalyser::analyse()
 {
-  Visit(*root_);
+  Visit(*ctx_.root);
 
   std::string errors = err_.str();
   if (!errors.empty()) {

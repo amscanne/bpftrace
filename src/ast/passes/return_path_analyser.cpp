@@ -19,7 +19,7 @@ bool ReturnPathAnalyser::visit(Program &prog)
 
 bool ReturnPathAnalyser::visit(Subprog &subprog)
 {
-  if (subprog.return_type->resolved.IsVoidTy())
+  if (subprog.return_type->type.IsVoidTy())
     return true;
 
   for (Statement *stmt : subprog.stmts) {

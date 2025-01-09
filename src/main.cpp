@@ -357,7 +357,7 @@ static void parse_env(BPFtrace& bpftrace)
 
   bpftrace.parse_btf(driver.list_modules());
 
-  ast::FieldAnalyser fields(driver.ctx.root, bpftrace);
+  ast::FieldAnalyser fields(driver.ctx, bpftrace);
   err = fields.analyse();
   if (err)
     return {};

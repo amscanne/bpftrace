@@ -10,14 +10,7 @@
 %define define_location_comparison
 %define parse.assert
 %define parse.trace
-// The reduce/reduce conflicts are unavoidable coming from `sizeof` and
-// `offsetof`, where the names can't be determined to be types or full
-// expressions up front. The reduce rule will default to use first one
-// (treating as a type), and the user could wrap identifiers in other
-// expressions (just more parens) if necessary.
-%glr-parser
 %expect 4
-%expect-rr 3
 
 %define parse.error verbose
 
@@ -147,6 +140,7 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %type <ast::Offsetof *> offsetof_expr
 %type <ast::Expression *> and_expr addi_expr primary_expr cast_expr conditional_expr equality_expr expr logical_and_expr muli_expr
 %type <ast::Expression *> logical_or_expr map_or_var or_expr postfix_expr relational_expr shift_expr tuple_access_expr unary_expr xor_expr
+%type <ast::Expression *> type_or_expr
 %type <ast::ExpressionList> vargs
 %type <ast::Subprog *> subprog
 %type <ast::SubprogArg *> subprog_arg
@@ -161,7 +155,7 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %type <ast::Statement *> assign_stmt block_stmt expr_stmt if_stmt jump_stmt loop_stmt config_assign_stmt for_stmt
 %type <ast::VarDeclStatement *> var_decl_stmt
 %type <ast::StatementList> block block_or_if stmt_list config_block config_assign_stmt_list
-%type <ast::TypeSpec *> type_expr
+%type <ast::TypeSpec *> type_expr strict_type_expr
 %type <ast::Variable *> var
 
 
@@ -198,12 +192,31 @@ c_definitions:
         |       %empty                           { $$ = std::string(); }
                 ;
 
+/*
+ * A `type_expr` is ambiguous with respect to an `expr`, because naked
+ * identifiers can resolve to either builtins or types. It is rare that
+ * something needs to resolve to either a type or an expression, but this is
+ * the case with `offsetof` and `sizeof`. To handle these cases, there is the
+ * special `type_or_expr` which will evalute to an expression in the cases of
+ * ambiguity. The AST passes (currently the FieldAnalyser) will then convert
+ * these cases to types, *if* there is a valid type interpretation. The
+ * `type_or_expr` should only be used in these narrow cases.
+ */
 type_expr:
-                IDENT { $$ = driver.ctx.make_node<ast::NamedTypeSpec>($1, @$); }
+                IDENT                 { $$ = driver.ctx.make_node<ast::NamedTypeSpec>($1, @$); }
         |       type_expr "[" INT "]" { $$ = driver.ctx.make_node<ast::ArrayTypeSpec>($3, $1, @$); }
-        |       type_expr "[" "]" { $$ = driver.ctx.make_node<ast::ArrayTypeSpec>(0, $1, @$); }
-        |       MUL type_expr { $$ = driver.ctx.make_node<ast::PointerTypeSpec>($2, @$); }
+        |       type_expr "[" "]"     { $$ = driver.ctx.make_node<ast::ArrayTypeSpec>(0, $1, @$); }
+        |       strict_type_expr      { $$ = $1; }
+                ;
+
+strict_type_expr:
+                type_expr MUL { $$ = driver.ctx.make_node<ast::PointerTypeSpec>($1, @$); }
         |       STRUCT IDENT { $$ = driver.ctx.make_node<ast::StructTypeSpec>($2, @$); }
+                ;
+
+type_or_expr:
+                strict_type_expr { $$ = $1; }
+	|       expr             { $$ = $1; }
                 ;
 
 config:
@@ -460,8 +473,6 @@ tuple_access_expr:
                 postfix_expr DOT INT      { $$ = driver.ctx.make_node<ast::FieldAccess>($1, $3, @3); }
                 ;
 
-
-
 unary_expr:
                 unary_op cast_expr   { $$ = driver.ctx.make_node<ast::Unop>($1, $2, @1); }
         |       postfix_expr         { $$ = $1; }
@@ -491,77 +502,75 @@ conditional_expr:
 
 logical_or_expr:
                 logical_and_expr                     { $$ = $1; }
-        |       logical_or_expr LOR logical_and_expr { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::LOR, $3, @2); }
+        |       logical_or_expr LOR logical_and_expr { NOT_TYPE($1); NOT_TYPE($3); $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::LOR, $3, @2); }
                 ;
 
 logical_and_expr:
                 or_expr                       { $$ = $1; }
-        |       logical_and_expr LAND or_expr { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::LAND, $3, @2); }
+        |       logical_and_expr LAND or_expr { NOT_TYPE($1); NOT_TYPE($3); $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::LAND, $3, @2); }
                 ;
 
 or_expr:
                 xor_expr             { $$ = $1; }
-        |       or_expr BOR xor_expr { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::BOR, $3, @2); }
+        |       or_expr BOR xor_expr { NOT_TYPE($1); NOT_TYPE($3); $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::BOR, $3, @2); }
                 ;
 
 xor_expr:
                 and_expr               { $$ = $1; }
-        |       xor_expr BXOR and_expr { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::BXOR, $3, @2); }
+        |       xor_expr BXOR and_expr { NOT_TYPE($1); NOT_TYPE($3); $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::BXOR, $3, @2); }
                 ;
 
 
 and_expr:
                 equality_expr               { $$ = $1; }
-        |       and_expr BAND equality_expr { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::BAND, $3, @2); }
+        |       and_expr BAND equality_expr { NOT_TYPE($1); NOT_TYPE($3); $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::BAND, $3, @2); }
                 ;
 
 equality_expr:
                 relational_expr                  { $$ = $1; }
-        |       equality_expr EQ relational_expr { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::EQ, $3, @2); }
-        |       equality_expr NE relational_expr { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::NE, $3, @2); }
+        |       equality_expr EQ relational_expr { NOT_TYPE($1); NOT_TYPE($3); $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::EQ, $3, @2); }
+        |       equality_expr NE relational_expr { NOT_TYPE($1); NOT_TYPE($3); $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::NE, $3, @2); }
                 ;
 
 relational_expr:
                 shift_expr                    { $$ = $1; }
-        |       relational_expr LE shift_expr { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::LE, $3, @2); }
-        |       relational_expr GE shift_expr { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::GE, $3, @2); }
-        |       relational_expr LT shift_expr { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::LT, $3, @2); }
-        |       relational_expr GT shift_expr { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::GT, $3, @2); }
+        |       relational_expr LE shift_expr { NOT_TYPE($1); NOT_TYPE($3); $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::LE, $3, @2); }
+        |       relational_expr GE shift_expr { NOT_TYPE($1); NOT_TYPE($3); $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::GE, $3, @2); }
+        |       relational_expr LT shift_expr { NOT_TYPE($1); NOT_TYPE($3); $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::LT, $3, @2); }
+        |       relational_expr GT shift_expr { NOT_TYPE($1); NOT_TYPE($3); $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::GT, $3, @2); }
                 ;
 
 shift_expr:
                 addi_expr                  { $$ = $1; }
-        |       shift_expr LEFT addi_expr  { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::LEFT, $3, @2); }
-        |       shift_expr RIGHT addi_expr { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::RIGHT, $3, @2); }
+        |       shift_expr LEFT addi_expr  { NOT_TYPE($1); NOT_TYPE($3); $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::LEFT, $3, @2); }
+        |       shift_expr RIGHT addi_expr { NOT_TYPE($1); NOT_TYPE($3); $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::RIGHT, $3, @2); }
                 ;
 
 muli_expr:
                 cast_expr                  { $$ = $1; }
-        |       muli_expr MUL cast_expr    { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::MUL, $3, @2); }
-        |       muli_expr DIV cast_expr    { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::DIV, $3, @2); }
-        |       muli_expr MOD cast_expr    { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::MOD, $3, @2); }
+        |       muli_expr MUL cast_expr    { NOT_TYPE($1); NOT_TYPE($3); $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::MUL, $3, @2); }
+        |       muli_expr DIV cast_expr    { NOT_TYPE($1); NOT_TYPE($3); $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::DIV, $3, @2); }
+        |       muli_expr MOD cast_expr    { NOT_TYPE($1); NOT_TYPE($3); $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::MOD, $3, @2); }
                 ;
 
 addi_expr:
                 muli_expr                  { $$ = $1; }
-        |       addi_expr PLUS muli_expr   { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::PLUS, $3, @2); }
-        |       addi_expr MINUS muli_expr  { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::MINUS, $3, @2); }
+        |       addi_expr PLUS muli_expr   { NOT_TYPE($1); NOT_TYPE($3); $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::PLUS, $3, @2); }
+        |       addi_expr MINUS muli_expr  { NOT_TYPE($1); NOT_TYPE($3); $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::MINUS, $3, @2); }
                 ;
 
 cast_expr:
                 unary_expr                        { $$ = $1; }
-        |       LPAREN type_expr RPAREN cast_expr { $$ = driver.ctx.make_node<ast::Cast>($2, $4, @1 + @3); }
+        |       LPAREN type_expr RPAREN cast_expr { TYPE($2); NOT_TYPE($4); $$ = driver.ctx.make_node<ast::Cast>($2, $4, @1 + @3); }
                 ;
 
 sizeof_expr:
-                SIZEOF "(" type_expr ")" { $$ = driver.ctx.make_node<ast::Sizeof>($3, @$); }
-        |       SIZEOF "(" expr ")"      { $$ = driver.ctx.make_node<ast::Sizeof>($3, @$); }
+                SIZEOF "(" expr ")" { $$ = driver.ctx.make_node<ast::Sizeof>($3, @$); }
                 ;
 
 offsetof_expr:
-                OFFSETOF "(" type_expr "," external_name ")" { $$ = driver.ctx.make_node<ast::Offsetof>($3, $5, @$); }
                 /* For example: offsetof(*curtask, comm) */
-        |       OFFSETOF "(" expr "," external_name ")"      { $$ = driver.ctx.make_node<ast::Offsetof>($3, $5, @$); }
+                OFFSETOF "(" expr "," external_name ")" { $$ = driver.ctx.make_node<ast::Offsetof>($3, $5, @$); }
                 ;
 
 int:

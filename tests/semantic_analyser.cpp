@@ -27,7 +27,7 @@ void test_for_warning(BPFtrace &bpftrace,
   ASSERT_EQ(driver.parse_str(input), 0);
 
   ClangParser clang;
-  clang.parse(driver.ctx.root, bpftrace);
+  clang.parse(driver.ctx, bpftrace);
 
   ASSERT_EQ(driver.parse_str(input), 0);
   std::stringstream out;
@@ -69,7 +69,7 @@ void test(BPFtrace &bpftrace,
   bpftrace.safe_mode_ = safe_mode;
   ASSERT_EQ(driver.parse_str(input), 0);
 
-  ast::FieldAnalyser fields(driver.ctx.root, bpftrace, out);
+  ast::FieldAnalyser fields(driver.ctx, bpftrace, out);
   ASSERT_EQ(fields.analyse(), 0) << msg.str() + out.str();
 
   ClangParser clang;
