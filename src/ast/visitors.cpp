@@ -4,6 +4,24 @@
 
 namespace bpftrace::ast {
 
+void Visitor::visit(PointerTypeSpec &ty)
+{
+  Visit(*ty.elem);
+}
+
+void Visitor::visit(ArrayTypeSpec &ty)
+{
+  Visit(*ty.elem);
+}
+
+void Visitor::visit(NamedTypeSpec &ty __attribute__((__unused__)))
+{
+}
+
+void Visitor::visit(StructTypeSpec &ty __attribute__((__unused__)))
+{
+}
+
 void Visitor::visit(Integer &integer __attribute__((__unused__)))
 {
 }
@@ -37,12 +55,16 @@ void Visitor::visit(Call &call)
 
 void Visitor::visit(Sizeof &szof)
 {
+  if (szof.spec)
+    Visit(*szof.spec);
   if (szof.expr)
     Visit(*szof.expr);
 }
 
 void Visitor::visit(Offsetof &ofof)
 {
+  if (ofof.spec)
+    Visit(*ofof.spec);
   if (ofof.expr)
     Visit(*ofof.expr);
 }
@@ -88,6 +110,7 @@ void Visitor::visit(ArrayAccess &arr)
 
 void Visitor::visit(Cast &cast)
 {
+  Visit(*cast.spec);
   Visit(*cast.expr);
 }
 
@@ -187,12 +210,14 @@ void Visitor::visit(Config &config)
   }
 }
 
-void Visitor::visit(SubprogArg &subprog_arg __attribute__((__unused__)))
+void Visitor::visit(SubprogArg &subprog_arg)
 {
+  Visit(*subprog_arg.spec);
 }
 
 void Visitor::visit(Subprog &subprog)
 {
+  Visit(*subprog.return_type);
   for (SubprogArg *arg : subprog.args) {
     Visit(*arg);
   }

@@ -14,6 +14,10 @@ namespace ast {
 class VisitorBase {
 public:
   virtual ~VisitorBase() = default;
+  virtual void visit(PointerTypeSpec &ty) = 0;
+  virtual void visit(ArrayTypeSpec &ty) = 0;
+  virtual void visit(NamedTypeSpec &ty) = 0;
+  virtual void visit(StructTypeSpec &ty) = 0;
   virtual void visit(Integer &integer) = 0;
   virtual void visit(PositionalParameter &integer) = 0;
   virtual void visit(String &string) = 0;
@@ -84,6 +88,10 @@ public:
     NB: visitor should dispatch through the Visit method and not use
     node->accept() directly
   */
+  void visit(PointerTypeSpec &ty) override;
+  void visit(ArrayTypeSpec &ty) override;
+  void visit(NamedTypeSpec &ty) override;
+  void visit(StructTypeSpec &ty) override;
   void visit(Integer &integer) override;
   void visit(PositionalParameter &param) override;
   void visit(String &string) override;
@@ -153,6 +161,10 @@ public:
   /**
       Visitors for node subtypes
    */
+  virtual R visit(PointerTypeSpec &node) DEFAULT_FN;
+  virtual R visit(ArrayTypeSpec &node) DEFAULT_FN;
+  virtual R visit(NamedTypeSpec &node) DEFAULT_FN;
+  virtual R visit(StructTypeSpec &node) DEFAULT_FN;
   virtual R visit(Integer &node) DEFAULT_FN;
   virtual R visit(PositionalParameter &node) DEFAULT_FN;
   virtual R visit(String &node) DEFAULT_FN;
@@ -207,6 +219,10 @@ private:
   static tabletype make_vtable()
   {
     tabletype table;
+    DEFINE_DISPATCH(PointerTypeSpec);
+    DEFINE_DISPATCH(ArrayTypeSpec);
+    DEFINE_DISPATCH(NamedTypeSpec);
+    DEFINE_DISPATCH(StructTypeSpec);
     DEFINE_DISPATCH(Integer);
     DEFINE_DISPATCH(PositionalParameter);
     DEFINE_DISPATCH(String);

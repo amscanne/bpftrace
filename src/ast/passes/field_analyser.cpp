@@ -10,6 +10,88 @@
 
 namespace bpftrace::ast {
 
+void FieldAnalyser::visit(PointerTypeSpec &ty)
+{
+  Visit(*ty.elem);
+  ty.resolved = CreatePointer(ty.resolved);
+  return;
+}
+
+void FieldAnalyser::visit(ArrayTypeSpec &ty)
+{
+  auto elem = dynamic_cast<NamedTypeSpec *>(ty.elem);
+  if (elem == nullptr) {
+    Visit(*ty.elem);
+    ty.resolved = CreateArray(ty.count, ty.resolved);
+  } else {
+    // Array types are only legal for integer types, and have special meaning
+    // with a small set of builtins.
+    if (elem->name == "string") {
+      ty.resolved = CreateString(ty.count);
+    } else if (elem->name == "inet") {
+      ty.resolved = CreateInet(ty.count);
+    } else if (elem->name == "buffer") {
+      ty.resolved = CreateBuffer(ty.count);
+    } else {
+      Visit(*ty.elem);
+      if (!ty.elem->resolved.IsIntTy()) {
+        LOG(ERROR, ty.loc, err_) << "only integer array types are permitted";
+        ty.resolved = CreateNone();
+      } else {
+        ty.resolved = CreateArray(ty.count, ty.elem->resolved);
+      }
+    }
+  }
+}
+
+void FieldAnalyser::visit(NamedTypeSpec &ty)
+{
+  static std::unordered_map<std::string, SizedType> type_map = {
+    { "bool", CreateBool() },
+    { "uint8", CreateUInt(8) },
+    { "uint16", CreateUInt(16) },
+    { "uint32", CreateUInt(32) },
+    { "uint64", CreateUInt(64) },
+    { "int8", CreateInt(8) },
+    { "int16", CreateInt(16) },
+    { "int32", CreateInt(32) },
+    { "int64", CreateInt(64) },
+    { "void", CreateVoid() },
+    { "min_t", CreateMin(true) },
+    { "max_t", CreateMax(true) },
+    { "sum_t", CreateSum(true) },
+    { "count_t", CreateCount(true) },
+    { "avg_t", CreateAvg(true) },
+    { "stats_t", CreateStats(true) },
+    { "umin_t", CreateMin(false) },
+    { "umax_t", CreateMax(false) },
+    { "usum_t", CreateSum(false) },
+    { "ucount_t", CreateCount(false) },
+    { "uavg_t", CreateAvg(false) },
+    { "ustats_t", CreateStats(false) },
+    { "timestamp", CreateTimestamp() },
+    { "macaddr_t", CreateMacAddress() },
+    { "cgroup_path_t", CreateCgroupPath() },
+    { "strerror_t", CreateStrerror() },
+  };
+  if (type_map.find(ty.name) != type_map.end()) {
+    ty.resolved = type_map[ty.name];
+  } else if (ty.name == "string") {
+    ty.resolved = CreateString(0);
+  } else if (ty.name == "inet") {
+    ty.resolved = CreateInet(0);
+  } else if (ty.name == "buffer") {
+    ty.resolved = CreateBuffer(0);
+  } else {
+    ty.resolved = CreateNone();
+  }
+}
+
+void FieldAnalyser::visit(StructTypeSpec &ty)
+{
+  ty.resolved = CreateRecord(ty.name, std::weak_ptr<Struct>());
+}
+
 void FieldAnalyser::visit(Identifier &identifier)
 {
   bpftrace_.btf_set_.insert(identifier.ident);
@@ -121,22 +203,45 @@ void FieldAnalyser::visit(ArrayAccess &arr)
 
 void FieldAnalyser::visit(Cast &cast)
 {
+  Visit(*cast.spec);
   Visit(*cast.expr);
-  resolve_type(cast.type);
+  resolve_type(cast.spec->resolved);
+  cast.type = cast.spec->resolved;
 }
 
 void FieldAnalyser::visit(Sizeof &szof)
 {
-  if (szof.expr)
+  if (szof.expr) {
     Visit(*szof.expr);
-  resolve_type(szof.argtype);
+    szof.argtype = szof.expr->type;
+  }
+  if (szof.spec) {
+    Visit(*szof.spec);
+    resolve_type(szof.spec->resolved);
+    szof.argtype = szof.spec->resolved;
+  }
 }
 
 void FieldAnalyser::visit(Offsetof &ofof)
 {
-  if (ofof.expr)
+  if (ofof.expr) {
     Visit(*ofof.expr);
-  resolve_type(ofof.record);
+    ofof.record = ofof.expr->type;
+  }
+  if (ofof.spec) {
+    Visit(*ofof.spec);
+    resolve_type(ofof.spec->resolved);
+    ofof.record = ofof.spec->resolved;
+  }
+}
+
+void FieldAnalyser::visit(VarDeclStatement &decl)
+{
+  if (decl.spec) {
+    Visit(*decl.spec);
+    resolve_type(decl.spec->resolved);
+    decl.var->type = decl.spec->resolved;
+  }
 }
 
 void FieldAnalyser::visit(AssignMapStatement &assignment)
@@ -318,13 +423,23 @@ void FieldAnalyser::visit(Probe &probe)
   Visit(*probe.block);
 }
 
+void FieldAnalyser::visit(SubprogArg &arg)
+{
+  Visit(*arg.spec);
+  resolve_type(arg.spec->resolved);
+}
+
 void FieldAnalyser::visit(Subprog &subprog)
 {
   probe_ = nullptr;
 
+  for (SubprogArg *arg : subprog.args) {
+    Visit(*arg);
+  }
   for (Statement *stmt : subprog.stmts) {
     Visit(*stmt);
   }
+  Visit(*subprog.return_type);
 }
 
 int FieldAnalyser::analyse()

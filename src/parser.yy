@@ -10,7 +10,14 @@
 %define define_location_comparison
 %define parse.assert
 %define parse.trace
-%expect 5
+// The reduce/reduce conflicts are unavoidable coming from `sizeof` and
+// `offsetof`, where the names can't be determined to be types or full
+// expressions up front. The reduce rule will default to use first one
+// (treating as a type), and the user could wrap identifiers in other
+// expressions (just more parens) if necessary.
+%glr-parser
+%expect 4
+%expect-rr 3
 
 %define parse.error verbose
 
@@ -154,7 +161,7 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %type <ast::Statement *> assign_stmt block_stmt expr_stmt if_stmt jump_stmt loop_stmt config_assign_stmt for_stmt
 %type <ast::VarDeclStatement *> var_decl_stmt
 %type <ast::StatementList> block block_or_if stmt_list config_block config_assign_stmt_list
-%type <SizedType> type int_type pointer_type struct_type
+%type <ast::TypeSpec *> type_expr
 %type <ast::Variable *> var
 
 
@@ -191,83 +198,12 @@ c_definitions:
         |       %empty                           { $$ = std::string(); }
                 ;
 
-type:
-                int_type { $$ = $1; }
-        |       BUILTIN_TYPE {
-                    static std::unordered_map<std::string, SizedType> type_map = {
-                        {"void", CreateVoid()},
-                        {"min_t", CreateMin(true)},
-                        {"max_t", CreateMax(true)},
-                        {"sum_t", CreateSum(true)},
-                        {"count_t", CreateCount(true)},
-                        {"avg_t", CreateAvg(true)},
-                        {"stats_t", CreateStats(true)},
-                        {"umin_t", CreateMin(false)},
-                        {"umax_t", CreateMax(false)},
-                        {"usum_t", CreateSum(false)},
-                        {"ucount_t", CreateCount(false)},
-                        {"uavg_t", CreateAvg(false)},
-                        {"ustats_t", CreateStats(false)},
-                        {"timestamp", CreateTimestamp()},
-                        {"macaddr_t", CreateMacAddress()},
-                        {"cgroup_path_t", CreateCgroupPath()},
-                        {"strerror_t", CreateStrerror()},
-                    };
-                    $$ = type_map[$1];
-                }
-        |       SIZED_TYPE {
-                    if ($1 == "string") {
-                        $$ = CreateString(0);
-                    } else if ($1 == "inet") {
-                        $$ = CreateInet(0);
-                    } else if ($1 == "buffer") {
-                        $$ = CreateBuffer(0);
-                    }
-                }
-        |       SIZED_TYPE "[" INT "]" {
-                    if ($1 == "string") {
-                        $$ = CreateString($3);
-                    } else if ($1 == "inet") {
-                        $$ = CreateInet($3);
-                    } else if ($1 == "buffer") {
-                        $$ = CreateBuffer($3);
-                    }
-                }
-        |       int_type "[" INT "]" {
-                  $$ = CreateArray($3, $1);
-                }
-        |       struct_type "[" INT "]" {
-                  $$ = CreateArray($3, $1);
-                }
-        |       int_type "[" "]" {
-                  $$ = CreateArray(0, $1);
-                }
-        |       pointer_type { $$ = $1; }
-        |       struct_type { $$ = $1; }
-                ;
-
-int_type:
-                INT_TYPE {
-                    static std::unordered_map<std::string, SizedType> type_map = {
-                        {"bool", CreateBool()},
-                        {"uint8", CreateUInt(8)},
-                        {"uint16", CreateUInt(16)},
-                        {"uint32", CreateUInt(32)},
-                        {"uint64", CreateUInt(64)},
-                        {"int8", CreateInt(8)},
-                        {"int16", CreateInt(16)},
-                        {"int32", CreateInt(32)},
-                        {"int64", CreateInt(64)},
-                    };
-                    $$ = type_map[$1];
-                }
-                ;
-
-pointer_type:
-                type "*" { $$ = CreatePointer($1); }
-                ;
-struct_type:
-                STRUCT IDENT { $$ = ast::ident_to_record($2); }
+type_expr:
+                IDENT { $$ = driver.ctx.make_node<ast::NamedTypeSpec>($1, @$); }
+        |       type_expr "[" INT "]" { $$ = driver.ctx.make_node<ast::ArrayTypeSpec>($3, $1, @$); }
+        |       type_expr "[" "]" { $$ = driver.ctx.make_node<ast::ArrayTypeSpec>(0, $1, @$); }
+        |       MUL type_expr { $$ = driver.ctx.make_node<ast::PointerTypeSpec>($2, @$); }
+        |       STRUCT IDENT { $$ = driver.ctx.make_node<ast::StructTypeSpec>($2, @$); }
                 ;
 
 config:
@@ -292,10 +228,10 @@ config_assign_stmt:
                 ;
 
 subprog:
-                SUBPROG IDENT "(" subprog_args ")" ":" type block {
+                SUBPROG IDENT "(" subprog_args ")" ":" type_expr block {
                     $$ = driver.ctx.make_node<ast::Subprog>($2, $7, std::move($4), std::move($8));
                 }
-        |       SUBPROG IDENT "(" ")" ":" type block {
+        |       SUBPROG IDENT "(" ")" ":" type_expr block {
                     $$ = driver.ctx.make_node<ast::Subprog>($2, $6, ast::SubprogArgList(), std::move($7));
                 }
                 ;
@@ -306,7 +242,7 @@ subprog_args:
                 ;
 
 subprog_arg:
-                VAR ":" type { $$ = driver.ctx.make_node<ast::SubprogArg>($1, $3); }
+                VAR ":" type_expr { $$ = driver.ctx.make_node<ast::SubprogArg>($1, $3); }
                 ;
 
 probes_and_subprogs:
@@ -479,7 +415,7 @@ assign_stmt:
 
 var_decl_stmt:
                  LET var {  $$ = driver.ctx.make_node<ast::VarDeclStatement>($2, @$); }
-        |        LET var COLON type {  $$ = driver.ctx.make_node<ast::VarDeclStatement>($2, $4, @$); }
+        |        LET var COLON type_expr {  $$ = driver.ctx.make_node<ast::VarDeclStatement>($2, $4, @$); }
         ;
 
 primary_expr:
@@ -613,23 +549,19 @@ addi_expr:
                 ;
 
 cast_expr:
-                unary_expr                                  { $$ = $1; }
-        |       LPAREN type RPAREN cast_expr                { $$ = driver.ctx.make_node<ast::Cast>($2, $4, @1 + @3); }
-/* workaround for typedef types, see https://github.com/bpftrace/bpftrace/pull/2560#issuecomment-1521783935 */
-        |       LPAREN IDENT RPAREN cast_expr               { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 0), $4, @1 + @3); }
-        |       LPAREN IDENT "*" RPAREN cast_expr           { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 1), $5, @1 + @4); }
-        |       LPAREN IDENT "*" "*" RPAREN cast_expr       { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 2), $6, @1 + @5); }
+                unary_expr                        { $$ = $1; }
+        |       LPAREN type_expr RPAREN cast_expr { $$ = driver.ctx.make_node<ast::Cast>($2, $4, @1 + @3); }
                 ;
 
 sizeof_expr:
-                SIZEOF "(" type ")"                         { $$ = driver.ctx.make_node<ast::Sizeof>($3, @$); }
-        |       SIZEOF "(" expr ")"                         { $$ = driver.ctx.make_node<ast::Sizeof>($3, @$); }
+                SIZEOF "(" type_expr ")" { $$ = driver.ctx.make_node<ast::Sizeof>($3, @$); }
+        |       SIZEOF "(" expr ")"      { $$ = driver.ctx.make_node<ast::Sizeof>($3, @$); }
                 ;
 
 offsetof_expr:
-                OFFSETOF "(" struct_type "," external_name ")"      { $$ = driver.ctx.make_node<ast::Offsetof>($3, $5, @$); }
-/* For example: offsetof(*curtask, comm) */
-        |       OFFSETOF "(" expr "," external_name ")"             { $$ = driver.ctx.make_node<ast::Offsetof>($3, $5, @$); }
+                OFFSETOF "(" type_expr "," external_name ")" { $$ = driver.ctx.make_node<ast::Offsetof>($3, $5, @$); }
+                /* For example: offsetof(*curtask, comm) */
+        |       OFFSETOF "(" expr "," external_name ")"      { $$ = driver.ctx.make_node<ast::Offsetof>($3, $5, @$); }
                 ;
 
 int:

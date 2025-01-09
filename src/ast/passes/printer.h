@@ -15,6 +15,10 @@ public:
 
   void print(Node *root);
 
+  void visit(PointerTypeSpec &ty) override;
+  void visit(ArrayTypeSpec &ty) override;
+  void visit(NamedTypeSpec &ty) override;
+  void visit(StructTypeSpec &ty) override;
   void visit(Integer &integer) override;
   void visit(PositionalParameter &param) override;
   void visit(String &string) override;

@@ -26,6 +26,10 @@ public:
   {
   }
 
+  void visit(PointerTypeSpec &ty) override;
+  void visit(ArrayTypeSpec &ty) override;
+  void visit(NamedTypeSpec &ty) override;
+  void visit(StructTypeSpec &ty) override;
   void visit(Identifier &identifier) override;
   void visit(Builtin &builtin) override;
   void visit(Map &map) override;
@@ -35,10 +39,12 @@ public:
   void visit(Cast &cast) override;
   void visit(Sizeof &szof) override;
   void visit(Offsetof &ofof) override;
+  void visit(VarDeclStatement &decl) override;
   void visit(AssignMapStatement &assignment) override;
   void visit(AssignVarStatement &assignment) override;
   void visit(Unop &unop) override;
   void visit(Probe &probe) override;
+  void visit(SubprogArg &arg) override;
   void visit(Subprog &subprog) override;
 
   int analyse();

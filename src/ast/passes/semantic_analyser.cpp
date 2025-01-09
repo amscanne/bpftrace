@@ -1602,9 +1602,9 @@ void SemanticAnalyser::visit(Offsetof &ofof)
   } else if (!bpftrace_.structs.Has(ofof.record.GetName())) {
     LOG(ERROR, ofof.loc, err_) << "'" << ofof.record << "' does not exist.";
   } else if (!ofof.record.HasField(ofof.field)) {
-    LOG(ERROR, ofof.loc, err_) << "'" << ofof.record << "' "
-                               << "has no field named "
-                               << "'" << ofof.field << "'";
+    LOG(ERROR, ofof.loc, err_)
+        << "'" << ofof.record << "' " << "has no field named " << "'"
+        << ofof.field << "'";
   }
 }
 
@@ -2283,13 +2283,13 @@ void SemanticAnalyser::visit(Jump &jump)
         Visit(jump.return_value);
       }
       if (auto subprog = dynamic_cast<Subprog *>(top_level_node_)) {
-        if ((subprog->return_type.IsVoidTy() !=
+        if ((subprog->return_type->resolved.IsVoidTy() !=
              (jump.return_value == nullptr)) ||
             (jump.return_value &&
-             jump.return_value->type != subprog->return_type)) {
+             jump.return_value->type != subprog->return_type->resolved)) {
           LOG(ERROR, jump.loc, err_)
               << "Function " << subprog->name() << " is of type "
-              << subprog->return_type << ", cannot return "
+              << subprog->return_type->resolved << ", cannot return "
               << (jump.return_value ? jump.return_value->type : CreateVoid());
         }
       }
@@ -2970,14 +2970,7 @@ void SemanticAnalyser::visit(AssignVarStatement &assignment)
                         static_cast<uint64_t>(min_max.second);
             }
           }
-          if (can_fit) {
-            Expression *cast = ctx_.make_node<Cast>(
-                CreateInteger(storedTy.GetSize() * 8, storedTy.IsSigned()),
-                assignment.expr,
-                assignment.loc);
-            Visit(cast);
-            assignment.expr = cast;
-          } else if (!type_mismatch_error) {
+          if (!can_fit && !type_mismatch_error) {
             LOG(ERROR, assignment.loc, err_)
                 << "Type mismatch for " << var_ident << ": "
                 << "trying to assign value '"
@@ -3116,7 +3109,7 @@ void SemanticAnalyser::visit(VarDeclStatement &decl)
     }
   }
 
-  bool can_resize = !decl.set_type || decl.var->type.GetSize() == 0;
+  bool can_resize = decl.var->type.GetSize() == 0;
 
   variables_[scope_stack_.back()].insert({ var_ident,
                                            { .type = decl.var->type,
@@ -3441,9 +3434,10 @@ void SemanticAnalyser::visit(Subprog &subprog)
   scope_stack_.push_back(&subprog);
   top_level_node_ = &subprog;
   for (SubprogArg *arg : subprog.args) {
-    variables_[scope_stack_.back()].insert(
-        { arg->name(),
-          { .type = arg->type, .can_resize = true, .was_assigned = true } });
+    variables_[scope_stack_.back()].insert({ arg->name(),
+                                             { .type = arg->spec->resolved,
+                                               .can_resize = true,
+                                               .was_assigned = true } });
   }
   Visitor::visit(subprog);
   scope_stack_.pop_back();

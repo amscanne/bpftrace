@@ -13,6 +13,10 @@ namespace bpftrace::ast {
     v.visit(*this);                                                            \
   };
 
+MAKE_ACCEPT(PointerTypeSpec);
+MAKE_ACCEPT(ArrayTypeSpec);
+MAKE_ACCEPT(NamedTypeSpec);
+MAKE_ACCEPT(StructTypeSpec);
 MAKE_ACCEPT(Integer)
 MAKE_ACCEPT(String)
 MAKE_ACCEPT(StackMode)
@@ -51,6 +55,26 @@ MAKE_ACCEPT(Subprog)
 MAKE_ACCEPT(Program)
 
 #undef MAKE_ACCEPT
+
+PointerTypeSpec::PointerTypeSpec(TypeSpec *elem, location loc)
+    : TypeSpec(loc), elem(elem)
+{
+}
+
+ArrayTypeSpec::ArrayTypeSpec(uint64_t count, TypeSpec *elem, location loc)
+    : TypeSpec(loc), count(count), elem(elem)
+{
+}
+
+NamedTypeSpec::NamedTypeSpec(std::string &name, location loc)
+    : TypeSpec(loc), name(name)
+{
+}
+
+StructTypeSpec::StructTypeSpec(std::string &name, location loc)
+    : TypeSpec(loc), name(name)
+{
+}
 
 Integer::Integer(int64_t n, location loc, bool is_negative)
     : Expression(loc), n(n), is_negative(is_negative)
@@ -97,7 +121,7 @@ Call::Call(const std::string &func, ExpressionList &&vargs, location loc)
 {
 }
 
-Sizeof::Sizeof(SizedType type, location loc) : Expression(loc), argtype(type)
+Sizeof::Sizeof(TypeSpec *spec, location loc) : Expression(loc), spec(spec)
 {
 }
 
@@ -105,8 +129,8 @@ Sizeof::Sizeof(Expression *expr, location loc) : Expression(loc), expr(expr)
 {
 }
 
-Offsetof::Offsetof(SizedType record, std::string &field, location loc)
-    : Expression(loc), record(record), field(field)
+Offsetof::Offsetof(TypeSpec *spec, std::string &field, location loc)
+    : Expression(loc), spec(spec), field(field)
 {
 }
 
@@ -173,10 +197,9 @@ ArrayAccess::ArrayAccess(Expression *expr, Expression *indexpr, location loc)
 {
 }
 
-Cast::Cast(SizedType cast_type, Expression *expr, location loc)
-    : Expression(loc), expr(expr)
+Cast::Cast(TypeSpec *spec, Expression *expr, location loc)
+    : Expression(loc), spec(spec), expr(expr)
 {
-  type = cast_type;
 }
 
 Tuple::Tuple(ExpressionList &&elems, location loc)
@@ -222,16 +245,14 @@ AssignConfigVarStatement::AssignConfigVarStatement(
 {
 }
 
-VarDeclStatement::VarDeclStatement(Variable *var, SizedType type, location loc)
-    : Statement(loc), var(var), set_type(true)
+VarDeclStatement::VarDeclStatement(Variable *var, TypeSpec *spec, location loc)
+    : Statement(loc), var(var), spec(spec)
 {
-  var->type = std::move(type);
 }
 
 VarDeclStatement::VarDeclStatement(Variable *var, location loc)
     : Statement(loc), var(var)
 {
-  var->type = CreateNone();
 }
 
 Predicate::Predicate(Expression *expr, location loc) : Node(loc), expr(expr)
@@ -262,8 +283,8 @@ Probe::Probe(AttachPointList &&attach_points, Predicate *pred, Block *block)
 {
 }
 
-SubprogArg::SubprogArg(std::string name, SizedType type)
-    : type(std::move(type)), name_(std::move(name))
+SubprogArg::SubprogArg(std::string name, TypeSpec *spec)
+    : spec(spec), name_(std::move(name))
 {
 }
 
@@ -273,11 +294,11 @@ std::string SubprogArg::name() const
 }
 
 Subprog::Subprog(std::string name,
-                 SizedType return_type,
+                 TypeSpec *spec,
                  SubprogArgList &&args,
                  StatementList &&stmts)
     : args(std::move(args)),
-      return_type(std::move(return_type)),
+      return_type(spec),
       stmts(std::move(stmts)),
       name_(std::move(name))
 {
@@ -506,14 +527,6 @@ bool Probe::has_ap_of_probetype(ProbeType probe_type)
       return true;
   }
   return false;
-}
-
-SizedType ident_to_record(const std::string &ident, int pointer_level)
-{
-  SizedType result = CreateRecord(ident, std::weak_ptr<Struct>());
-  for (int i = 0; i < pointer_level; i++)
-    result = CreatePointer(result);
-  return result;
 }
 
 } // namespace bpftrace::ast

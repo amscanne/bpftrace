@@ -1511,7 +1511,7 @@ void CodegenLLVM::visit(Call &call)
 
 void CodegenLLVM::visit(Sizeof &szof)
 {
-  expr_ = b_.getInt64(szof.argtype.GetSize());
+  expr_ = b_.getInt64(szof.type.GetSize());
 }
 
 void CodegenLLVM::visit(Offsetof &ofof)
@@ -2857,10 +2857,11 @@ void CodegenLLVM::visit(Subprog &subprog)
   std::transform(subprog.args.begin(),
                  subprog.args.end(),
                  std::back_inserter(arg_types),
-                 [this](SubprogArg *arg) { return b_.GetType(arg->type); });
-  FunctionType *func_type = FunctionType::get(b_.GetType(subprog.return_type),
-                                              arg_types,
-                                              0);
+                 [this](SubprogArg *arg) {
+                   return b_.GetType(arg->spec->resolved);
+                 });
+  FunctionType *func_type = FunctionType::get(
+      b_.GetType(subprog.return_type->resolved), arg_types, 0);
 
   Function *func = Function::Create(
       func_type, Function::InternalLinkage, subprog.name(), module_.get());
@@ -2873,7 +2874,8 @@ void CodegenLLVM::visit(Subprog &subprog)
 
   int arg_index = 0;
   for (SubprogArg *arg : subprog.args) {
-    auto alloca = b_.CreateAllocaBPF(b_.GetType(arg->type), arg->name());
+    auto alloca = b_.CreateAllocaBPF(b_.GetType(arg->spec->resolved),
+                                     arg->name());
     b_.CreateStore(func->getArg(arg_index + 1), alloca);
     variables_[scope_stack_.back()][arg->name()] = VariableLLVM{
       alloca, alloca->getAllocatedType()
@@ -2884,7 +2886,7 @@ void CodegenLLVM::visit(Subprog &subprog)
   for (Statement *stmt : subprog.stmts) {
     auto scoped_del = accept(stmt);
   }
-  if (subprog.return_type.IsVoidTy())
+  if (subprog.return_type->resolved.IsVoidTy())
     createRet();
 
   FunctionPassManager fpm;

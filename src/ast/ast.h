@@ -78,6 +78,55 @@ public:
   location loc;
 };
 
+class TypeSpec : public Node {
+public:
+  TypeSpec() = default;
+  TypeSpec(location loc) : Node(loc){};
+  virtual ~TypeSpec() = default;
+
+  // The resolved type should be set for all TypeSpec nodes during the field
+  // analyzer phase. If there is no spec provided, then the standard semantic
+  // anlayzer passes need to do that job.
+  SizedType resolved;
+};
+
+class PointerTypeSpec : public TypeSpec {
+public:
+  DEFINE_ACCEPT
+
+  explicit PointerTypeSpec(TypeSpec *elem, location loc);
+
+  TypeSpec *elem = nullptr;
+};
+
+class ArrayTypeSpec : public TypeSpec {
+public:
+  DEFINE_ACCEPT
+
+  explicit ArrayTypeSpec(uint64_t count, TypeSpec *elem, location loc);
+
+  uint64_t count = 0;
+  TypeSpec *elem = nullptr;
+};
+
+class NamedTypeSpec : public TypeSpec {
+public:
+  DEFINE_ACCEPT
+
+  explicit NamedTypeSpec(std::string &name, location loc);
+
+  std::string name;
+};
+
+class StructTypeSpec : public TypeSpec {
+public:
+  DEFINE_ACCEPT
+
+  explicit StructTypeSpec(std::string &name, location loc);
+
+  std::string name;
+};
+
 class Map;
 class Variable;
 class Expression : public Node {
@@ -204,9 +253,10 @@ class Sizeof : public Expression {
 public:
   DEFINE_ACCEPT
 
-  Sizeof(SizedType type, location loc);
+  Sizeof(TypeSpec *spec, location loc);
   Sizeof(Expression *expr, location loc);
 
+  TypeSpec *spec = nullptr;
   Expression *expr = nullptr;
   SizedType argtype;
 
@@ -218,11 +268,12 @@ class Offsetof : public Expression {
 public:
   DEFINE_ACCEPT
 
-  Offsetof(SizedType record, std::string &field, location loc);
+  Offsetof(TypeSpec *spec, std::string &field, location loc);
   Offsetof(Expression *expr, std::string &field, location loc);
 
-  SizedType record;
+  TypeSpec *spec = nullptr;
   Expression *expr = nullptr;
+  SizedType record;
   std::string field;
 
 private:
@@ -323,8 +374,9 @@ class Cast : public Expression {
 public:
   DEFINE_ACCEPT
 
-  Cast(SizedType type, Expression *expr, location loc);
+  Cast(TypeSpec *spec, Expression *expr, location loc);
 
+  TypeSpec *spec = nullptr;
   Expression *expr = nullptr;
 
 private:
@@ -373,11 +425,11 @@ class VarDeclStatement : public Statement {
 public:
   DEFINE_ACCEPT
 
-  VarDeclStatement(Variable *var, SizedType type, location loc = location());
+  VarDeclStatement(Variable *var, TypeSpec *spec, location loc = location());
   VarDeclStatement(Variable *var, location loc = location());
 
   Variable *var = nullptr;
-  bool set_type = false;
+  TypeSpec *spec = nullptr;
 
 private:
   VarDeclStatement(const VarDeclStatement &other) = default;
@@ -639,10 +691,10 @@ class SubprogArg : public Node {
 public:
   DEFINE_ACCEPT
 
-  SubprogArg(std::string name, SizedType type);
+  SubprogArg(std::string name, TypeSpec *spec);
 
   std::string name() const;
-  SizedType type;
+  TypeSpec *spec = nullptr;
 
 private:
   SubprogArg(const SubprogArg &other) = default;
@@ -655,12 +707,12 @@ public:
   DEFINE_ACCEPT
 
   Subprog(std::string name,
-          SizedType return_type,
+          TypeSpec *spec,
           SubprogArgList &&args,
           StatementList &&stmts);
 
   SubprogArgList args;
-  SizedType return_type;
+  TypeSpec *return_type = nullptr;
   StatementList stmts;
 
   std::string name() const;
@@ -692,8 +744,6 @@ private:
 std::string opstr(const Binop &binop);
 std::string opstr(const Unop &unop);
 std::string opstr(const Jump &jump);
-
-SizedType ident_to_record(const std::string &ident, int pointer_level = 0);
 
 template <typename T>
 concept NodeType = std::derived_from<T, Node>;

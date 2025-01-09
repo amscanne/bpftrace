@@ -31,6 +31,28 @@ std::string Printer::type(const SizedType &ty)
   return buf.str();
 }
 
+void Printer::visit(PointerTypeSpec &ty)
+{
+  ty.elem->accept(*this);
+  out_ << "*";
+}
+
+void Printer::visit(ArrayTypeSpec &ty)
+{
+  ty.elem->accept(*this);
+  out_ << "[" << ty.count << "]";
+}
+
+void Printer::visit(NamedTypeSpec &ty)
+{
+  out_ << ty.name;
+}
+
+void Printer::visit(StructTypeSpec &ty)
+{
+  out_ << "struct " << ty.name;
+}
+
 void Printer::visit(Integer &integer)
 {
   std::string indent(depth_, ' ');
@@ -121,8 +143,11 @@ void Printer::visit(Sizeof &szof)
   out_ << indent << "sizeof: " << type(szof.type) << std::endl;
 
   ++depth_;
-  if (szof.expr)
+  if (szof.expr) {
     szof.expr->accept(*this);
+  } else {
+    szof.spec->accept(*this);
+  }
   --depth_;
 }
 
@@ -138,7 +163,7 @@ void Printer::visit(Offsetof &ofof)
   if (ofof.expr) {
     ofof.expr->accept(*this);
   } else {
-    out_ << indentParam << ofof.record << std::endl;
+    ofof.spec->accept(*this);
   }
 
   out_ << indentParam << ofof.field << std::endl;
@@ -440,12 +465,14 @@ void Printer::visit(Probe &probe)
 void Printer::visit(Subprog &subprog)
 {
   std::string indent(depth_, ' ');
-  out_ << indent << subprog.name() << ": " << subprog.return_type;
+  out_ << indent << subprog.name() << ": ";
+  subprog.return_type->accept(*this);
 
   out_ << "(";
   for (size_t i = 0; i < subprog.args.size(); i++) {
     auto &arg = subprog.args.at(i);
-    out_ << arg->name() << " : " << arg->type;
+    out_ << arg->name() << " : ";
+    arg->spec->accept(*this);
     if (i < subprog.args.size() - 1)
       out_ << ", ";
   }
