@@ -26,9 +26,6 @@ public:
   {
   }
 
-  void visit(Integer &integer) override;
-  void visit(String &string) override;
-  void visit(StackMode &mode) override;
   void visit(AssignConfigVarStatement &assignment) override;
 
   bool analyse();

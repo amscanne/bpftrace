@@ -1,4 +1,7 @@
-add_library(ast_defs STATIC ast.cpp)
+add_library(ast_defs STATIC
+  ast.cpp
+  ast_types.cpp
+)
 add_dependencies(ast_defs parser)
 
 add_library(ast STATIC

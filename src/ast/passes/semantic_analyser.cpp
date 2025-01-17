@@ -1841,9 +1841,6 @@ void SemanticAnalyser::binop_int(Binop &binop)
 {
   bool lsign = binop.left->type.IsSigned();
   bool rsign = binop.right->type.IsSigned();
-
-  auto left = binop.left;
-  auto right = binop.right;
   auto left_literal = bpftrace_.get_int_literal(left);
   auto right_literal = bpftrace_.get_int_literal(right);
 
@@ -1935,31 +1932,8 @@ void SemanticAnalyser::binop_int(Binop &binop)
   }
 }
 
-void SemanticAnalyser::binop_array(Binop &binop)
-{
-  auto &lht = binop.left->type;
-  auto &rht = binop.right->type;
-  if (binop.op != Operator::EQ && binop.op != Operator::NE) {
-    LOG(ERROR, binop.loc, err_)
-        << "The " << opstr(binop) << " operator cannot be used on arrays.";
-  }
-
-  if (lht.GetNumElements() != rht.GetNumElements()) {
-    LOG(ERROR, binop.loc, err_)
-        << "Only arrays of same size support comparison operators.";
-  }
-
-  if (!lht.GetElementTy()->IsIntegerTy() || lht != rht) {
-    LOG(ERROR, binop.loc, err_)
-        << "Only arrays of same sized integer support comparison operators.";
-  }
-}
-
 void SemanticAnalyser::binop_ptr(Binop &binop)
 {
-  auto &lht = binop.left->type;
-  auto &rht = binop.right->type;
-
   bool left_is_ptr = lht.IsPtrTy();
   auto &ptr = left_is_ptr ? lht : rht;
   auto &other = left_is_ptr ? rht : lht;
@@ -2038,215 +2012,12 @@ void SemanticAnalyser::binop_ptr(Binop &binop)
 
 void SemanticAnalyser::visit(Binop &binop)
 {
-  Visit(binop.left);
-  Visit(binop.right);
-
-  auto &lht = binop.left->type;
-  auto &rht = binop.right->type;
-  bool lsign = binop.left->type.IsSigned();
-  bool rsign = binop.right->type.IsSigned();
-  bool is_int_binop = (lht.IsCastableMapTy() || lht.IsIntTy()) &&
-                      (rht.IsCastableMapTy() || rht.IsIntTy());
-
-  if (lht.IsPtrTy() || rht.IsPtrTy()) {
-    binop_ptr(binop);
-    return;
-  }
-
-  bool is_signed = lsign && rsign;
-  switch (binop.op) {
-    case Operator::LEFT:
-    case Operator::RIGHT:
-      is_signed = lsign;
-      break;
-    default:
-      break;
-  }
-
-  if (is_int_binop) {
-    // Implicit size promotion to larger of the two
-    auto size = std::max(lht.GetSize(), rht.GetSize());
-    binop.type = CreateInteger(size * 8, is_signed);
-  } else {
-    // Default type - will be overriden below as necessary
-    binop.type = CreateInteger(64, is_signed);
-  }
-
-  auto addr_lhs = binop.left->type.GetAS();
-  auto addr_rhs = binop.right->type.GetAS();
-
-  // if lhs or rhs has different addrspace (not none), then set the
-  // addrspace to none. This preserves the behaviour for x86.
-  if (addr_lhs != addr_rhs && addr_lhs != AddrSpace::none &&
-      addr_rhs != AddrSpace::none) {
-    if (is_final_pass())
-      LOG(WARNING, binop.loc, out_) << "Addrspace mismatch";
-    binop.type.SetAS(AddrSpace::none);
-  }
-  // Associativity from left to right for binary operator
-  else if (addr_lhs != AddrSpace::none) {
-    binop.type.SetAS(addr_lhs);
-  } else {
-    // In case rhs is none, then this triggers warning in selectProbeReadHelper.
-    binop.type.SetAS(addr_rhs);
-  }
-
-  if (!is_final_pass()) {
-    return;
-  }
-
-  if (is_int_binop) {
-    binop_int(binop);
-  } else if (lht.IsArrayTy() && rht.IsArrayTy()) {
-    binop_array(binop);
-  } else if (lht.IsPtrTy() || rht.IsPtrTy()) {
-    // This case is caught earlier, just here for readability of the if/else
-    // flow
-  }
-  // Compare type here, not the sized type as we it needs to work on strings of
-  // different lengths
-  else if (lht.GetTy() != rht.GetTy()) {
-    LOG(ERROR, binop.left->loc + binop.right->loc, err_)
-        << "Type mismatch for '" << opstr(binop) << "': comparing '" << lht
-        << "' with '" << rht << "'";
-  }
-  // Also allow combination like reg("sp") + 8
-  else if (binop.op != Operator::EQ && binop.op != Operator::NE) {
-    LOG(ERROR, binop.loc, err_)
-        << "The " << opstr(binop)
-        << " operator can not be used on expressions of types " << lht << ", "
-        << rht;
-  } else if (binop.op == Operator::EQ &&
-             ((!binop.left->is_literal && binop.right->is_literal) ||
-              (binop.left->is_literal && !binop.right->is_literal))) {
-    auto *lit = binop.left->is_literal ? binop.left : binop.right;
-    auto *str = lit == binop.left ? binop.right : binop.left;
-    auto lit_len = bpftrace_.get_string_literal(lit).size();
-    auto str_len = str->type.GetSize();
-    if (lit_len > str_len) {
-      LOG(WARNING, binop.left->loc + binop.loc + binop.right->loc, out_)
-          << "The literal is longer than the variable string (size=" << str_len
-          << "), condition will always be false";
-    }
-  }
-}
-
-void SemanticAnalyser::visit(Unop &unop)
-{
-  if (unop.op == Operator::INCREMENT || unop.op == Operator::DECREMENT) {
-    // Handle ++ and -- before visiting unop.expr, because these
-    // operators should be able to work with undefined maps.
-    if (!unop.expr->is_map && !unop.expr->is_variable) {
-      LOG(ERROR, unop.loc, err_)
-          << "The " << opstr(unop)
-          << " operator must be applied to a map or variable";
-    }
-
-    if (unop.expr->is_map) {
-      Map &map = static_cast<Map &>(*unop.expr);
-      auto *maptype = get_map_type(map);
-      if (!maptype)
-        assign_map_type(map, CreateInt64());
-    }
-  }
-
-  Visit(unop.expr);
-
-  auto valid_ptr_op = false;
-  switch (unop.op) {
-    case Operator::INCREMENT:
-    case Operator::DECREMENT:
-    case Operator::MUL:
-      valid_ptr_op = true;
-      break;
-    default:;
-  }
-
-  SizedType &type = unop.expr->type;
-  if (is_final_pass()) {
-    // Unops are only allowed on ints (e.g. ~$x), dereference only on pointers
-    // and context (we allow args->field for backwards compatibility)
-    // References are not allowed, instead they get turned into pointers by
-    // the `dereference_if_needed()` function, during the `Visit()` above.
-    if (!type.IsIntegerTy() &&
-        !((type.IsPtrTy() || type.IsCtxAccess()) && valid_ptr_op)) {
-      LOG(ERROR, unop.loc, err_)
-          << "The " << opstr(unop)
-          << " operator can not be used on expressions of type '" << type
-          << "'";
-    }
-  }
-
-  if (unop.op == Operator::MUL) {
-    if (type.IsPtrTy()) {
-      unop.type = SizedType(*type.GetPointeeTy());
-      if (type.IsCtxAccess())
-        unop.type.MarkCtxAccess();
-      unop.type.is_internal = type.is_internal;
-      unop.type.SetAS(type.GetAS());
-
-      // BPF verifier cannot track BTF information for double pointers
-      if (!unop.type.IsPtrTy())
-        unop.type.is_btftype = type.is_btftype;
-    } else if (type.IsRecordTy()) {
-      // We allow dereferencing "args" with no effect (for backwards compat)
-      if (type.IsCtxAccess())
-        unop.type = type;
-      else {
-        LOG(ERROR, unop.loc, err_)
-            << "Can not dereference struct/union of type '" << type.GetName()
-            << "'. It is not a pointer.";
-      }
-    } else if (type.IsIntTy()) {
-      unop.type = CreateUInt64();
-    }
-  } else if (unop.op == Operator::LNOT) {
-    // CreateUInt() abort if a size is invalid, so check the size here
-    if (!(type.GetSize() == 0 || type.GetSize() == 1 || type.GetSize() == 2 ||
-          type.GetSize() == 4 || type.GetSize() == 8)) {
-      LOG(ERROR, unop.loc, err_)
-          << "The " << opstr(unop)
-          << " operator can not be used on expressions of type '" << type
-          << "'";
-    } else {
-      unop.type = CreateUInt(8 * type.GetSize());
-    }
-  } else if (type.IsPtrTy() && valid_ptr_op) {
-    unop.type = unop.expr->type;
-  } else {
-    unop.type = CreateInteger(64, type.IsSigned());
-  }
+  checkType(binop);
 }
 
 void SemanticAnalyser::visit(Ternary &ternary)
 {
-  Visit(ternary.cond);
-  Visit(ternary.left);
-  Visit(ternary.right);
-
-  const Type &cond = ternary.cond->type.GetTy();
-  const Type &lhs = ternary.left->type.GetTy();
-  const Type &rhs = ternary.right->type.GetTy();
-  if (is_final_pass()) {
-    if (lhs != rhs) {
-      LOG(ERROR, ternary.loc, err_)
-          << "Ternary operator must return the same type: "
-          << "have '" << lhs << "' and '" << rhs << "'";
-    }
-    if (cond != Type::integer && cond != Type::pointer)
-      LOG(ERROR, ternary.loc, err_) << "Invalid condition in ternary: " << cond;
-  }
-  if (lhs == Type::string) {
-    auto lsize = ternary.left->type.GetSize();
-    auto rsize = ternary.right->type.GetSize();
-    ternary.type = CreateString(std::max(lsize, rsize));
-  } else if (lhs == Type::integer)
-    ternary.type = CreateInteger(64, ternary.left->type.IsSigned());
-  else if (lhs == Type::none)
-    ternary.type = CreateNone();
-  else {
-    LOG(ERROR, ternary.loc, err_) << "Ternary return type unsupported " << lhs;
-  }
+  checkType(ternary);
 }
 
 void SemanticAnalyser::visit(If &if_node)
@@ -2544,8 +2315,7 @@ void SemanticAnalyser::visit(For &f)
     ctx_types.push_back(CreatePointer(var.type, AddrSpace::bpf));
     ctx_idents.push_back(var.ident);
   }
-  f.ctx_type = CreateRecord(
-      "", bpftrace_.structs.AddAnonymousStruct(ctx_types, ctx_idents));
+  f.ctx_type = Struct::CreateRecord(ctx_types, ctx_idents);
 }
 
 void SemanticAnalyser::visit(FieldAccess &acc)

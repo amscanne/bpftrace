@@ -124,28 +124,6 @@ void ConfigAnalyser::set_missing_probes_config(
     LOG(ERROR, assignment.expr->loc, err_);
 }
 
-void ConfigAnalyser::visit(Integer &integer)
-{
-  integer.type = CreateInt64();
-}
-
-void ConfigAnalyser::visit(String &string)
-{
-  string.type = CreateString(string.str.size() + 1);
-}
-
-void ConfigAnalyser::visit(StackMode &mode)
-{
-  auto stack_mode = bpftrace::Config::get_stack_mode(mode.mode);
-  if (stack_mode.has_value()) {
-    mode.type = CreateStackMode();
-    mode.type.stack_type.mode = stack_mode.value();
-  } else {
-    mode.type = CreateNone();
-    LOG(ERROR, mode.loc, err_) << "Unknown stack mode: '" + mode.mode + "'";
-  }
-}
-
 void ConfigAnalyser::visit(AssignConfigVarStatement &assignment)
 {
   Visitor::visit(assignment);

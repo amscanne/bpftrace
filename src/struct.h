@@ -176,7 +176,6 @@ public:
       const std::vector<SizedType> &fields,
       const std::vector<std::string_view> &field_names);
   std::weak_ptr<Struct> AddTuple(const std::vector<SizedType> &fields);
-  size_t GetTuplesCnt() const;
 
   // probe args lookup
   const Field *GetProbeArg(const ast::Probe &probe,
@@ -184,7 +183,6 @@ public:
 
 private:
   std::map<std::string, std::shared_ptr<Struct>> struct_map_;
-  std::unordered_set<std::shared_ptr<Struct>> anonymous_types_;
 };
 
 } // namespace bpftrace

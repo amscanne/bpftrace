@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "location.hh"
@@ -91,7 +93,54 @@ public:
   Expression(Expression &&) = delete;
   Expression &operator=(Expression &&) = delete;
 
-  SizedType type;
+  // All expression types must define a method that returns their type. Since
+  // this type is not necessarily known until after type inferrence, this may
+  // be stored internally as a future and resolved automatically. This is
+  // returned as a function pointer as a kind of "future", since some types
+  // will be dependent on other types. This function is only safe to use while
+  // the ASTContext exists, as it may capture references and pointers to the
+  // current node and other nodes.
+  //
+  // The function `valid` should always be called *first*, and will refresh
+  // internal state. This state will not change until `valid` is called again.
+  class FutureType {
+  public:
+    using Rval = std::variant<std::string, SizedType>;
+    using Fn = std::function<Rval(void)>;
+    FutureType(const FutureType&) = delete;
+    FutureType& operator=(const FutureType&) = delete;
+    bool valid()
+    {
+      // If this method is already running, then we must be in a recursive type
+      // definition. Just bail on this and return an error. This works only if
+      // the FutureType objects are bound and saved within the anonymous
+      // functions, so be sure to follow this pattern.
+      if (running_ == true)
+        return "recursive type inferrence; cannot be resolved";
+      if (!result_ || std::holds_alternative<std::string>(*result_)) {
+	running_= true;
+        result_ = fn_();
+	running_= false;
+      }
+      return std::holds_alternative<SizedType>(*result_);
+    }
+    std::string error()
+    {
+      return std::get<std::string>(*result_);
+    }
+    SizedType type()
+    {
+      auto ty = std::get<SizedType>(*result_);
+      return ty;
+    }
+  private:
+    bool running_ = false;
+    std::optional<Rval> result_;
+    Fn fn_;
+    FutureType(Fn fn) : fn_(fn) {}
+  };
+  virtual FutureType type() const = 0;
+
   Map *key_for_map = nullptr;
   Map *map = nullptr;      // Only set when this expression is assigned to a map
   Variable *var = nullptr; // Set when this expression is assigned to a variable
@@ -101,7 +150,47 @@ public:
 };
 using ExpressionList = std::vector<Expression *>;
 
-class Integer : public Expression {
+class FixedTypeExpression : public Expression {
+public:
+  FixedTypeExpression(SizedType type, location loc)
+      : Expression(loc), type_(type) {};
+  FutureType type() const override
+  {
+    return FutureType(this, [this](void) -> FutureType::Rval { return type_; });
+  }
+
+private:
+  SizedType type_;
+};
+
+class VariableTypeExpression : public Expression {
+public:
+  VariableTypeExpression(location loc) : Expression(loc) {};
+  FutureType type() const override
+  {
+    return FutureType(this, [this](void) -> FutureType::Rval {
+      // This is in the error state; not able to resolve this type until we
+      // have call `set_type` on this value.
+      if (!type_)
+        return "unknown type";
+      if (!type_.valid())
+        return type_.error();
+      return type_.type();
+    });
+  }
+  // This is used to set the type during inference. Note that this should be
+  // used for identifiers, calls and other builtins, not for types containing
+  // subexpressions. Those should just implement the recursion directly.
+  void set_type(FutureType &&type)
+  {
+    type_ = std::move(type);
+  }
+
+private:
+  std::optional<FutureType> type_;
+};
+
+class Integer : public FixedTypeExpression {
 public:
   DEFINE_ACCEPT
 
@@ -114,7 +203,7 @@ private:
   Integer(const Integer &other) = default;
 };
 
-class PositionalParameter : public Expression {
+class PositionalParameter : public FixedTypeExpression {
 public:
   DEFINE_ACCEPT
 
@@ -130,7 +219,7 @@ private:
   PositionalParameter(const PositionalParameter &other) = default;
 };
 
-class String : public Expression {
+class String : public FixedTypeExpression {
 public:
   DEFINE_ACCEPT
 
@@ -142,7 +231,7 @@ private:
   String(const String &other) = default;
 };
 
-class StackMode : public Expression {
+class StackMode : public FixedTypeExpression {
 public:
   DEFINE_ACCEPT
 
@@ -154,7 +243,7 @@ private:
   StackMode(const StackMode &other) = default;
 };
 
-class Identifier : public Expression {
+class Identifier : public VariableTypeExpression {
 public:
   DEFINE_ACCEPT
 
@@ -166,7 +255,7 @@ private:
   Identifier(const Identifier &other) = default;
 };
 
-class Builtin : public Expression {
+class Builtin : public VariableTypeExpression {
 public:
   DEFINE_ACCEPT
 
@@ -186,7 +275,7 @@ private:
   Builtin(const Builtin &other) = default;
 };
 
-class Call : public Expression {
+class Call : public VariableTypeExpression {
 public:
   DEFINE_ACCEPT
 
@@ -200,36 +289,34 @@ private:
   Call(const Call &other) = default;
 };
 
-class Sizeof : public Expression {
+class Sizeof : public FixedTypeExpression {
 public:
   DEFINE_ACCEPT
 
   Sizeof(SizedType type, location loc);
   Sizeof(Expression *expr, location loc);
 
-  Expression *expr = nullptr;
-  SizedType argtype;
+  std::variant<SizedType, Expression *> arg;
 
 private:
   Sizeof(const Sizeof &other) = default;
 };
 
-class Offsetof : public Expression {
+class Offsetof : public FixedTypeExpression {
 public:
   DEFINE_ACCEPT
 
   Offsetof(SizedType record, std::string &field, location loc);
   Offsetof(Expression *expr, std::string &field, location loc);
 
-  SizedType record;
-  Expression *expr = nullptr;
+  std::variant<SizedType, Expression *> arg;
   std::string field;
 
 private:
   Offsetof(const Offsetof &other) = default;
 };
 
-class Map : public Expression {
+class Map : public VariableTypeExpression {
 public:
   DEFINE_ACCEPT
 
@@ -238,14 +325,13 @@ public:
 
   std::string ident;
   Expression *key_expr = nullptr;
-  SizedType key_type;
   bool skip_key_validation = false;
 
 private:
   Map(const Map &other) = default;
 };
 
-class Variable : public Expression {
+class Variable : public VariableTypeExpression {
 public:
   DEFINE_ACCEPT
 
@@ -255,6 +341,7 @@ public:
 
 private:
   Variable(const Variable &other) = default;
+  std::function<SizedType(void)> type_;
 };
 
 class Binop : public Expression {
@@ -266,6 +353,8 @@ public:
   Expression *left = nullptr;
   Expression *right = nullptr;
   Operator op;
+
+  FutureType type() const override;
 
 private:
   Binop(const Binop &other) = default;
@@ -285,6 +374,8 @@ public:
   Operator op;
   bool is_post_op;
 
+  FutureType type() const override;
+
 private:
   Unop(const Unop &other) = default;
 };
@@ -301,6 +392,8 @@ public:
   std::string field;
   ssize_t index = -1;
 
+  FutureType type() const override;
+
 private:
   FieldAccess(const FieldAccess &other) = default;
 };
@@ -315,11 +408,13 @@ public:
   Expression *expr = nullptr;
   Expression *indexpr = nullptr;
 
+  FutureType type() const override;
+
 private:
   ArrayAccess(const ArrayAccess &other) = default;
 };
 
-class Cast : public Expression {
+class Cast : public FixedTypeExpression {
 public:
   DEFINE_ACCEPT
 
@@ -338,6 +433,8 @@ public:
   Tuple(ExpressionList &&elems, location loc);
 
   ExpressionList elems;
+
+  FutureType type() const override;
 
 private:
   Tuple(const Tuple &other) = default;
@@ -511,6 +608,8 @@ public:
   Expression *cond = nullptr;
   Expression *left = nullptr;
   Expression *right = nullptr;
+
+  FutureType type() const override;
 };
 
 class While : public Statement {
@@ -541,7 +640,7 @@ public:
   Variable *decl = nullptr;
   Expression *expr = nullptr;
   StatementList stmts;
-  SizedType ctx_type;
+  std::optional<SizedType> ctx_type;
 
 private:
   For(const For &other) = default;

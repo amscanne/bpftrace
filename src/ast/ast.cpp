@@ -58,7 +58,8 @@ Integer::Integer(int64_t n, location loc, bool is_negative)
   is_literal = true;
 }
 
-String::String(const std::string &str, location loc) : Expression(loc), str(str)
+String::String(const std::string &str, location loc)
+    : Expression(loc), str(str), type_(CreateString(str.size() + 1))
 {
   is_literal = true;
 }
@@ -67,6 +68,16 @@ StackMode::StackMode(const std::string &mode, location loc)
     : Expression(loc), mode(mode)
 {
   is_literal = true;
+
+  // Parse the mode and create the fixed type here.
+  auto stack_mode = bpftrace::Config::get_stack_mode(mode.mode);
+  if (stack_mode.has_value()) {
+    auto t = CreateStackMode();
+    t.stack_type.mode = stack_mode.value();
+    type_ = FixedType(t);
+  } else {
+    LOG(ERROR, mode.loc, err_) << "Unknown stack mode: '" + mode.mode + "'";
+  }
 }
 
 Builtin::Builtin(const std::string &ident, location loc)
@@ -138,6 +149,35 @@ Binop::Binop(Expression *left, Operator op, Expression *right, location loc)
 {
 }
 
+FutureType Binop::type()
+{
+  return FutureType([leftType = left->type(), rightRight = right->type()] -> FutureType::Rval {
+    if (!leftType.valid()) {
+      return leftType.error();
+    }
+    if (!rightType.valid()) {
+      return rightType.error();
+    }
+    auto lht = leftType.type();
+    auto rht = rightType.type();
+    std::streamstring ss;
+    if (lht.IsArrayTy() && rht.IsArrayTy()) {
+      if (op != Operator::EQ && op != Operator::NE) {
+        ss << "The " << opstr(binop) << " operator cannot be used on arrays.";
+	return ss.str();
+      }
+      if (!lht.GetElementTy()->IsIntegerTy() || lht != rht) {
+        ss << "Only arrays of same sized integer support comparison operators.";
+	return ss.str();
+	}
+      if (lht.GetNumElements() != rht.GetNumElements()) {
+        ss << "Only arrays of same size support comparison operators.";
+	return ss.str();
+      }
+    }
+  });
+}
+
 Unop::Unop(Operator op, Expression *expr, location loc)
     : Expression(loc), expr(expr), op(op), is_post_op(false)
 {
@@ -148,12 +188,60 @@ Unop::Unop(Operator op, Expression *expr, bool is_post_op, location loc)
 {
 }
 
+FutureType Unop::type()
+{
+  // The type for most unary operators stays the same, but in some cases it
+  // will change to be the element type, or just the logical result. These are
+  // unpacked in the type resolution path.
+  return FutureType(this, [op, exprType = expr->type()] -> FutureType::Rval {
+    if (!exprType.valid())
+      return exprType.error();
+    switch (op) {
+      case LNOT:
+        return CreateInt(1);
+      case MUL: {
+        auto t = exprType.type();
+        if (!t.IsPtrTy()) {
+          std::stringstream ss;
+          ss << "invalid dereference of type " << t;
+          return ss.str();
+        }
+        return t.GetPointeeTy();
+      }
+      default:
+        return exprType.type();
+    }
+  });
+}
+
 Ternary::Ternary(Expression *cond,
                  Expression *left,
                  Expression *right,
                  location loc)
     : Expression(loc), cond(cond), left(left), right(right)
 {
+}
+
+FutureType Ternary::type()
+{
+  // The type of the ternary is defined if the types of the left and right
+  // expressions are the same. In this case, we return the type, otherwise we
+  // return an invalid type.
+  return FutureType(this, [leftType = left->type(), rightRight = right->type()] -> FutureType::Rval {
+    if (!leftType.valid())
+      return leftType.error();
+    if (!rightType.valid())
+      return rightType.error();
+    auto lt = leftType.type();
+    auto rt = rightType.type();
+    if (lt != rt) {
+      std::stringstream ss;
+      ss << "ternary type mismatch, left type is " << lt << ", right type is "
+         << rt;
+      return ss.str();
+    }
+    return lt;
+  });
 }
 
 FieldAccess::FieldAccess(Expression *expr,
@@ -168,20 +256,77 @@ FieldAccess::FieldAccess(Expression *expr, ssize_t index, location loc)
 {
 }
 
+FutureType FieldAccess::type()
+{
+  return FutureType([exprType = expr->type(), field] -> FutureType::Rval {
+    if (!exprType.valid())
+      return exprType.error();
+    auto t = exprType.type();
+    if (!t.IsRecordTy()) {
+      std::stringstream ss;
+      ss << "field access on non-record type " << t;
+      return ss.str();
+    }
+    if (t.HasField(field)) {
+      std::stringstream ss;
+      ss << "field " << field << "not found on type " << t;
+      return ss.str();
+    }
+    return t.GetField(field).type;
+  });
+}
+
 ArrayAccess::ArrayAccess(Expression *expr, Expression *indexpr, location loc)
     : Expression(loc), expr(expr), indexpr(indexpr)
 {
 }
 
-Cast::Cast(SizedType cast_type, Expression *expr, location loc)
-    : Expression(loc), expr(expr)
+FutureType ArrayAccess::type()
 {
-  type = cast_type;
+  return FutureType([exprType = expr->type()] -> FutureType::Rval {
+    if (!exprType.valid())
+      return exprType.error();
+    auto t = exprType.type();
+    if (t.IsArrayTy()) {
+      return t.GetElementTy();
+    }
+    if (t.IsPointerTy()) {
+      return t.GetPointeeTy();
+    }
+    std::stringstream ss;
+    ss << "type " << t << " not legal for array access";
+    return ss.str();
+  });
+}
+
+Cast::Cast(SizedType cast_type, Expression *expr, location loc)
+    : FixedTypeExpression(cast_type, loc), expr(expr)
+{
 }
 
 Tuple::Tuple(ExpressionList &&elems, location loc)
     : Expression(loc), elems(std::move(elems))
 {
+}
+
+FutureType Tuple::type()
+{
+  return FutureType(this, [this] -> FutureType::Rval {
+    std::vector<SizedType> types;
+    for (auto expr : elems) {
+      auto exprType = expr->type();
+      if (!exprType.valid())
+        return exprType.error();
+      auto t = exprType.type();
+      if (t.IsMultiOutputMapTy()) {
+        std::stringstream ss;
+        ss << "map type " << t << " cannot exist inside a tuple";
+        return ss.str();
+      }
+      types.push_back(t);
+    }
+    return Struct::CreateTuple(elements);
+  });
 }
 
 ExprStatement::ExprStatement(Expression *expr, location loc)
@@ -225,13 +370,12 @@ AssignConfigVarStatement::AssignConfigVarStatement(
 VarDeclStatement::VarDeclStatement(Variable *var, SizedType type, location loc)
     : Statement(loc), var(var), set_type(true)
 {
-  var->type = std::move(type);
+  var->set_type(std::move(type));
 }
 
 VarDeclStatement::VarDeclStatement(Variable *var, location loc)
     : Statement(loc), var(var)
 {
-  var->type = CreateNone();
 }
 
 Predicate::Predicate(Expression *expr, location loc) : Node(loc), expr(expr)

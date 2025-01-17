@@ -2687,6 +2687,7 @@ void CodegenLLVM::visit(For &f)
   Value *ctx = b_.getInt64(0);
   llvm::Type *ctx_t = nullptr;
 
+  assert(f.ctx_type, "ctx_type must be non-null");
   const auto &ctx_fields = f.ctx_type.GetFields();
   if (!ctx_fields.empty()) {
     // Pack pointers to variables into context struct for use in the callback

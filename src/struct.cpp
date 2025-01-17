@@ -207,26 +207,6 @@ bool StructManager::Has(const std::string &name) const
   return struct_map_.find(name) != struct_map_.end();
 }
 
-std::weak_ptr<Struct> StructManager::AddAnonymousStruct(
-    const std::vector<SizedType> &fields,
-    const std::vector<std::string_view> &field_names)
-{
-  auto t = anonymous_types_.insert(Struct::CreateRecord(fields, field_names));
-  return *t.first;
-}
-
-std::weak_ptr<Struct> StructManager::AddTuple(
-    const std::vector<SizedType> &fields)
-{
-  auto t = anonymous_types_.insert(Struct::CreateTuple(fields));
-  return *t.first;
-}
-
-size_t StructManager::GetTuplesCnt() const
-{
-  return anonymous_types_.size();
-}
-
 const Field *StructManager::GetProbeArg(const ast::Probe &probe,
                                         const std::string &arg_name)
 {

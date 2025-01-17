@@ -3595,14 +3595,6 @@ TEST(semantic_analyser, tuple_nested)
   EXPECT_EQ(ty, assignment->var->type);
 }
 
-TEST(semantic_analyser, tuple_types_unique)
-{
-  auto bpftrace = get_mock_bpftrace();
-  test(*bpftrace, R"_(BEGIN { $t = (1, "hello"); $t = (4, "other"); })_");
-
-  EXPECT_EQ(bpftrace->structs.GetTuplesCnt(), 1ul);
-}
-
 TEST(semantic_analyser, multi_pass_type_inference_zero_size_int)
 {
   auto bpftrace = get_mock_bpftrace();
