@@ -56,11 +56,13 @@ public:
   Function(Origin origin,
            std::string name,
            const SizedType &return_type,
-           const std::vector<Param> &params)
+           const std::vector<Param> &params,
+	   bool varargs)
       : name_(std::move(name)),
         return_type_(return_type),
         params_(params),
-        origin_(origin)
+        origin_(origin),
+	varargs_(varargs)
   {
   }
 
@@ -80,12 +82,17 @@ public:
   {
     return origin_;
   }
+  bool varargs() const
+  {
+    return varargs_;
+  }
 
 private:
   std::string name_;
   SizedType return_type_;
   std::vector<Param> params_;
   Origin origin_;
+  bool varargs_;
 };
 
 /**
@@ -97,14 +104,11 @@ private:
 class FunctionRegistry {
 public:
   const Function *add(Function::Origin origin,
-                      std::string_view name,
-                      const SizedType &return_type,
-                      const std::vector<Param> &params);
-  const Function *add(Function::Origin origin,
                       std::string_view ns,
                       std::string_view name,
                       const SizedType &return_type,
-                      const std::vector<Param> &params);
+                      const std::vector<Param> &params,
+                      bool varargs = false);
 
   /**
    * Returns the best match for the given function name and arguments

@@ -18,64 +18,64 @@ protected:
   TestFunctionRegistryPopulated()
   {
     unique_no_args_ = reg_.add(
-        Function::Origin::Builtin, "unique_no_args", CreateNone(), {});
+        Function::Origin::Builtin, "", "unique_no_args", CreateNone(), {});
     unique_int8_ = reg_.add(Function::Origin::Builtin,
-                            "unique_int8",
+                            "", "unique_int8",
                             CreateNone(),
                             {
                                 Param{ "a", CreateInt8() },
                             });
     unique_int16_ = reg_.add(Function::Origin::Builtin,
-                             "unique_int16",
+                             "", "unique_int16",
                              CreateNone(),
                              {
                                  Param{ "a", CreateInt16() },
                              });
     unique_int32_ = reg_.add(Function::Origin::Builtin,
-                             "unique_int32",
+                             "", "unique_int32",
                              CreateNone(),
                              {
                                  Param{ "a", CreateInt32() },
                              });
     unique_int64_ = reg_.add(Function::Origin::Builtin,
-                             "unique_int64",
+                             "", "unique_int64",
                              CreateNone(),
                              {
                                  Param{ "a", CreateInt64() },
                              });
     unique_uint8_ = reg_.add(Function::Origin::Builtin,
-                             "unique_uint8",
+                             "", "unique_uint8",
                              CreateNone(),
                              {
                                  Param{ "a", CreateUInt8() },
                              });
     unique_uint16_ = reg_.add(Function::Origin::Builtin,
-                              "unique_uint16",
+                              "", "unique_uint16",
                               CreateNone(),
                               {
                                   Param{ "a", CreateUInt16() },
                               });
     unique_uint32_ = reg_.add(Function::Origin::Builtin,
-                              "unique_uint32",
+                              "", "unique_uint32",
                               CreateNone(),
                               {
                                   Param{ "a", CreateUInt32() },
                               });
     unique_uint64_ = reg_.add(Function::Origin::Builtin,
-                              "unique_uint64",
+                              "", "unique_uint64",
                               CreateNone(),
                               {
                                   Param{ "a", CreateUInt64() },
                               });
     unique_string_ = reg_.add(Function::Origin::Builtin,
-                              "unique_string",
+                              "", "unique_string",
                               CreateNone(),
                               {
                                   Param{ "a", CreateString(32) },
                               });
     unique_tuple_ = reg_.add(
         Function::Origin::Builtin,
-        "unique_tuple",
+        "", "unique_tuple",
         CreateNone(),
         {
             Param{ "a",
@@ -87,28 +87,28 @@ protected:
     unique_struct_arg->AddField("x", CreateInt64(), 0);
     unique_struct_ = reg_.add(
         Function::Origin::Builtin,
-        "unique_struct",
+        "", "unique_struct",
         CreateNone(),
         {
             Param{ "a", CreateRecord("unique_struct_arg", unique_struct_arg) },
         });
 
     takes_c_string_ = reg_.add(Function::Origin::Builtin,
-                               "takes_c_string",
+                               "", "takes_c_string",
                                CreateNone(),
                                {
                                    Param{ "a", CreatePointer(CreateInt8()) },
                                });
 
     overloaded_origin_b_s_builtin_ = reg_.add(
-        Function::Origin::Builtin, "overloaded_origin_b_s", CreateNone(), {});
+        Function::Origin::Builtin, "", "overloaded_origin_b_s", CreateNone(), {});
     overloaded_origin_b_s_script_ = reg_.add(
-        Function::Origin::Script, "overloaded_origin_b_s", CreateNone(), {});
+        Function::Origin::Script, "", "overloaded_origin_b_s", CreateNone(), {});
 
     overloaded_origin_b_e_builtin_ = reg_.add(
-        Function::Origin::Builtin, "overloaded_origin_b_e", CreateNone(), {});
+        Function::Origin::Builtin, "", "overloaded_origin_b_e", CreateNone(), {});
     overloaded_origin_b_e_external_ = reg_.add(
-        Function::Origin::External, "overloaded_origin_b_e", CreateNone(), {});
+        Function::Origin::External, "", "overloaded_origin_b_e", CreateNone(), {});
   }
 
   FunctionRegistry reg_;
@@ -336,7 +336,7 @@ TEST(TestFunctionRegistry, add_namespaced)
   std::stringstream out; // To suppress (expected) errors from unit test output
   FunctionRegistry reg;
   auto *foo = reg.add(Function::Origin::Script, "ns", "foo", CreateNone(), {});
-  EXPECT_EQ(nullptr, reg.get("", "foo", {}, out));
+  EXPECT_EQ(nullptr, reg.get("ns", "foo", {}, out));
   EXPECT_EQ(foo, reg.get("ns", "foo", {}, out));
 }
 
@@ -344,18 +344,18 @@ TEST(TestFunctionRegistry, add_duplicate_of_builtin)
 {
   FunctionRegistry reg;
   EXPECT_NE(nullptr,
-            reg.add(Function::Origin::Builtin, "foo", CreateNone(), {}));
+            reg.add(Function::Origin::Builtin, "ns", "foo", CreateNone(), {}));
   EXPECT_NE(nullptr,
-            reg.add(Function::Origin::Script, "foo", CreateNone(), {}));
+            reg.add(Function::Origin::Script, "ns", "foo", CreateNone(), {}));
 }
 
 TEST(TestFunctionRegistry, add_duplicate)
 {
   FunctionRegistry reg;
   EXPECT_NE(nullptr,
-            reg.add(Function::Origin::Script, "foo", CreateNone(), {}));
+            reg.add(Function::Origin::Script, "ns", "foo", CreateNone(), {}));
   EXPECT_EQ(nullptr,
-            reg.add(Function::Origin::Script, "foo", CreateNone(), {}));
+            reg.add(Function::Origin::Script, "ns", "foo", CreateNone(), {}));
 }
 
 } // namespace bpftrace::test::function_registry

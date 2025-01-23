@@ -1,5 +1,7 @@
 #include "functions.h"
 
+#include <ranges>
+
 #include "log.h"
 
 namespace bpftrace {
@@ -26,7 +28,11 @@ std::string param_types_str(const std::vector<Param> &params)
   for (const Param &param : params) {
     if (!first)
       str += ", ";
-    str += typestr(param.type());
+    if (param.type().IsNoneTy()) {
+      str += "T";
+    } else {
+      str += typestr(param.type());
+    }
     first = false;
   }
   str += ")";
@@ -35,27 +41,19 @@ std::string param_types_str(const std::vector<Param> &params)
 } // namespace
 
 const Function *FunctionRegistry::add(Function::Origin origin,
-                                      std::string_view name,
-                                      const SizedType &return_type,
-                                      const std::vector<Param> &params)
-{
-  return add(origin, {}, name, return_type, params);
-}
-
-const Function *FunctionRegistry::add(Function::Origin origin,
                                       std::string_view ns,
                                       std::string_view name,
                                       const SizedType &return_type,
-                                      const std::vector<Param> &params)
+                                      const std::vector<Param> &params,
+				      bool varargs)
 {
   FqName fq_name{
     .ns = std::string{ ns },
     .name = std::string{ name },
   };
 
-  // Check for duplicate function definitions
-  // The assumption is that builtin functions are all added to the registry
-  // before any user-defined functions.
+  // Check for duplicate function definitions. The assumption is that builtin
+  // functions are all added to the registry before any user-defined functions.
   // Builtin functions can be duplicated. Other functions can not.
   for (const Function &func : funcs_by_fq_name_[fq_name]) {
     if (func.origin() != Function::Origin::Builtin) {
@@ -64,9 +62,11 @@ const Function *FunctionRegistry::add(Function::Origin origin,
   }
 
   all_funcs_.push_back(std::make_unique<Function>(
-      origin, std::string{ name }, return_type, params));
+      origin, std::string{ name }, return_type, params, varargs));
   Function &new_func = *all_funcs_.back().get();
 
+  // Note that the order is important here, as we will search from back to
+  // front to ensure that user-defined functions are referenced first.
   funcs_by_fq_name_[fq_name].push_back(new_func);
   return &new_func;
 }
@@ -119,45 +119,57 @@ const Function *FunctionRegistry::get(std::string_view ns,
     return nullptr;
   }
 
+  // Find the candidates from the set of available functions. If the function
+  // defined is a user-defined function, then we don't match against builtin
+  // candidates (shadowing is complete).
   const auto &candidates = it->second;
+  auto search_order = std::views::reverse(candidates);
+  std::vector<std::reference_wrapper<const Function>> considered;
+  for (const Function &candidate : search_order) {
+    considered.push_back(candidate);
+    bool is_builtin = candidate.origin() == Function::Origin::Builtin;
 
-  // We disallow duplicate functions other than for builtins, so expect at most
-  // two exact matches.
-  assert(candidates.size() <= 2);
-
-  // No candidates => no match
-  // 1 candidate   => use it
-  // 2 candidates  => use non-builtin candidate
-  const Function *candidate = nullptr;
-  for (const Function &func : candidates) {
-    candidate = &func;
-    if (candidate->origin() != Function::Origin::Builtin)
-      break;
-  }
-
-  // Validate that the candidate's parameters can take our arguments
-  if (candidate) {
+    // Validate that the candidate's parameters can take our arguments. Note
+    // that *iff* the function is a builtin, we treat a none type as a generic
+    // type.  It may be possible to generalize this in the future and support
+    // this for user-defined functions, but for now this is a special feature
+    // of builtins that have custom code generation (but we want to rely on the
+    // function registry for type checking, at least).
     bool valid = true;
-    if (candidate->params().size() != arg_types.size()) {
-      valid = false;
-    } else {
-      for (size_t i = 0; i < arg_types.size(); i++) {
-        if (!can_implicit_cast(arg_types[i], candidate->params()[i].type())) {
-          valid = false;
-          break;
-        }
+    auto params = candidate.params();
+    auto check_args = arg_types.size();
+    if (params.size() != check_args) {
+      if (candidate.varargs() && check_args >= params.size()) {
+        check_args = params.size();
+      } else {
+	check_args = 0;
+        valid = false;
       }
     }
-
+    for (size_t i = 0; i < check_args; i++) {
+      if (is_builtin && params[i].type().IsNoneTy()) {
+        continue; // Generic parameter, see above.
+      }
+      if (!can_implicit_cast(arg_types[i], params[i].type())) {
+        valid = false;
+        break;
+      }
+    }
     if (valid)
-      return candidate;
+      return &candidate;
+
+    // See above: shadowing for user-defined functions is complete.
+    if (!is_builtin)
+      return nullptr;
   }
 
   LOG(ERROR, loc, out) << "Cannot call function '" << name
                        << "' using argument types: "
                        << arg_types_str(arg_types);
-  LOG(HINT, out) << "Candidate function:\n  " << candidate->name()
-                 << param_types_str(candidate->params());
+  for (const Function &func : considered) {
+    LOG(HINT, out) << "Candidate function:\n  " << func.name()
+                   << param_types_str(func.params());
+  }
 
   return nullptr;
 }
