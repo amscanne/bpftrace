@@ -117,6 +117,9 @@ add_custom_target(version_h
 add_dependencies(${BPFTRACE} version_h)
 add_dependencies(libbpftrace version_h)
 
+include(EmbedFiles)
+embeded_files_library(resources resources/*.h NAMESPACE bpftrace)
+
 target_compile_definitions(required_resources PRIVATE ${BPFTRACE_FLAGS})
 target_compile_definitions(runtime PRIVATE ${BPFTRACE_FLAGS})
 target_include_directories(libbpftrace PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
@@ -238,4 +241,3 @@ add_subdirectory(aot)
 add_subdirectory(arch)
 add_subdirectory(ast)
 add_subdirectory(cxxdemangler)
-add_subdirectory(resources)
