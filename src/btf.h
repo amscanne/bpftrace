@@ -1,15 +1,17 @@
 #pragma once
 
 #include "types.h"
+
 #include <cstddef>
-#include <linux/types.h>
 #include <map>
 #include <optional>
 #include <regex>
 #include <set>
 #include <string>
-#include <unistd.h>
 #include <unordered_set>
+
+#include <linux/types.h>
+#include <unistd.h>
 
 // Taken from libbpf
 #define BTF_INFO_ENC(kind, kind_flag, vlen)                                    \

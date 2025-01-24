@@ -78,8 +78,6 @@ endif(STATIC_LINKING)
 
 set_property( GLOBAL PROPERTY FIND_LIBRARY_USE_LIB64_PATHS TRUE )
 
-include_directories(SYSTEM ${KERNEL_INCLUDE_DIRS})
-
 find_package(ZLIB REQUIRED)
 include_directories(SYSTEM ${ZLIB_INCLUDE_DIRS})
 
