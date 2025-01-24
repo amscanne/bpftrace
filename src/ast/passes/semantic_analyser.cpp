@@ -4040,7 +4040,7 @@ Pass CreateSemanticPass()
     return PassResult::Success();
   };
 
-  return Pass("Semantic", fn);
+  return Pass("Semantic", std::move(fn));
 };
 
 void SemanticAnalyser::dereference_if_needed(Expression *&expr)
