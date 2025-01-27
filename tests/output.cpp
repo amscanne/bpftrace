@@ -42,7 +42,7 @@ TEST(TextOutput, lhist_no_suffix)
   // also be written as 625K, while the other bucket boundaries can not be
   // expressed with a suffix. We should only use the suffix representation for a
   // bucket if all buckets can be expressed with one.
-  EXPECT_EQ(R"(@mymap: 
+  EXPECT_EQ(R"(@mymap:
 [610000, 620000)       1 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@|
 [620000, 630000)       1 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@|
 [630000, 640000)       1 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@|

@@ -10,9 +10,7 @@
 namespace bpftrace {
 namespace ast {
 
-/**
-   Base visitor for double dispatch based visitation
-*/
+// Base visitor for double dispatch based visitation
 class VisitorBase {
 public:
   virtual ~VisitorBase() = default;
@@ -54,14 +52,12 @@ public:
   virtual void visit(Program &program) = 0;
 };
 
-/**
-   Basic tree walking visitor
-
-   The Visit() method is called one for every node in the tree. Providing an
-   easy way to run a generic method on all nodes.
-
-   The individual visit() methods run on specific node types.
-*/
+// Basic tree walking visitor
+//
+// The Visit() method is called one for every node in the tree. Providing an
+// easy way to run a generic method on all nodes.
+//
+// The individual visit() methods run on specific node types.
 class Visitor : public VisitorBase {
 public:
   explicit Visitor(ASTContext &ctx) : ctx_(ctx)
@@ -74,20 +70,16 @@ public:
   Visitor(Visitor &&) = delete;
   Visitor &operator=(Visitor &&) = delete;
 
-  /*
-    Visit a node
-   */
+  // Visit a node
   virtual inline void Visit(Node &n)
   {
     n.accept(*this);
   };
 
-  /*
-    Visitors for specific node types
-
-    NB: visitor should dispatch through the Visit method and not use
-    node->accept() directly
-  */
+  // Visitors for specific node types
+  //
+  // NB: visitor should dispatch through the Visit method and not use
+  // node->accept() directly
   void visit(Integer &integer) override;
   void visit(PositionalParameter &param) override;
   void visit(String &string) override;
@@ -129,11 +121,9 @@ protected:
   ASTContext &ctx_;
 };
 
-/**
-   Base class for vtable based dispatching
-
-   \tparam R return type for visitors
-*/
+// Base class for vtable based dispatching
+//
+//\tparam R return type for visitors
 template <typename R>
 class Dispatcher {
 private:
@@ -143,9 +133,7 @@ private:
 public:
   virtual ~Dispatcher() = default;
 
-  /**
-     Visit handles the dispatching on node type
-   */
+  // Visit handles the dispatching on node type
   virtual R Visit(Node &node)
   {
     static tabletype table = make_vtable();
@@ -157,9 +145,7 @@ public:
     return default_visitor(node);                                              \
   }
 
-  /**
-      Visitors for node subtypes
-   */
+  // Visitors for node subtypes
   virtual R visit(Integer &node) DEFAULT_FN;
   virtual R visit(PositionalParameter &node) DEFAULT_FN;
   virtual R visit(String &node) DEFAULT_FN;

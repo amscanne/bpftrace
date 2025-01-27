@@ -8,7 +8,7 @@ namespace bpftrace {
 std::string logtype_str(LogType t)
 {
   switch (t) {
-    // clang-format off
+      // clang-format off
     case LogType::DEBUG   : return "";
     case LogType::V1      : return "";
     case LogType::HINT    : return "HINT: ";
@@ -96,28 +96,25 @@ void Log::log_with_location(LogType type,
     msg.pop_back();
   }
 
-  /* For a multi line error only the line range is printed:
-     <filename>:<start_line>-<end_line>: ERROR: <message>
-  */
+  // For a multi line error only the line range is printed:
+  //     <filename>:<start_line>-<end_line>: ERROR: <message>
   if (l.begin.line < l.end.line) {
     out << l.begin.line << "-" << l.end.line << ": " << typestr << msg
         << std::endl;
     return;
   }
 
-  /*
-    For a single line error the format is:
-
-    <filename>:<line>:<start_col>-<end_col>: ERROR: <message>
-    <source line>
-    <marker>
-
-    E.g.
-
-    file.bt:1:10-20: error: <message>
-    i:s:1   /1 < "str"/
-            ~~~~~~~~~~
-  */
+  //    For a single line error the format is:
+  //
+  //    <filename>:<line>:<start_col>-<end_col>: ERROR: <message>
+  //    <source line>
+  //    <marker>
+  //
+  //    E.g.
+  //
+  //    file.bt:1:10-20: error: <message>
+  //    i:s:1   /1 < "str"/
+  //            ~~~~~~~~~~
   out << l.begin.line << ":" << l.begin.column << "-" << l.end.column;
   out << ": " << typestr << msg << std::endl;
 

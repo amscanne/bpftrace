@@ -31,9 +31,7 @@ static int add_symbol(const char* symname,
   return 0;
 }
 
-/*
- * Finds all matches of search_input in the provided input stream.
- */
+// Finds all matches of search_input in the provided input stream.
 std::set<std::string> ProbeMatcher::get_matches_in_stream(
     const std::string& search_input,
     std::istream& symbol_stream,
@@ -94,11 +92,9 @@ std::set<std::string> ProbeMatcher::get_matches_in_stream(
   return matches;
 }
 
-/*
- * Get matches of search_input (containing a wildcard) for a given probe_type.
- * probe_type determines where to take the candidate matches from.
- * Some probe types (e.g. uprobe) require target to be specified.
- */
+// Get matches of search_input (containing a wildcard) for a given probe_type.
+// probe_type determines where to take the candidate matches from.
+// Some probe types (e.g. uprobe) require target to be specified.
 std::set<std::string> ProbeMatcher::get_matches_for_probetype(
     const ProbeType& probe_type,
     const std::string& target,
@@ -196,9 +192,7 @@ std::set<std::string> ProbeMatcher::get_matches_for_probetype(
     return {};
 }
 
-/*
- * Find all matches of search_input in set
- */
+// Find all matches of search_input in set
 std::set<std::string> ProbeMatcher::get_matches_in_set(
     const std::string& search_input,
     const std::set<std::string>& set)
@@ -330,10 +324,8 @@ std::unique_ptr<std::istream> ProbeMatcher::get_symbols_from_list(
   return std::make_unique<std::istringstream>(symbols);
 }
 
-/*
- * Get list of kernel probe types for the purpose of listing.
- * Ignore return probes and aliases.
- */
+// Get list of kernel probe types for the purpose of listing.
+// Ignore return probes and aliases.
 std::unique_ptr<std::istream> ProbeMatcher::kernel_probe_list()
 {
   std::string probes;
@@ -353,10 +345,8 @@ std::unique_ptr<std::istream> ProbeMatcher::kernel_probe_list()
   return std::make_unique<std::istringstream>(probes);
 }
 
-/*
- * Get list of userspace probe types for the purpose of listing.
- * Ignore return probes.
- */
+// Get list of userspace probe types for the purpose of listing.
+// Ignore return probes.
 std::unique_ptr<std::istream> ProbeMatcher::userspace_probe_list()
 {
   std::string probes;

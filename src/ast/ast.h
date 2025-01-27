@@ -66,7 +66,7 @@ enum class ExpansionType {
 class Node {
 public:
   Node() = default;
-  Node(location loc) : loc(loc){};
+  Node(location loc) : loc(loc) {};
   virtual ~Node() = default;
 
   Node(const Node &) = default;
@@ -84,7 +84,7 @@ class Variable;
 class Expression : public Node {
 public:
   Expression() = default;
-  Expression(location loc) : Node(loc){};
+  Expression(location loc) : Node(loc) {};
   virtual ~Expression() = default;
 
   Expression(const Expression &) = default;
@@ -347,7 +347,7 @@ private:
 class Statement : public Node {
 public:
   Statement() = default;
-  Statement(location loc) : Node(loc){};
+  Statement(location loc) : Node(loc) {};
   virtual ~Statement() = default;
 
   Statement(const Statement &) = default;
@@ -699,19 +699,15 @@ SizedType ident_to_record(const std::string &ident, int pointer_level = 0);
 template <typename T>
 concept NodeType = std::derived_from<T, Node>;
 
-/*
- * Manages the lifetime of AST nodes.
- *
- * Nodes allocated by an ASTContext will be kept alive for the duration of the
- * owning ASTContext object.
- */
+// Manages the lifetime of AST nodes.
+//
+// Nodes allocated by an ASTContext will be kept alive for the duration of the
+// owning ASTContext object.
 class ASTContext {
 public:
   Program *root = nullptr;
 
-  /*
-   * Creates and returns a pointer to an AST node.
-   */
+  // Creates and returns a pointer to an AST node.
   template <NodeType T, typename... Args>
   T *make_node(Args &&...args)
   {

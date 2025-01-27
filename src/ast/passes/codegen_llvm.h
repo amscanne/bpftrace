@@ -47,7 +47,7 @@ public:
   void visit(String &string) override;
   void visit(Identifier &identifier) override;
   void visit(Builtin &builtin) override;
-  void visit(StackMode &) override{};
+  void visit(StackMode &) override {};
   void visit(Call &call) override;
   void visit(Sizeof &szof) override;
   void visit(Offsetof &ofof) override;
