@@ -2747,6 +2747,7 @@ void CodegenLLVM::visit(Block &block)
   for (Statement *stmt : block.stmts) {
     auto scoped_del = accept(stmt);
   }
+  accept(block.expr);
   scope_stack_.pop_back();
 }
 
