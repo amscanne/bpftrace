@@ -4061,15 +4061,15 @@ bool SemanticAnalyser::has_error() const
 
 Pass CreateSemanticPass(std::ostream &out)
 {
-  return Pass("Semantic", [&out](PassContext &ctx) {
-    auto semantics = SemanticAnalyser(ctx.ast_ctx, ctx.b, !ctx.b.cmd_.empty());
+  return Pass::create("Semantic", [&out](ASTContext &ast, BPFtrace &b) {
+    auto semantics = SemanticAnalyser(ast, b, !b.cmd_.empty());
     int err = semantics.analyse();
     out << semantics.warning();
     if (err) {
       out << semantics.error();
-      return PassResult::Error("Semantic", err);
+      return Failure(semantics.error());
     }
-    return PassResult::Success();
+    return Success();
   });
 };
 

@@ -91,9 +91,9 @@ void PortabilityAnalyser::visit(AttachPoint &ap)
 
 Pass CreatePortabilityPass(std::ostream &out)
 {
-  return Pass("PortabilityAnalyser", [&out](PassContext &ctx) {
+  return Pass::create("PortabilityAnalyser", [&out](ASTContext &ast) {
     PortabilityAnalyser analyser;
-    analyser.visit(ctx.ast_ctx.root);
+    analyser.visit(ast.root);
 
     std::string err = analyser.error();
     if (!err.empty()) {
@@ -101,10 +101,10 @@ Pass CreatePortabilityPass(std::ostream &out)
       if (std::getenv("__BPFTRACE_NOTIFY_AOT_PORTABILITY_DISABLED"))
         std::cout << "__BPFTRACE_NOTIFY_AOT_PORTABILITY_DISABLED" << std::endl;
       out << err;
-      return PassResult::Error("PortabilityAnalyser", 1);
+      return Failure(std::move(err));
     }
 
-    return PassResult::Success();
+    return Success();
   });
 }
 

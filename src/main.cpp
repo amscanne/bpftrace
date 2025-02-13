@@ -19,6 +19,7 @@
 #include "ast/passes/config_analyser.h"
 #include "ast/passes/field_analyser.h"
 #include "ast/passes/portability_analyser.h"
+#include "ast/passes/printer.h"
 #include "ast/passes/resource_analyser.h"
 #include "ast/passes/return_path_analyser.h"
 #include "ast/passes/semantic_analyser.h"
@@ -432,27 +433,32 @@ static void parse_env(BPFtrace& bpftrace)
   return std::move(driver.ctx);
 }
 
-ast::PassManager CreateDynamicPM()
+void addDynamicPasses(std::function<void(ast::Pass&& pass)> add)
 {
-  ast::PassManager pm;
-  pm.AddPass(ast::CreateConfigPass());
-  pm.AddPass(ast::CreateSemanticPass());
-  pm.AddPass(ast::CreateResourcePass());
-  pm.AddPass(ast::CreateReturnPathPass());
-
-  return pm;
+  add(ast::CreateConfigPass());
+  add(ast::CreateSemanticPass());
+  add(ast::CreateResourcePass());
+  add(ast::CreateReturnPathPass());
 }
 
-ast::PassManager CreateAotPM()
+void addAotPasses(std::function<void(ast::Pass&& pass)> add)
 {
-  ast::PassManager pm;
-  pm.AddPass(ast::CreateSemanticPass());
-  pm.AddPass(ast::CreatePortabilityPass());
-  pm.AddPass(ast::CreateResourcePass());
-  pm.AddPass(ast::CreateReturnPathPass());
-
-  return pm;
+  add(ast::CreateSemanticPass());
+  add(ast::CreatePortabilityPass());
+  add(ast::CreateResourcePass());
+  add(ast::CreateReturnPathPass());
 }
+
+ast::Pass printPass(const std::string& name)
+{
+  return ast::Pass::create("print-" + name,
+                           [name = std::move(name)](ast::ASTContext& ast) {
+                             std::cerr << "\nAST after: " << name << std::endl;
+                             std::cerr << "-------------------\n";
+                             ast::Printer printer(std::cerr);
+                             printer.visit(ast.root);
+                           });
+};
 
 struct Args {
   std::string pid_str;
@@ -892,21 +898,41 @@ int main(int argc, char* argv[])
   // rlimit?
   enforce_infinite_rlimit();
 
-  auto ast_ctx = parse(
+  auto ast = parse(
       bpftrace, filename, program, args.include_dirs, args.include_files);
-  if (!ast_ctx)
+  if (!ast)
     return 1;
 
   if (args.listing) {
-    bpftrace.probe_matcher_->list_probes(ast_ctx->root);
+    bpftrace.probe_matcher_->list_probes(ast->root);
     return 0;
   }
 
-  ast::PassContext ctx(bpftrace, *ast_ctx);
+  // Temporarily, we make the full `BPFTrace` object available via the pass
+  // manager (and objects are temporarily mutable). As passes are refactored
+  // into lighter-weight components, the `BPFTrace` object should be decomposed
+  // into its meaningful parts. Furthermore, the codegen and field analysis
+  // passes will be rolled into the pass manager as regular passes; the final
+  // binary is merely one of the outputs that can be extracted.
   ast::PassManager pm;
+  pm.put(bpftrace);
+
+  // Wrap all added passes in passes that dump the intermediate state. These
+  // could dump intermediate objects from the context as well, but preserve
+  // existing behavior for now.
+  auto addPass = [&pm](ast::Pass&& pass) {
+    pm.add(std::move(pass));
+    if (bt_debug.find(DebugStage::Ast) != bt_debug.end()) {
+      pm.add(printPass(pass.name()));
+    }
+  };
+  if (bt_debug.find(DebugStage::Ast) != bt_debug.end()) {
+    pm.add(printPass("parser"));
+  }
+
   switch (args.build_mode) {
     case BuildMode::DYNAMIC:
-      pm = CreateDynamicPM();
+      addDynamicPasses(addPass);
       break;
     case BuildMode::AHEAD_OF_TIME:
       if (bpftrace.has_dwarf_data()) {
@@ -916,17 +942,17 @@ int main(int argc, char* argv[])
           std::cout << "__BPFTRACE_NOTIFY_AOT_PORTABILITY_DISABLED"
                     << std::endl;
       }
-      pm = CreateAotPM();
+      addAotPasses(addPass);
       break;
   }
 
-  bpftrace.fentry_recursion_check(ast_ctx->root);
+  bpftrace.fentry_recursion_check(ast->root);
 
-  auto pmresult = pm.Run(ctx);
-  if (!pmresult.Ok())
+  auto pmresult = pm.run(*ast);
+  if (!pmresult.ok())
     return 1;
 
-  ast::CodegenLLVM llvm(ctx.ast_ctx, bpftrace);
+  ast::CodegenLLVM llvm(*ast, bpftrace);
   BpfBytecode bytecode;
   try {
     llvm.generate_ir();

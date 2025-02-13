@@ -167,16 +167,16 @@ void ConfigAnalyser::visit(AssignConfigVarStatement &assignment)
 
 Pass CreateConfigPass(std::ostream &out)
 {
-  return Pass("ConfigAnalyser", [&out](PassContext &ctx) {
-    auto configs = ConfigAnalyser(ctx.b);
-    configs.visit(ctx.ast_ctx.root);
+  return Pass::create("ConfigAnalyser", [&out](ASTContext &ast, BPFtrace &b) {
+    auto configs = ConfigAnalyser(b);
+    configs.visit(ast.root);
     auto err = configs.error();
     if (!err.empty()) {
       out << err;
-      return PassResult::Error("ConfigAnalyser", err);
+      return Failure(std::move(err));
     }
 
-    return PassResult::Success();
+    return Success();
   });
 };
 
