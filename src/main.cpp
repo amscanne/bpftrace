@@ -432,26 +432,20 @@ static void parse_env(BPFtrace& bpftrace)
   return std::move(driver.ctx);
 }
 
-ast::PassManager CreateDynamicPM()
+void addDynamicPasses(ast::PassManager& pm)
 {
-  ast::PassManager pm;
-  pm.AddPass(ast::CreateConfigPass());
-  pm.AddPass(ast::CreateSemanticPass());
-  pm.AddPass(ast::CreateResourcePass());
-  pm.AddPass(ast::CreateReturnPathPass());
-
-  return pm;
+  pm.add(ast::CreateConfigPass());
+  pm.add(ast::CreateSemanticPass());
+  pm.add(ast::CreateResourcePass());
+  pm.add(ast::CreateReturnPathPass());
 }
 
-ast::PassManager CreateAotPM()
+void addAotPasses(ast::PassManager& pm)
 {
-  ast::PassManager pm;
-  pm.AddPass(ast::CreateSemanticPass());
-  pm.AddPass(ast::CreatePortabilityPass());
-  pm.AddPass(ast::CreateResourcePass());
-  pm.AddPass(ast::CreateReturnPathPass());
-
-  return pm;
+  pm.add(ast::CreateSemanticPass());
+  pm.add(ast::CreatePortabilityPass());
+  pm.add(ast::CreateResourcePass());
+  pm.add(ast::CreateReturnPathPass());
 }
 
 struct Args {
@@ -892,21 +886,33 @@ int main(int argc, char* argv[])
   // rlimit?
   enforce_infinite_rlimit();
 
-  auto ast_ctx = parse(
+  auto ast = parse(
       bpftrace, filename, program, args.include_dirs, args.include_files);
-  if (!ast_ctx)
+  if (!ast)
     return 1;
 
   if (args.listing) {
-    bpftrace.probe_matcher_->list_probes(ast_ctx->root);
+    bpftrace.probe_matcher_->list_probes(ast->root);
     return 0;
   }
 
-  ast::PassContext ctx(bpftrace, *ast_ctx);
+  // Temporarily, we make the full `BPFTrace` object available via the pass
+  // manager (and objects are temporarily mutable). As passes are refactored
+  // into lighter-weight components, the `BPFTrace` object should be decomposed
+  // into its meaningful parts. Furthermore, the codegen and field analysis
+  // passes will be rolled into the pass manager as regular passes; the final
+  // binary is merely one of the outputs that can be extracted.
   ast::PassManager pm;
+  pm.add(
+      ast::Pass::create("bootstrap",
+                        [&]([[maybe_unused]] ast::ASTContext& ast)
+                            -> ast::ErrorOr<std::reference_wrapper<BPFtrace>> {
+                          return std::ref(bpftrace);
+                        }));
+
   switch (args.build_mode) {
     case BuildMode::DYNAMIC:
-      pm = CreateDynamicPM();
+      addDynamicPasses(pm);
       break;
     case BuildMode::AHEAD_OF_TIME:
       if (bpftrace.has_dwarf_data()) {
@@ -916,17 +922,17 @@ int main(int argc, char* argv[])
           std::cout << "__BPFTRACE_NOTIFY_AOT_PORTABILITY_DISABLED"
                     << std::endl;
       }
-      pm = CreateAotPM();
+      addAotPasses(pm);
       break;
   }
 
-  bpftrace.fentry_recursion_check(ast_ctx->root);
+  bpftrace.fentry_recursion_check(ast->root);
 
-  auto pmresult = pm.Run(ctx);
-  if (!pmresult.Ok())
+  auto pmresult = pm.run(*ast);
+  if (!pmresult.ok())
     return 1;
 
-  ast::CodegenLLVM llvm(ctx.ast_ctx, bpftrace);
+  ast::CodegenLLVM llvm(*ast, bpftrace);
   BpfBytecode bytecode;
   try {
     llvm.generate_ir();

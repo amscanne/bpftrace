@@ -327,17 +327,17 @@ void FieldAnalyser::visit(Subprog &subprog)
 
 Pass CreateFieldAnalyserPass(std::ostream &out)
 {
-  return Pass("FieldAnalyser", [&out](PassContext &ctx) {
-    FieldAnalyser analyser(ctx.b);
-    analyser.visit(ctx.ast_ctx.root);
+  return Pass::create("FieldAnalyser", [&out](ASTContext &ast, BPFtrace &b) {
+    FieldAnalyser analyser(b);
+    analyser.visit(ast);
     out << analyser.warning();
     std::string err = analyser.error();
     if (!err.empty()) {
       out << err;
-      return PassResult::Error("FieldAnalyser", 1);
+      return Failure(std::move(err));
     }
 
-    return PassResult::Success();
+    return Success();
   });
 }
 

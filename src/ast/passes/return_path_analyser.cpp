@@ -54,13 +54,13 @@ bool ReturnPathAnalyser::visit(If &if_node)
 
 Pass CreateReturnPathPass(std::ostream &out)
 {
-  return Pass("ReturnPath", [&out](PassContext &ctx) {
+  return Pass::create("ReturnPath", [&out](ASTContext &ast) {
     auto return_path = ReturnPathAnalyser();
-    if (!return_path.visit(ctx.ast_ctx.root)) {
+    if (!return_path.visit(ast)) {
       out << return_path.error();
-      return PassResult::Error("ReturnPath", 1);
+      return Failure(return_path.error());
     }
-    return PassResult::Success();
+    return Success();
   });
 }
 

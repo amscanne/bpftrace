@@ -495,17 +495,17 @@ void ResourceAnalyser::maybe_allocate_map_key_buffer(const Map &map)
 
 Pass CreateResourcePass(std::ostream &out)
 {
-  return Pass("ResourceAnalyser", [&out](PassContext &ctx) {
-    ResourceAnalyser analyser(ctx.b);
-    analyser.visit(ctx.ast_ctx.root);
+  return Pass::create("ResourceAnalyser", [&out](ASTContext &ast, BPFtrace &b) {
+    ResourceAnalyser analyser(b);
+    analyser.visit(ast);
     auto err = analyser.error();
     if (!err.empty()) {
       out << err;
-      return PassResult::Error("Resource", 1);
+      return Failure(std::move(err));
     }
 
-    ctx.b.resources = analyser.resources();
-    return PassResult::Success();
+    b.resources = analyser.resources();
+    return Success();
   });
 }
 
