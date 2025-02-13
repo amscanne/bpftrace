@@ -33,25 +33,13 @@ std::string get_literal_string(Expression &expr)
 
 } // namespace
 
-ResourceAnalyser::ResourceAnalyser(ASTContext &ctx,
-                                   BPFtrace &bpftrace,
-                                   std::ostream &out)
-    : Visitor<ResourceAnalyser>(ctx),
-      bpftrace_(bpftrace),
-      out_(out),
-      probe_(nullptr)
+ResourceAnalyser::ResourceAnalyser(BPFtrace &bpftrace)
+    : bpftrace_(bpftrace), probe_(nullptr)
 {
 }
 
-std::optional<RequiredResources> ResourceAnalyser::analyse()
+RequiredResources ResourceAnalyser::resources()
 {
-  visit(ctx_.root);
-
-  if (!err_.str().empty()) {
-    out_ << err_.str();
-    return std::nullopt;
-  }
-
   if (resources_.max_fmtstring_args_size > 0) {
     resources_.needed_global_vars.insert(
         bpftrace::globalvars::GlobalVar::FMT_STRINGS_BUFFER);
@@ -105,7 +93,7 @@ std::optional<RequiredResources> ResourceAnalyser::analyse()
         bpftrace::globalvars::GlobalVar::MAX_CPU_ID);
   }
 
-  return std::optional{ std::move(resources_) };
+  return std::move(resources_);
 }
 
 void ResourceAnalyser::visit(Probe &probe)
@@ -505,20 +493,20 @@ void ResourceAnalyser::maybe_allocate_map_key_buffer(const Map &map)
   }
 }
 
-Pass CreateResourcePass()
+Pass CreateResourcePass(std::ostream &out)
 {
-  auto fn = [](PassContext &ctx) {
-    ResourceAnalyser analyser(ctx.ast_ctx, ctx.b);
-    auto pass_result = analyser.analyse();
-
-    if (!pass_result.has_value())
+  return Pass("ResourceAnalyser", [&out](PassContext &ctx) {
+    ResourceAnalyser analyser(ctx.b);
+    analyser.visit(ctx.ast_ctx.root);
+    auto err = analyser.error();
+    if (!err.empty()) {
+      out << err;
       return PassResult::Error("Resource", 1);
-    ctx.b.resources = pass_result.value();
+    }
 
+    ctx.b.resources = analyser.resources();
     return PassResult::Success();
-  };
-
-  return Pass("ResourceAnalyser", fn);
+  });
 }
 
 } // namespace bpftrace::ast

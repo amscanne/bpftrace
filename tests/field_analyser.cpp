@@ -11,15 +11,17 @@ using ::testing::_;
 
 void test(BPFtrace &bpftrace, const std::string &input, int expected_result = 0)
 {
-  std::stringstream out;
   std::stringstream msg;
   msg << "\nInput:\n" << input << "\n\nOutput:\n";
 
   Driver driver(bpftrace);
   EXPECT_EQ(driver.parse_str(input), 0);
 
-  ast::FieldAnalyser fields(driver.ctx, bpftrace, out);
-  EXPECT_EQ(fields.analyse(), expected_result) << msg.str() + out.str();
+  ast::FieldAnalyser fields(bpftrace);
+  fields.visit(driver.ctx.root);
+  auto err = fields.error();
+  int result = !err.empty();
+  EXPECT_EQ(result, expected_result) << msg.str() << err;
 }
 
 void test(const std::string &input, int expected_result = 0)

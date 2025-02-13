@@ -16,13 +16,9 @@ namespace ast {
 
 class ConfigAnalyser : public Visitor<ConfigAnalyser> {
 public:
-  explicit ConfigAnalyser(ASTContext &ctx,
-                          BPFtrace &bpftrace,
-                          std::ostream &out = std::cerr)
-      : Visitor<ConfigAnalyser>(ctx),
-        bpftrace_(bpftrace),
-        config_setter_(ConfigSetter(bpftrace.config_, ConfigSource::script)),
-        out_(out)
+  explicit ConfigAnalyser(BPFtrace &bpftrace)
+      : bpftrace_(bpftrace),
+        config_setter_(ConfigSetter(bpftrace.config_, ConfigSource::script))
   {
   }
 
@@ -32,12 +28,14 @@ public:
   void visit(StackMode &mode);
   void visit(AssignConfigVarStatement &assignment);
 
-  bool analyse();
+  std::string error()
+  {
+    return err_.str();
+  }
 
 private:
   BPFtrace &bpftrace_;
   ConfigSetter config_setter_;
-  std::ostream &out_;
   std::ostringstream err_;
 
   void set_config(AssignConfigVarStatement &assignment, ConfigKeyInt key);
@@ -56,6 +54,7 @@ private:
                       AssignConfigVarStatement &assignment);
 };
 
-Pass CreateConfigPass();
+Pass CreateConfigPass(std::ostream &out = std::cerr);
+
 } // namespace ast
 } // namespace bpftrace

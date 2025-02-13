@@ -7,24 +7,6 @@
 
 namespace bpftrace::ast {
 
-PortabilityAnalyser::PortabilityAnalyser(ASTContext &ctx, std::ostream &out)
-    : Visitor<PortabilityAnalyser>(ctx), out_(out)
-{
-}
-
-int PortabilityAnalyser::analyse()
-{
-  visit(ctx_.root);
-
-  std::string errors = err_.str();
-  if (!errors.empty()) {
-    out_ << errors;
-    return 1;
-  }
-
-  return 0;
-}
-
 void PortabilityAnalyser::visit(PositionalParameter &param)
 {
   // Positional params are only known at runtime. Currently, codegen directly
@@ -107,22 +89,23 @@ void PortabilityAnalyser::visit(AttachPoint &ap)
   }
 }
 
-Pass CreatePortabilityPass()
+Pass CreatePortabilityPass(std::ostream &out)
 {
-  auto fn = [](PassContext &ctx) {
-    PortabilityAnalyser analyser(ctx.ast_ctx);
-    if (analyser.analyse()) {
-      // Used by runtime test framework to know when to skip an AOT test
+  return Pass("PortabilityAnalyser", [&out](PassContext &ctx) {
+    PortabilityAnalyser analyser;
+    analyser.visit(ctx.ast_ctx.root);
+
+    std::string err = analyser.error();
+    if (!err.empty()) {
+      // Used by runtime test framework to know when to skip an AOT test.
       if (std::getenv("__BPFTRACE_NOTIFY_AOT_PORTABILITY_DISABLED"))
         std::cout << "__BPFTRACE_NOTIFY_AOT_PORTABILITY_DISABLED" << std::endl;
-
-      return PassResult::Error("");
+      out << err;
+      return PassResult::Error("PortabilityAnalyser", 1);
     }
 
     return PassResult::Success();
-  };
-
-  return Pass("PortabilityAnalyser", fn);
+  });
 }
 
 } // namespace bpftrace::ast

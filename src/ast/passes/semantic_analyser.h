@@ -62,27 +62,9 @@ class SemanticAnalyser : public Visitor<SemanticAnalyser> {
 public:
   explicit SemanticAnalyser(ASTContext &ctx,
                             BPFtrace &bpftrace,
-                            std::ostream &out = std::cerr,
                             bool has_child = true,
                             bool listing = false)
-      : Visitor<SemanticAnalyser>(ctx),
-        bpftrace_(bpftrace),
-        out_(out),
-        listing_(listing),
-        has_child_(has_child)
-  {
-  }
-
-  explicit SemanticAnalyser(ASTContext &ctx, BPFtrace &bpftrace, bool has_child)
-      : SemanticAnalyser(ctx, bpftrace, std::cerr, has_child)
-  {
-  }
-
-  explicit SemanticAnalyser(ASTContext &ctx,
-                            BPFtrace &bpftrace,
-                            bool has_child,
-                            bool listing)
-      : SemanticAnalyser(ctx, bpftrace, std::cerr, has_child, listing)
+      : ctx_(ctx), bpftrace_(bpftrace), listing_(listing), has_child_(has_child)
   {
   }
 
@@ -123,12 +105,21 @@ public:
   void visit(Subprog &subprog);
 
   int analyse();
+  std::string error()
+  {
+    return err_.str();
+  }
+  std::string warning()
+  {
+    return warning_.str();
+  }
 
 private:
+  ASTContext &ctx_;
   PassTracker pass_tracker_;
   BPFtrace &bpftrace_;
-  std::ostream &out_;
   std::ostringstream err_;
+  std::ostringstream warning_;
   bool listing_;
 
   bool is_final_pass() const;
@@ -214,7 +205,7 @@ private:
   bool has_pos_param_ = false;
 };
 
-Pass CreateSemanticPass();
+Pass CreateSemanticPass(std::ostream &out = std::cerr);
 
 } // namespace ast
 } // namespace bpftrace

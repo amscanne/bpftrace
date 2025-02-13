@@ -367,10 +367,13 @@ static void parse_env(BPFtrace& bpftrace)
 
   bpftrace.parse_btf(driver.list_modules());
 
-  ast::FieldAnalyser fields(driver.ctx, bpftrace);
-  err = fields.analyse();
-  if (err)
+  ast::FieldAnalyser fields(bpftrace);
+  fields.visit(driver.ctx.root);
+  auto errstr = fields.error();
+  if (!errstr.empty()) {
+    std::cerr << errstr;
     return std::nullopt;
+  }
 
   if (TracepointFormatParser::parse(driver.ctx, bpftrace) == false)
     return std::nullopt;

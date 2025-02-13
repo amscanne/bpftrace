@@ -17,25 +17,28 @@ using ::testing::_;
 void test(BPFtrace &bpftrace, const std::string &input, int expected_result = 0)
 {
   Driver driver(bpftrace);
-  std::stringstream out;
   std::stringstream msg;
   msg << "\nInput:\n" << input << "\n\nOutput:\n";
 
   ASSERT_EQ(driver.parse_str(input), 0);
 
-  ast::FieldAnalyser fields(driver.ctx, bpftrace, out);
-  ASSERT_EQ(fields.analyse(), 0) << msg.str() << out.str();
+  ast::FieldAnalyser fields(bpftrace);
+  fields.visit(driver.ctx.root);
+  auto err = fields.error();
+  ASSERT_TRUE(err.empty()) << msg.str() << err;
 
   ClangParser clang;
   ASSERT_TRUE(clang.parse(driver.ctx.root, bpftrace));
 
   ASSERT_EQ(driver.parse_str(input), 0);
-  out.str("");
-  ast::SemanticAnalyser semantics(driver.ctx, bpftrace, out, false);
-  ASSERT_EQ(semantics.analyse(), 0) << msg.str() << out.str();
+  ast::SemanticAnalyser semantics(driver.ctx, bpftrace, false);
+  ASSERT_EQ(semantics.analyse(), 0) << msg.str() << semantics.error();
 
-  ast::PortabilityAnalyser portability(driver.ctx, out);
-  EXPECT_EQ(portability.analyse(), expected_result) << msg.str() << out.str();
+  ast::PortabilityAnalyser portability;
+  portability.visit(driver.ctx.root);
+  auto portability_err = portability.error();
+  int result = !portability_err.empty();
+  EXPECT_EQ(result, expected_result) << msg.str() << portability_err;
 }
 
 void test(const std::string &input, int expected_result = 0)

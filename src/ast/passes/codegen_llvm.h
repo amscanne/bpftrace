@@ -294,6 +294,7 @@ private:
     return ScopedExprDeleter(deleter);
   }
 
+  ASTContext &astctx_;
   BPFtrace &bpftrace_;
   std::unique_ptr<USDTHelper> usdt_helper_;
   std::unique_ptr<LLVMContext> context_;
