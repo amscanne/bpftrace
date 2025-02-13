@@ -28,16 +28,18 @@ void test(BPFtrace &bpftrace,
 
   ASSERT_EQ(driver.parse_str(input), 0);
   out.str("");
-  ast::SemanticAnalyser semantics(driver.ctx, bpftrace, out, false);
-  ASSERT_EQ(semantics.analyse(), 0) << msg.str() << out.str();
+  ast::SemanticAnalyser semantics(driver.ctx, bpftrace, false);
+  ASSERT_EQ(semantics.analyse(), 0) << msg.str() << semantics.error();
 
-  ast::ConfigAnalyser config_analyser(driver.ctx, bpftrace, out);
-  EXPECT_EQ(config_analyser.analyse(), expected_result)
-      << msg.str() << out.str();
+  ast::ConfigAnalyser config_analyser(bpftrace);
+  config_analyser.visit(driver.ctx.root);
+  auto config_err = config_analyser.error();
+  int result = !config_err.empty();
+  EXPECT_EQ(result, expected_result) << msg.str() << config_err;
   if (expected_error.data()) {
     if (!expected_error.empty() && expected_error[0] == '\n')
       expected_error.remove_prefix(1); // Remove initial '\n'
-    EXPECT_EQ(out.str(), expected_error);
+    EXPECT_EQ(config_err, expected_error);
   }
 }
 

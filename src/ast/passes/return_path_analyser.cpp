@@ -3,11 +3,6 @@
 
 namespace bpftrace::ast {
 
-ReturnPathAnalyser::ReturnPathAnalyser(ASTContext &ctx, std::ostream &out)
-    : Visitor<ReturnPathAnalyser, bool>(ctx), out_(out)
-{
-}
-
 bool ReturnPathAnalyser::visit(Program &prog)
 {
   for (Subprog *subprog : prog.functions) {
@@ -57,25 +52,16 @@ bool ReturnPathAnalyser::visit(If &if_node)
   return false;
 }
 
-int ReturnPathAnalyser::analyse()
+Pass CreateReturnPathPass(std::ostream &out)
 {
-  int result = visit(ctx_.root) ? 0 : 1;
-  if (result)
-    out_ << err_.str();
-  return result;
-}
-
-Pass CreateReturnPathPass()
-{
-  auto fn = [](PassContext &ctx) {
-    auto return_path = ReturnPathAnalyser(ctx.ast_ctx);
-    int err = return_path.analyse();
-    if (err)
-      return PassResult::Error("ReturnPath");
+  return Pass("ReturnPath", [&out](PassContext &ctx) {
+    auto return_path = ReturnPathAnalyser();
+    if (!return_path.visit(ctx.ast_ctx.root)) {
+      out << return_path.error();
+      return PassResult::Error("ReturnPath", 1);
+    }
     return PassResult::Success();
-  };
-
-  return Pass("ReturnPath", fn);
+  });
 }
 
 } // namespace bpftrace::ast

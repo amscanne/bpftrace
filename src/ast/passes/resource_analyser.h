@@ -21,11 +21,7 @@ namespace ast {
 // example the helper error metadata is still being collected during codegen.
 class ResourceAnalyser : public Visitor<ResourceAnalyser> {
 public:
-  ResourceAnalyser(ASTContext &ctx,
-                   BPFtrace &bpftrace,
-                   std::ostream &out = std::cerr);
-
-  std::optional<RequiredResources> analyse();
+  ResourceAnalyser(BPFtrace &bpftrace);
 
   using Visitor<ResourceAnalyser>::visit;
   void visit(Probe &probe);
@@ -40,6 +36,15 @@ public:
   void visit(AssignVarStatement &assignment);
   void visit(VarDeclStatement &decl);
 
+  // This will move the compute resources value, it should be called only
+  // after the top-level visit.
+  RequiredResources resources();
+
+  std::string error()
+  {
+    return err_.str();
+  }
+
 private:
   // Determines whether the given function uses userspace symbol resolution.
   // This is used later for loading the symbol table into memory.
@@ -52,17 +57,17 @@ private:
   void update_map_info(Map &map);
   void update_variable_info(Variable &var);
 
-  RequiredResources resources_;
   BPFtrace &bpftrace_;
-  std::ostream &out_;
+  RequiredResources resources_;
   std::ostringstream err_;
+
   // Current probe we're analysing
   Probe *probe_;
 
   int next_map_id_ = 0;
 };
 
-Pass CreateResourcePass();
+Pass CreateResourcePass(std::ostream &out = std::cerr);
 
 } // namespace ast
 } // namespace bpftrace

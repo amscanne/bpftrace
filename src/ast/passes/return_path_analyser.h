@@ -8,8 +8,6 @@ namespace ast {
 
 class ReturnPathAnalyser : public Visitor<ReturnPathAnalyser, bool> {
 public:
-  explicit ReturnPathAnalyser(ASTContext &ctx, std::ostream &out = std::cerr);
-
   // visit methods return true iff all return paths of the analyzed code
   // (represented by the given node) return a value
   // For details for concrete node type see the implementations
@@ -19,14 +17,16 @@ public:
   bool visit(Jump &jump);
   bool visit(If &if_stmt);
 
-  int analyse();
+  std::string error()
+  {
+    return err_.str();
+  }
 
 private:
-  std::ostream &out_;
   std::ostringstream err_;
 };
 
-Pass CreateReturnPathPass();
+Pass CreateReturnPathPass(std::ostream &out = std::cerr);
 
 } // namespace ast
 } // namespace bpftrace

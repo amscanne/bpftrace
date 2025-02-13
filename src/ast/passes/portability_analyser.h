@@ -16,9 +16,6 @@ namespace ast {
 // features.
 class PortabilityAnalyser : public Visitor<PortabilityAnalyser> {
 public:
-  PortabilityAnalyser(ASTContext &ctx, std::ostream &out = std::cerr);
-  int analyse();
-
   using Visitor<PortabilityAnalyser>::visit;
   void visit(PositionalParameter &param);
   void visit(Builtin &builtin);
@@ -26,12 +23,16 @@ public:
   void visit(Cast &cast);
   void visit(AttachPoint &ap);
 
+  std::string error()
+  {
+    return err_.str();
+  }
+
 private:
-  std::ostream &out_;
   std::ostringstream err_;
 };
 
-Pass CreatePortabilityPass();
+Pass CreatePortabilityPass(std::ostream &out = std::cerr);
 
 } // namespace ast
 } // namespace bpftrace

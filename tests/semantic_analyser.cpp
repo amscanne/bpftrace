@@ -33,12 +33,13 @@ void test_for_warning(BPFtrace &bpftrace,
   std::stringstream out;
   // Override to mockbpffeature.
   bpftrace.feature_ = std::make_unique<MockBPFfeature>(true);
-  ast::SemanticAnalyser semantics(driver.ctx, bpftrace, out);
+  ast::SemanticAnalyser semantics(driver.ctx, bpftrace);
   semantics.analyse();
+  auto merged = semantics.warning() + semantics.error();
   if (invert)
-    EXPECT_THAT(out.str(), Not(HasSubstr(warning)));
+    EXPECT_THAT(merged, Not(HasSubstr(warning)));
   else
-    EXPECT_THAT(out.str(), HasSubstr(warning));
+    EXPECT_THAT(merged, HasSubstr(warning));
 }
 
 void test_for_warning(const std::string &input,
@@ -69,27 +70,28 @@ void test(BPFtrace &bpftrace,
   bpftrace.safe_mode_ = safe_mode;
   ASSERT_EQ(driver.parse_str(input), 0);
 
-  ast::FieldAnalyser fields(driver.ctx, bpftrace, out);
-  ASSERT_EQ(fields.analyse(), 0) << msg.str() + out.str();
+  ast::FieldAnalyser fields(bpftrace);
+  fields.visit(driver.ctx.root);
+  ASSERT_TRUE(fields.error().empty()) << msg.str() << fields.error();
 
   ClangParser clang;
   clang.parse(driver.ctx.root, bpftrace);
 
   ASSERT_EQ(driver.parse_str(input), 0);
-  out.str("");
   // Override to mockbpffeature.
   bpftrace.feature_ = std::make_unique<MockBPFfeature>(mock_has_features);
-  ast::SemanticAnalyser semantics(driver.ctx, bpftrace, out, has_child);
+  ast::SemanticAnalyser semantics(driver.ctx, bpftrace, has_child);
   if (expected_result == -1) {
     // Accept any failure result
-    EXPECT_NE(0, semantics.analyse()) << msg.str() + out.str();
+    EXPECT_NE(0, semantics.analyse()) << msg.str() << semantics.error();
   } else {
-    EXPECT_EQ(expected_result, semantics.analyse()) << msg.str() + out.str();
+    EXPECT_EQ(expected_result, semantics.analyse())
+        << msg.str() << semantics.error();
   }
   if (expected_error.data()) {
     if (!expected_error.empty() && expected_error[0] == '\n')
       expected_error.remove_prefix(1); // Remove initial '\n'
-    EXPECT_EQ(expected_error, out.str());
+    EXPECT_EQ(expected_error, semantics.error());
   }
 }
 
@@ -200,8 +202,8 @@ void test(BPFtrace &bpftrace,
     expected_ast.remove_prefix(1); // Remove initial '\n'
 
   std::ostringstream out;
-  ast::Printer printer(driver.ctx, out);
-  printer.print();
+  ast::Printer printer(out);
+  printer.visit(driver.ctx.root);
 
   if (expected_ast[0] == '*' && expected_ast[expected_ast.size() - 1] == '*') {
     // Remove globs from beginning and end

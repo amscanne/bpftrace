@@ -165,27 +165,19 @@ void ConfigAnalyser::visit(AssignConfigVarStatement &assignment)
   std::visit([&](auto key) { set_config(assignment, key); }, configKey);
 }
 
-bool ConfigAnalyser::analyse()
+Pass CreateConfigPass(std::ostream &out)
 {
-  visit(ctx_.root);
-  std::string errors = err_.str();
-  if (!errors.empty()) {
-    out_ << errors;
-    return false;
-  }
-  return true;
-}
+  return Pass("ConfigAnalyser", [&out](PassContext &ctx) {
+    auto configs = ConfigAnalyser(ctx.b);
+    configs.visit(ctx.ast_ctx.root);
+    auto err = configs.error();
+    if (!err.empty()) {
+      out << err;
+      return PassResult::Error("ConfigAnalyser", err);
+    }
 
-Pass CreateConfigPass()
-{
-  auto fn = [](PassContext &ctx) {
-    auto configs = ConfigAnalyser(ctx.ast_ctx, ctx.b);
-    if (!configs.analyse())
-      return PassResult::Error("Config");
     return PassResult::Success();
-  };
-
-  return Pass("ConfigAnalyser", fn);
+  });
 };
 
 } // namespace bpftrace::ast

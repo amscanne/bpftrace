@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_set>
 
+#include "ast/pass_manager.h"
 #include "ast/visitor.h"
 #include "bpftrace.h"
 
@@ -16,13 +17,8 @@ namespace ast {
 
 class FieldAnalyser : public Visitor<FieldAnalyser> {
 public:
-  explicit FieldAnalyser(ASTContext &ctx,
-                         BPFtrace &bpftrace,
-                         std::ostream &out = std::cerr)
-      : Visitor<FieldAnalyser>(ctx),
-        bpftrace_(bpftrace),
-        prog_type_(libbpf::BPF_PROG_TYPE_UNSPEC),
-        out_(out)
+  explicit FieldAnalyser(BPFtrace &bpftrace)
+      : bpftrace_(bpftrace), prog_type_(libbpf::BPF_PROG_TYPE_UNSPEC)
   {
   }
 
@@ -42,7 +38,14 @@ public:
   void visit(Probe &probe);
   void visit(Subprog &subprog);
 
-  int analyse();
+  std::string error()
+  {
+    return err_.str();
+  }
+  std::string warning()
+  {
+    return warning_.str();
+  }
 
 private:
   void resolve_args(Probe &probe);
@@ -57,11 +60,13 @@ private:
   bool has_builtin_args_;
   Probe *probe_ = nullptr;
 
-  std::ostream &out_;
   std::ostringstream err_;
+  std::ostringstream warning_;
 
   std::map<std::string, SizedType> var_types_;
 };
+
+Pass CreateFieldAnalyserPass(std::ostream &out = std::cerr);
 
 } // namespace ast
 } // namespace bpftrace

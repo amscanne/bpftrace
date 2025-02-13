@@ -532,7 +532,7 @@ void SemanticAnalyser::visit(Builtin &builtin)
         // If sargX values are needed when using an offset, they can be stored
         // in a map when entering the function and then referenced from an
         // offset-based probe
-        LOG(WARNING, builtin.loc, out_)
+        LOG(WARNING, builtin.loc, warning_)
             << "Using an address offset with the sargX built-in can"
                "lead to unexpected behavior ";
       }
@@ -902,7 +902,7 @@ void SemanticAnalyser::visit(Call &call)
                   << ")";
           } else if (value > static_cast<int64_t>(strlen)) {
             if (is_final_pass())
-              LOG(WARNING, call.loc, out_)
+              LOG(WARNING, call.loc, warning_)
                   << "length param (" << value
                   << ") is too long and will be shortened to " << strlen
                   << " bytes (see BPFTRACE_MAX_STRLEN)";
@@ -987,7 +987,7 @@ void SemanticAnalyser::visit(Call &call)
 
     if (buffer_size > max_buffer_size) {
       if (is_final_pass())
-        LOG(WARNING, call.loc, out_)
+        LOG(WARNING, call.loc, warning_)
             << call.func << "() length is too long and will be shortened to "
             << std::to_string(max_strlen) << " bytes (see BPFTRACE_MAX_STRLEN)";
 
@@ -1219,7 +1219,7 @@ void SemanticAnalyser::visit(Call &call)
       }
     }
     if (call.func == "debugf" && is_final_pass()) {
-      LOG(WARNING, call.loc, out_)
+      LOG(WARNING, call.loc, warning_)
           << "The debugf() builtin is not recommended for production use. For "
              "more information see bpf_trace_printk in bpf-helpers(7).";
     }
@@ -1236,7 +1236,7 @@ void SemanticAnalyser::visit(Call &call)
   } else if (call.func == "print") {
     check_assignment(call, false, false, false);
     if (in_loop() && is_final_pass() && call.vargs.at(0)->is_map) {
-      LOG(WARNING, call.loc, out_)
+      LOG(WARNING, call.loc, warning_)
           << "Due to it's asynchronous nature using 'print()' in a loop can "
              "lead to unexpected behavior. The map will likely be updated "
              "before the runtime can 'print' it.";
@@ -1264,7 +1264,7 @@ void SemanticAnalyser::visit(Call &call)
           if (call.vargs.size() > 2)
             check_arg(call, Type::integer, 2, true);
           if (map.type.IsStatsTy() && call.vargs.size() > 1) {
-            LOG(WARNING, call.loc, out_)
+            LOG(WARNING, call.loc, warning_)
                 << "print()'s top and div arguments are ignored when used on "
                    "stats() maps.";
           }
@@ -1900,7 +1900,7 @@ void SemanticAnalyser::binop_int(Binop &binop)
         case Operator::GE:
         case Operator::LT:
         case Operator::GT:
-          LOG(WARNING, binop.loc, out_)
+          LOG(WARNING, binop.loc, warning_)
               << "comparison of integers of different signs: '" << left->type
               << "' and '" << right->type << "'"
               << " can lead to undefined behavior";
@@ -1910,7 +1910,7 @@ void SemanticAnalyser::binop_int(Binop &binop)
         case Operator::MUL:
         case Operator::DIV:
         case Operator::MOD:
-          LOG(WARNING, binop.loc, out_)
+          LOG(WARNING, binop.loc, warning_)
               << "arithmetic on integers of different signs: '" << left->type
               << "' and '" << right->type << "'"
               << " can lead to undefined behavior";
@@ -1934,9 +1934,10 @@ void SemanticAnalyser::binop_int(Binop &binop)
 
     // If they're still signed, we have to warn
     if (lsign || rsign) {
-      LOG(WARNING, binop.loc, out_) << "signed operands for '" << opstr(binop)
-                                    << "' can lead to undefined behavior "
-                                    << "(cast to unsigned to silence warning)";
+      LOG(WARNING, binop.loc, warning_)
+          << "signed operands for '" << opstr(binop)
+          << "' can lead to undefined behavior "
+          << "(cast to unsigned to silence warning)";
     }
   }
 
@@ -2028,7 +2029,7 @@ void SemanticAnalyser::binop_ptr(Binop &binop)
         auto le = lht.GetPointeeTy();
         auto re = rht.GetPointeeTy();
         if (*le != *re) {
-          LOG(WARNING, binop.left->loc + binop.right->loc, out_)
+          LOG(WARNING, binop.left->loc + binop.right->loc, warning_)
               << "comparison of distinct pointer types ('" << *le << ", '"
               << *re << "')";
         }
@@ -2108,7 +2109,7 @@ void SemanticAnalyser::visit(Binop &binop)
   if (addr_lhs != addr_rhs && addr_lhs != AddrSpace::none &&
       addr_rhs != AddrSpace::none) {
     if (is_final_pass())
-      LOG(WARNING, binop.loc, out_) << "Addrspace mismatch";
+      LOG(WARNING, binop.loc, warning_) << "Addrspace mismatch";
     binop.type.SetAS(AddrSpace::none);
   }
   // Associativity from left to right for binary operator
@@ -2152,7 +2153,7 @@ void SemanticAnalyser::visit(Binop &binop)
     auto lit_len = bpftrace_.get_string_literal(lit).size();
     auto str_len = str->type.GetSize();
     if (lit_len > str_len) {
-      LOG(WARNING, binop.left->loc + binop.loc + binop.right->loc, out_)
+      LOG(WARNING, binop.left->loc + binop.loc + binop.right->loc, warning_)
           << "The literal is longer than the variable string (size=" << str_len
           << "), condition will always be false";
     }
@@ -2363,7 +2364,7 @@ void SemanticAnalyser::visit(Jump &jump)
 void SemanticAnalyser::visit(While &while_block)
 {
   if (is_final_pass() && !bpftrace_.feature_->has_loop()) {
-    LOG(WARNING, while_block.loc, out_)
+    LOG(WARNING, while_block.loc, warning_)
         << "Kernel does not support bounded loops. Depending"
            " on LLVMs loop unroll to generate loadable code.";
   }
@@ -2486,7 +2487,7 @@ void SemanticAnalyser::visit(For &f)
 
   // Validate body
   // This could be relaxed in the future:
-  CollectNodes<Jump> jumps(ctx_);
+  CollectNodes<Jump> jumps;
   jumps.visit(f.stmts);
   for (const Jump &n : jumps.nodes()) {
     LOG(ERROR, n.loc, err_)
@@ -2518,7 +2519,7 @@ void SemanticAnalyser::visit(For &f)
       // inside the for loop to get the types of the referenced variables but
       // only after we have the map's key/value type so we can also check
       // the usages of the created $kv tuple variable.
-      auto [iter, _] = for_vars_referenced_.try_emplace(&f, ctx_);
+      auto [iter, _] = for_vars_referenced_.try_emplace(&f);
       auto &collector = iter->second;
       collector.visit(stmt, [this, &found_vars](const auto &var) {
         if (found_vars.find(var.ident) != found_vars.end())
@@ -2565,7 +2566,7 @@ void SemanticAnalyser::visit(For &f)
 
   // Currently, we do not pass BPF context to the callback so disable builtins
   // which require ctx access.
-  CollectNodes<Builtin> builtins(ctx_);
+  CollectNodes<Builtin> builtins;
   builtins.visit(f.stmts);
   for (const Builtin &builtin : builtins.nodes()) {
     if (builtin.type.IsCtxAccess() || builtin.is_argx() ||
@@ -2579,7 +2580,7 @@ void SemanticAnalyser::visit(For &f)
   // have been visited.
   std::vector<SizedType> ctx_types;
   std::vector<std::string_view> ctx_idents;
-  auto [iter, _] = for_vars_referenced_.try_emplace(&f, ctx_);
+  auto [iter, _] = for_vars_referenced_.try_emplace(&f);
   auto &collector = iter->second;
   for (const Variable &var : collector.nodes()) {
     ctx_types.push_back(CreatePointer(var.type, AddrSpace::bpf));
@@ -2941,7 +2942,7 @@ void SemanticAnalyser::visit(AssignMapStatement &assignment)
     auto map_size = map_val_[map_ident].GetSize();
     auto expr_size = assignment.expr->type.GetSize();
     if (map_size < expr_size) {
-      LOG(WARNING, assignment.loc, out_)
+      LOG(WARNING, assignment.loc, warning_)
           << "String size mismatch: " << map_size << " < " << expr_size
           << ". The value may be truncated.";
     }
@@ -2953,7 +2954,7 @@ void SemanticAnalyser::visit(AssignMapStatement &assignment)
       buf << "Buffer size mismatch: " << map_size << " != " << expr_size << ".";
       if (map_size < expr_size) {
         buf << " The value may be truncated.";
-        LOG(WARNING, assignment.loc, out_) << buf.str();
+        LOG(WARNING, assignment.loc, warning_) << buf.str();
       } else {
         // bpf_map_update_elem() expects map_size-length value
         LOG(ERROR, assignment.loc, err_) << buf.str();
@@ -3083,7 +3084,7 @@ void SemanticAnalyser::visit(AssignVarStatement &assignment)
       auto var_size = storedTy.GetSize();
       auto expr_size = assignTy.GetSize();
       if (var_size != expr_size) {
-        LOG(WARNING, assignment.loc, out_)
+        LOG(WARNING, assignment.loc, warning_)
             << "Buffer size mismatch: " << var_size << " != " << expr_size
             << (var_size < expr_size ? ". The value may be truncated."
                                      : ". The value may contain garbage.");
@@ -3191,7 +3192,7 @@ void SemanticAnalyser::visit(VarDeclStatement &decl)
       }
 
       if (is_final_pass() && !foundVar.was_assigned) {
-        LOG(WARNING, decl.loc, out_)
+        LOG(WARNING, decl.loc, warning_)
             << "Variable " << var_ident << " never assigned to.";
       }
 
@@ -3230,7 +3231,7 @@ void SemanticAnalyser::visit(AttachPoint &ap)
       if (bpftrace_.config_.get(ConfigKeyMissingProbes::default_) !=
               ConfigMissingProbes::ignore &&
           !has_wildcard(ap.func) && !bpftrace_.is_traceable_func(ap.func)) {
-        LOG(WARNING, ap.loc, out_)
+        LOG(WARNING, ap.loc, warning_)
             << ap.func
             << " is not traceable (either non-existing, inlined, or marked as "
                "\"notrace\"); attaching to it will likely fail";
@@ -3275,7 +3276,7 @@ void SemanticAnalyser::visit(AttachPoint &ap)
         // behavior and take the first match.
         // Otherwise we keep the target with glob, it will be expanded later
         if (ap.target.find("*") == std::string::npos) {
-          LOG(WARNING, ap.loc, out_)
+          LOG(WARNING, ap.loc, warning_)
               << "attaching to uprobe target file '" << paths.front()
               << "' but matched " << std::to_string(paths.size())
               << " binaries";
@@ -3303,7 +3304,7 @@ void SemanticAnalyser::visit(AttachPoint &ap)
         default:
           // See uprobe, above.
           if (ap.target.find("*") == std::string::npos) {
-            LOG(WARNING, ap.loc, out_)
+            LOG(WARNING, ap.loc, warning_)
                 << "attaching to usdt target file '" << paths.front()
                 << "' but matched " << std::to_string(paths.size())
                 << " binaries";
@@ -3546,8 +3547,7 @@ int SemanticAnalyser::analyse()
     visit(ctx_.root);
 
     errors = err_.str();
-    if (!errors.empty()) {
-      out_ << errors;
+    if (!has_error()) {
       return pass_tracker_.get_num_passes();
     }
 
@@ -3899,7 +3899,7 @@ void SemanticAnalyser::accept_statements(StatementList &stmts)
     if (is_final_pass()) {
       auto *jump = dynamic_cast<Jump *>(stmt);
       if (jump && i < (stmts.size() - 1)) {
-        LOG(WARNING, jump->loc, out_)
+        LOG(WARNING, jump->loc, warning_)
             << "All code after a '" << opstr(*jump) << "' is unreachable.";
       }
     }
@@ -4059,17 +4059,18 @@ bool SemanticAnalyser::has_error() const
   return !errors.empty();
 }
 
-Pass CreateSemanticPass()
+Pass CreateSemanticPass(std::ostream &out)
 {
-  auto fn = [](PassContext &ctx) {
+  return Pass("Semantic", [&out](PassContext &ctx) {
     auto semantics = SemanticAnalyser(ctx.ast_ctx, ctx.b, !ctx.b.cmd_.empty());
     int err = semantics.analyse();
-    if (err)
+    out << semantics.warning();
+    if (err) {
+      out << semantics.error();
       return PassResult::Error("Semantic", err);
+    }
     return PassResult::Success();
-  };
-
-  return Pass("Semantic", fn);
+  });
 };
 
 Expression *SemanticAnalyser::dereference_if_needed(Expression *expr)

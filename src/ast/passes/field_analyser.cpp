@@ -210,7 +210,8 @@ void FieldAnalyser::resolve_args(Probe &probe)
           if (dwarf)
             ap_args = dwarf->resolve_args(func);
           else
-            LOG(WARNING, ap->loc, err_) << "No debuginfo found for " << target;
+            LOG(WARNING, ap->loc, warning_)
+                << "No debuginfo found for " << target;
         }
 
         if (probe_args.size == -1)
@@ -238,7 +239,7 @@ void FieldAnalyser::resolve_args(Probe &probe)
         if (dwarf)
           probe_args = dwarf->resolve_args(ap->func);
         else {
-          LOG(WARNING, ap->loc, err_)
+          LOG(WARNING, ap->loc, warning_)
               << "No debuginfo found for " << ap->target;
         }
         if (static_cast<int>(probe_args.fields.size()) >
@@ -324,17 +325,20 @@ void FieldAnalyser::visit(Subprog &subprog)
   visit(subprog.stmts);
 }
 
-int FieldAnalyser::analyse()
+Pass CreateFieldAnalyserPass(std::ostream &out)
 {
-  visit(ctx_.root);
+  return Pass("FieldAnalyser", [&out](PassContext &ctx) {
+    FieldAnalyser analyser(ctx.b);
+    analyser.visit(ctx.ast_ctx.root);
+    out << analyser.warning();
+    std::string err = analyser.error();
+    if (!err.empty()) {
+      out << err;
+      return PassResult::Error("FieldAnalyser", 1);
+    }
 
-  std::string errors = err_.str();
-  if (!errors.empty()) {
-    out_ << errors;
-    return 1;
-  }
-
-  return 0;
+    return PassResult::Success();
+  });
 }
 
 } // namespace bpftrace::ast

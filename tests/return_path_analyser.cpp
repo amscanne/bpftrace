@@ -21,19 +21,20 @@ void test(BPFtrace &bpftrace, const std::string &input, int expected_result = 0)
 
   ASSERT_EQ(driver.parse_str(input), 0);
 
-  ast::FieldAnalyser fields(driver.ctx, bpftrace, out);
-  ASSERT_EQ(fields.analyse(), 0) << msg.str() << out.str();
+  ast::FieldAnalyser fields(bpftrace);
+  fields.visit(driver.ctx.root);
+  ASSERT_TRUE(fields.error().empty()) << msg.str() << fields.error();
 
   ClangParser clang;
   ASSERT_TRUE(clang.parse(driver.ctx.root, bpftrace));
 
   ASSERT_EQ(driver.parse_str(input), 0);
-  out.str("");
-  ast::SemanticAnalyser semantics(driver.ctx, bpftrace, out, false);
-  ASSERT_EQ(semantics.analyse(), 0) << msg.str() << out.str();
+  ast::SemanticAnalyser semantics(driver.ctx, bpftrace, false);
+  ASSERT_EQ(semantics.analyse(), 0) << msg.str() << semantics.error();
 
-  ast::ReturnPathAnalyser return_path(driver.ctx, out);
-  EXPECT_EQ(return_path.analyse(), expected_result) << msg.str() << out.str();
+  ast::ReturnPathAnalyser return_path;
+  int result = return_path.visit(driver.ctx.root) ? 0 : 1;
+  EXPECT_EQ(result, expected_result) << msg.str() << return_path.error();
 }
 
 void test(const std::string &input, int expected_result = 0)
