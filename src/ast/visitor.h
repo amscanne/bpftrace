@@ -25,6 +25,11 @@ namespace bpftrace::ast {
 template <typename Impl, typename R = void>
 class Visitor {
 public:
+  // R_int is used internally to wrap visitAndReplace and visitImpl, so that
+  // these are not mistaken used by external APIs. These need to be unwrapped
+  // by `merge` before they can be returned.
+  using R_int = std::conditional<std::is_void_v<R>, std::monostate, R>::type;
+
   // See above; specific replace methods may be defined.
   template <typename T>
   T *replace(T *node, [[maybe_unused]] R *result)
@@ -35,180 +40,161 @@ public:
   // visit methods are used to traverse the graph, and are provided a reference
   // to the underlying node. The visit is invoked *before* the replace call,
   // and can directly consume and modify the results of the visit.
-  R visit(Integer &integer __attribute__((__unused__)))
+  R visit([[maybe_unused]] Integer &integer)
   {
     return default_value();
   }
-  R visit(PositionalParameter &integer __attribute__((__unused__)))
+  R visit([[maybe_unused]] PositionalParameter &integer)
   {
     return default_value();
   }
-  R visit(String &string __attribute__((__unused__)))
+  R visit([[maybe_unused]] String &string)
   {
     return default_value();
   }
-  R visit(Builtin &builtin __attribute__((__unused__)))
+  R visit([[maybe_unused]] Builtin &builtin)
   {
     return default_value();
   }
-  R visit(Identifier &identifier __attribute__((__unused__)))
+  R visit([[maybe_unused]] Identifier &identifier)
   {
     return default_value();
   }
-  R visit(StackMode &mode __attribute__((__unused__)))
+  R visit([[maybe_unused]] StackMode &mode)
   {
     return default_value();
   }
-  R visit(Variable &var __attribute__((__unused__)))
+  R visit([[maybe_unused]] Variable &var)
   {
     return default_value();
   }
-  R visit(SubprogArg &subprog_arg __attribute__((__unused__)))
+  R visit([[maybe_unused]] SubprogArg &subprog_arg)
   {
     return default_value();
   }
-  R visit(AttachPoint &ap __attribute__((__unused__)))
+  R visit([[maybe_unused]] AttachPoint &ap)
   {
     return default_value();
   }
   R visit(Call &call)
   {
-    return visitImpl(call.vargs);
+    return merge(visitImpl(call.vargs));
   }
   R visit(Sizeof &szof)
   {
-    return visitAndReplace(&szof.expr);
+    return merge(visitAndReplace(&szof.expr));
   }
   R visit(Offsetof &ofof)
   {
-    return visitAndReplace(&ofof.expr);
+    return merge(visitAndReplace(&ofof.expr));
   }
   R visit(Map &map)
   {
-    return visitAndReplace(&map.key_expr);
+    return merge(visitAndReplace(&map.key_expr));
   }
   R visit(Binop &binop)
   {
-    visitAndReplace(&binop.left);
-    visitAndReplace(&binop.right);
-    return default_value();
+    return merge(visitAndReplace(&binop.left), visitAndReplace(&binop.right));
   }
   R visit(Unop &unop)
   {
-    return visitAndReplace(&unop.expr);
+    return merge(visitAndReplace(&unop.expr));
   }
   R visit(Ternary &ternary)
   {
-    visitAndReplace(&ternary.cond);
-    visitAndReplace(&ternary.left);
-    visitAndReplace(&ternary.right);
-    return default_value();
+    return merge(visitAndReplace(&ternary.cond),
+                 visitAndReplace(&ternary.left),
+                 visitAndReplace(&ternary.right));
   }
   R visit(FieldAccess &acc)
   {
-    return visitAndReplace(&acc.expr);
+    return merge(visitAndReplace(&acc.expr));
   }
   R visit(ArrayAccess &arr)
   {
-    visitAndReplace(&arr.expr);
-    visitAndReplace(&arr.indexpr);
-    return default_value();
+    return merge(visitAndReplace(&arr.expr), visitAndReplace(&arr.indexpr));
   }
   R visit(Cast &cast)
   {
-    return visitAndReplace(&cast.expr);
+    return merge(visitAndReplace(&cast.expr));
   }
   R visit(Tuple &tuple)
   {
-    return visitImpl(tuple.elems);
+    return merge(visitImpl(tuple.elems));
   }
   R visit(ExprStatement &expr)
   {
-    return visitAndReplace(&expr.expr);
+    return merge(visitAndReplace(&expr.expr));
   }
   R visit(AssignMapStatement &assignment)
   {
-    visitAndReplace(&assignment.map);
-    visitAndReplace(&assignment.expr);
-    return default_value();
+    return merge(visitAndReplace(&assignment.map),
+                 visitAndReplace(&assignment.expr));
   }
   R visit(AssignVarStatement &assignment)
   {
-    visitAndReplace(&assignment.var);
-    visitAndReplace(&assignment.expr);
-    return default_value();
+    return merge(visitAndReplace(&assignment.var),
+                 visitAndReplace(&assignment.expr));
   }
   R visit(AssignConfigVarStatement &assignment)
   {
-    return visitAndReplace(&assignment.expr);
+    return merge(visitAndReplace(&assignment.expr));
   }
   R visit(VarDeclStatement &decl)
   {
-    return visitAndReplace(&decl.var);
+    return merge(visitAndReplace(&decl.var));
   }
   R visit(If &if_node)
   {
-    visitAndReplace(&if_node.cond);
-    visitAndReplace(&if_node.if_block);
-    visitAndReplace(&if_node.else_block);
-    return default_value();
+    return merge(visitAndReplace(&if_node.cond),
+                 visitAndReplace(&if_node.if_block),
+                 visitAndReplace(&if_node.else_block));
   }
   R visit(Jump &jump)
   {
-    return visitAndReplace(&jump.return_value);
+    return merge(visitAndReplace(&jump.return_value));
   }
   R visit(Unroll &unroll)
   {
-    visitAndReplace(&unroll.expr);
-    visitAndReplace(&unroll.block);
-    return default_value();
+    return merge(visitAndReplace(&unroll.expr), visitAndReplace(&unroll.block));
   }
   R visit(While &while_block)
   {
-    visitAndReplace(&while_block.cond);
-    visitAndReplace(&while_block.block);
-    return default_value();
+    return merge(visitAndReplace(&while_block.cond),
+                 visitAndReplace(&while_block.block));
   }
   R visit(For &for_loop)
   {
-    visitAndReplace(&for_loop.decl);
-    visitAndReplace(&for_loop.expr);
-    visitImpl(for_loop.stmts);
-    return default_value();
+    return merge(visitAndReplace(&for_loop.decl),
+                 visitAndReplace(&for_loop.expr));
   }
   R visit(Predicate &pred)
   {
-    return visitAndReplace(&pred.expr);
+    return merge(visitAndReplace(&pred.expr));
   }
   R visit(Probe &probe)
   {
-    visitImpl(probe.attach_points);
-    visitAndReplace(&probe.pred);
-    visitAndReplace(&probe.block);
-    return default_value();
+    return merge(visitImpl(probe.attach_points),
+                 visitAndReplace(&probe.pred),
+                 visitAndReplace(&probe.block));
   }
   R visit(Config &config)
   {
-    visitImpl(config.stmts);
-    return default_value();
+    return merge(visitImpl(config.stmts));
   }
   R visit(Block &block)
   {
-    visitImpl(block.stmts);
-    return default_value();
+    return merge(visitImpl(block.stmts));
   }
   R visit(Subprog &subprog)
   {
-    visitImpl(subprog.args);
-    visitImpl(subprog.stmts);
-    return default_value();
+    return merge(visitImpl(subprog.args), visitImpl(subprog.stmts));
   }
   R visit(Program &program)
   {
-    visitImpl(program.functions);
-    visitImpl(program.probes);
-    visitAndReplace(&program.config);
-    return default_value();
+    return merge(visitImpl(program.functions),
+                 visitImpl(program.probes),
+                 visitAndReplace(&program.config));
   }
 
   // Temporarily allow visits to expression and statement references. This
@@ -266,12 +252,12 @@ public:
   R visit(T *ptr)
   {
     if (ptr)
-      return visitImpl(*ptr);
+      return merge(visitImpl(*ptr));
     return default_value();
   }
 
   template <typename T>
-  R visitAndReplace(T **t)
+  R_int visitAndReplace(T **t)
   {
     auto orig = *t; // Prior to replacement.
     Impl *impl = static_cast<Impl *>(this);
@@ -282,7 +268,7 @@ public:
     } else {
       impl->visit(orig);
       *t = impl->replace(orig, nullptr);
-      return default_value();
+      return R_int();
     }
   }
 
@@ -290,24 +276,18 @@ public:
   // Expression and Statement, but can be removed by encoding this type
   // information into the AST directly.
   template <typename Orig, typename T, typename... Ts>
-  R tryVisitAndReplace(Orig **node)
+  R_int tryVisitAndReplace(Orig **node)
   {
     if (auto *t = dynamic_cast<T>(*node)) {
-      if constexpr (!std::is_void_v<R>) {
-        auto rval = visitAndReplace(&t);
-        *node = static_cast<Orig *>(t); // Copy the modification.
-        return rval;
-      } else {
-        visitAndReplace(&t);
-        *node = static_cast<Orig *>(t); // See above.
-        return;
-      }
+      auto rval = visitAndReplace(&t);
+      *node = static_cast<Orig *>(t); // Copy the modification.
+      return rval;
     } else if constexpr (sizeof...(Ts) != 0) {
       return tryVisitAndReplace<Orig, Ts...>(node);
     }
-    return default_value();
+    return R_int();
   }
-  R visitAndReplace(Expression **expr)
+  R_int visitAndReplace(Expression **expr)
   {
     return tryVisitAndReplace<Expression,
                               Integer *,
@@ -329,7 +309,7 @@ public:
                               Tuple *,
                               Ternary *>(expr);
   }
-  R visitAndReplace(Statement **stmt)
+  R_int visitAndReplace(Statement **stmt)
   {
     return tryVisitAndReplace<Statement,
                               ExprStatement *,
@@ -348,15 +328,39 @@ public:
 
 private:
   template <typename T>
-  R visitImpl(T &t)
+  R_int visitImpl(T &t)
   {
     Impl *impl = static_cast<Impl *>(this);
-    return impl->visit(t);
+    if constexpr (std::is_void_v<R>) {
+      impl->visit(t);
+      return R_int();
+    } else {
+      return impl->visit(t);
+    }
   }
   R default_value()
   {
     if constexpr (!std::is_void_v<R>) {
       return R();
+    }
+  }
+  template <typename T, typename... Args>
+  R merge(T &&first, [[maybe_unused]] Args &&...args)
+  {
+    if constexpr (!std::is_void_v<R>) {
+      return std::move(first);
+    }
+  }
+  template <typename T, typename... Args>
+  R merge(ErrorOr<T> &&first, ErrorOr<T> &&second, Args &&...args)
+  {
+    if constexpr (sizeof...(Args) == 0) {
+      return R(std::move(first), std::move(second));
+    } else {
+      // Recursively merge the remaining elements, which will essentially
+      // aggregate all generated errors and warnings.
+      return merge(merge(std::move(first), std::move(second)),
+                   std::move(args)...);
     }
   }
 };
