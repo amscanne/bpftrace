@@ -33,6 +33,9 @@
 
 namespace bpftrace {
 
+char ProbeAttachError::ID;
+char HelperVerifierError::ID;
+
 bpf_probe_attach_type attachtype(ProbeType t)
 {
   // clang-format off

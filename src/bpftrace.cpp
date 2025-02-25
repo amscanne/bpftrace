@@ -905,17 +905,21 @@ int BPFtrace::run(BpfBytecode bytecode)
   bytecode_.set_map_ids(resources);
   bytecode_.update_global_vars(*this);
 
-  try {
-    bytecode_.load_progs(resources, *btf_, *feature_, config_);
-  } catch (const HelperVerifierError &e) {
-    if (helper_use_loc_.find(e.func_id) != helper_use_loc_.end()) {
-      LOG(ERROR, helper_use_loc_[e.func_id], std::cerr) << e.what();
-    } else {
-      LOG(ERROR) << e.what();
+  auto ok = bytecode_.load_progs(resources, *btf_, *feature_, config_);
+  if (!ok) {
+    auto leftOk = bpftrace::handleErrors(
+        ok.takeError(),
+        [&](const HelperVerifierError &e) {
+          if (helper_use_loc_.find(e.func_id) != helper_use_loc_.end()) {
+            LOG(ERROR, helper_use_loc_[e.func_id], std::cerr) << e.message();
+          } else {
+            LOG(ERROR) << e.message();
+          }
+        });
+    if (!leftOk) {
+      // This is not a known error; dump to the output.
+      LOG(ERROR) << leftOk.takeError();
     }
-    return -1;
-  } catch (const std::runtime_error &e) {
-    LOG(ERROR) << e.what();
     return -1;
   }
 

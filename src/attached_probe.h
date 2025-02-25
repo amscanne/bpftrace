@@ -11,6 +11,7 @@
 #include "config.h"
 #include "types.h"
 #include "usdt.h"
+#include "util/error.h"
 
 #include <bcc/libbpf.h>
 
@@ -89,13 +90,32 @@ private:
   BPFtrace &bpftrace_;
 };
 
-class HelperVerifierError : public std::runtime_error {
+class ProbeAttachError : public ErrorInfo<ProbeAttachError> {
 public:
-  HelperVerifierError(const std::string &msg, libbpf::bpf_func_id func_id_)
-      : std::runtime_error(msg), func_id(func_id_)
-  {
+  static char ID;
+  ProbeAttachError(const std::string &msg) : msg(msg) {};
+
+  void log(llvm::raw_ostream &OS) const override {
+    OS << msg;
   }
 
+private:
+  const std::string msg;
+};
+
+class HelperVerifierError : public ErrorInfo<HelperVerifierError> {
+public:
+  static char ID;
+  HelperVerifierError(const std::string &msg, libbpf::bpf_func_id func_id_)
+      : msg(msg), func_id(func_id_) {};
+
+  void log(llvm::raw_ostream &OS) const override {
+    OS << msg;
+  }
+
+private:
+  const std::string msg;
+public:
   const libbpf::bpf_func_id func_id;
 };
 

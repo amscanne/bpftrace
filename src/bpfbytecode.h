@@ -6,6 +6,7 @@
 #include "config.h"
 #include "required_resources.h"
 #include "types.h"
+#include "util/error.h"
 
 #include <bpf/libbpf.h>
 #include <cereal/access.hpp>
@@ -34,10 +35,10 @@ public:
   BpfBytecode &operator=(BpfBytecode &&) = default;
 
   void update_global_vars(BPFtrace &bpftrace);
-  void load_progs(const RequiredResources &resources,
-                  const BTF &btf,
-                  BPFfeature &feature,
-                  const Config &config);
+  Error load_progs(const RequiredResources &resources,
+                   const BTF &btf,
+                   BPFfeature &feature,
+                   const Config &config);
 
   const BpfProgram &getProgramForProbe(const Probe &probe) const;
   BpfProgram &getProgramForProbe(const Probe &probe);

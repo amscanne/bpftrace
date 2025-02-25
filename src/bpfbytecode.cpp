@@ -127,27 +127,27 @@ namespace {
 //     [...]
 //
 //  In the above log, "bpf_d_path" is the helper's name and "147" is the ID.
-void maybe_throw_helper_verifier_error(std::string_view log,
-                                       std::string_view err_pattern,
-                                       const std::string &exception_msg_suffix)
+Error maybe_helper_verifier_error(std::string_view log,
+                                  std::string_view err_pattern,
+                                  const std::string &exception_msg_suffix)
 {
   auto err_pos = log.find(err_pattern);
   if (err_pos == log.npos)
-    return;
+    return success();
 
   std::string_view call_pattern = " call ";
   auto call_pos = log.rfind(call_pattern, err_pos);
   if (call_pos == log.npos)
-    return;
+    return success();
 
   auto helper_begin = call_pos + call_pattern.size();
   auto hash_pos = log.find("#", helper_begin);
   if (hash_pos == log.npos)
-    return;
+    return success();
 
   auto eol = log.find("\n", hash_pos + 1);
   if (eol == log.npos)
-    return;
+    return success();
 
   auto helper_name = std::string{ log.substr(helper_begin,
                                              hash_pos - helper_begin) };
@@ -156,7 +156,7 @@ void maybe_throw_helper_verifier_error(std::string_view log,
 
   std::string msg = std::string{ "helper " } + helper_name +
                     exception_msg_suffix;
-  throw HelperVerifierError(msg, static_cast<libbpf::bpf_func_id>(func_id));
+  return make_error<HelperVerifierError>(msg, static_cast<libbpf::bpf_func_id>(func_id));
 }
 
 // The log should end with line:
@@ -171,10 +171,10 @@ bool is_log_trimmed(std::string_view log)
 }
 } // namespace
 
-void BpfBytecode::load_progs(const RequiredResources &resources,
-                             const BTF &btf,
-                             BPFfeature &feature,
-                             const Config &config)
+Error BpfBytecode::load_progs(const RequiredResources &resources,
+                              const BTF &btf,
+                              BPFfeature &feature,
+                              const Config &config)
 {
   std::unordered_map<std::string_view, std::vector<char>> log_bufs;
   for (auto &[name, prog] : programs_) {
@@ -203,7 +203,7 @@ void BpfBytecode::load_progs(const RequiredResources &resources,
   }
 
   if (res == 0)
-    return;
+    return success();
 
   // If loading of bpf_object failed, we try to give user some hints of what
   // could've gone wrong.
@@ -220,13 +220,17 @@ void BpfBytecode::load_progs(const RequiredResources &resources,
     if (!log.empty()) {
       // These should be the only errors that may occur here which do not imply
       // a bpftrace bug so throw immediately with a proper error message.
-      maybe_throw_helper_verifier_error(log,
-                                        "helper call is not allowed in probe",
-                                        " not allowed in probe");
-      maybe_throw_helper_verifier_error(
+      auto ok = maybe_helper_verifier_error(log,
+                                            "helper call is not allowed in probe",
+                                            " not allowed in probe");
+      if (!ok)
+        return ok.takeError();
+      ok = maybe_helper_verifier_error(
           log,
           "pointer arithmetic on ptr_or_null_ prohibited, null-check it first",
           ": result needs to be null-checked before accessing fields");
+      if (!ok)
+        return ok.takeError();
 
       std::stringstream errmsg;
       errmsg << "Error loading BPF program for " << name << ".";
@@ -259,7 +263,7 @@ void BpfBytecode::load_progs(const RequiredResources &resources,
   }
 
   std::cerr << err.str();
-  throw FatalUserException("Loading BPF object(s) failed.");
+  return make_error<ProbeAttachError>("Loading BPF object(s) failed.");
 }
 
 void BpfBytecode::prepare_progs(const std::vector<Probe> &probes,
