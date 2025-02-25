@@ -19,11 +19,12 @@ namespace bpftrace::ast {
 // IRBuilderBPF::CreateWriteMapValueAllocation
 bool needAssignMapStatementAllocation(const AssignMapStatement &assignment)
 {
-  const auto &map = *assignment.map;
-  const auto &expr_type = assignment.expr->type;
+  const auto &map = assignment.map;
+  const auto map_type = map.type();
+  const auto expr_type = assignment.expr.type();
   if (shouldBeInBpfMemoryAlready(expr_type)) {
-    return !expr_type.IsSameSizeRecursive(map.type);
-  } else if (map.type.IsRecordTy() || map.type.IsArrayTy()) {
+    return !expr_type.IsSameSizeRecursive(map_type);
+  } else if (map_type.IsRecordTy() || map_type.IsArrayTy()) {
     return !expr_type.is_internal;
   }
   return true;
@@ -34,10 +35,10 @@ bool needMapKeyAllocation(const Map &map)
   return needMapKeyAllocation(map, map.key_expr);
 }
 
-bool needMapKeyAllocation(const Map &map, Expression *key_expr)
+bool needMapKeyAllocation(const Map &map, std::optional<Expression> key_expr)
 {
-  if (key_expr && inBpfMemory(key_expr->type)) {
-    return !key_expr->type.IsSameSizeRecursive(map.key_type);
+  if (key_expr && inBpfMemory(key_expr->type())) {
+    return !key_expr->type().IsSameSizeRecursive(map.key_type);
   }
   return true;
 }

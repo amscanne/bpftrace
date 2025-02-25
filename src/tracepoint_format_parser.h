@@ -41,7 +41,7 @@ private:
 
 class TracepointFormatParser {
 public:
-  static bool parse(ast::ASTContext &ctx, BPFtrace &bpftrace);
+  static bool parse(ast::ASTContext &ast, BPFtrace &bpftrace);
   static std::string get_struct_name(const std::string &category,
                                      const std::string &event_name);
   static std::string get_struct_name(const std::string &probe_id);

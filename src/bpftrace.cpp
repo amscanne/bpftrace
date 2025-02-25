@@ -169,7 +169,7 @@ int BPFtrace::add_probe(ast::ASTContext &ctx,
     has_iter_ = true;
 
   // Preload symbol tables if necessary
-  if (resources.probes_using_usym.find(&p) !=
+  if (resources.probes_using_usym.find(p.name()) !=
           resources.probes_using_usym.end() &&
       util::is_exe(ap.target)) {
     usyms_.cache(ap.target);
@@ -1857,50 +1857,49 @@ void BPFtrace::sort_by_key(
   }
 }
 
-std::string BPFtrace::get_string_literal(const ast::Expression *expr) const
+std::string BPFtrace::get_string_literal(const ast::Expression expr) const
 {
-  if (expr->is_literal) {
-    if (const auto *string = dynamic_cast<const ast::String *>(expr))
-      return string->str;
-    else if (const auto *str_call = dynamic_cast<const ast::Call *>(expr)) {
-      // Positional parameters in the form str($1) can be used as literals
-      if (str_call->func == "str") {
-        if (const auto *pos_param =
-                dynamic_cast<const ast::PositionalParameter *>(
-                    str_call->vargs.at(0)))
-          return get_param(pos_param->n, true);
+  if (expr.is<ast::String>()) {
+    auto &string = expr.as<ast::String>();
+    return string.str;
+  } else if (expr.is<ast::Call>()) {
+    // Positional parameters in the form str($1) can be used as literals
+    auto &str_call = expr.as<ast::Call>();
+    if (str_call.func == "str") {
+      if (str_call.vargs.at(0).is<ast::PositionalParameter>()) {
+        auto &pp = str_call.vargs.at(0).as<ast::PositionalParameter>();
+        return get_param(pp.n, true);
       }
     }
   }
 
-  LOG(ERROR) << "Expected string literal, got " << expr->type;
+  LOG(ERROR) << "Expected string literal, got " << expr.type();
   return "";
 }
 
 std::optional<int64_t> BPFtrace::get_int_literal(
-    const ast::Expression *expr) const
+    const ast::Expression expr) const
 {
-  if (expr->is_literal) {
-    if (const auto *integer = dynamic_cast<const ast::Integer *>(expr))
-      return integer->n;
-    else if (const auto *pos_param =
-                 dynamic_cast<const ast::PositionalParameter *>(expr)) {
-      if (pos_param->ptype == PositionalParameterType::positional) {
-        auto param_str = get_param(pos_param->n, false);
-        auto param_int = util::get_int_from_str(param_str);
-        if (!param_int.has_value()) {
-          // This case has to be handled at a higher layer, and it is also
-          // duplicated exactly in the semantic analyzer.
-          return std::nullopt;
-        }
-        if (std::holds_alternative<int64_t>(*param_int)) {
-          return std::get<int64_t>(*param_int);
-        } else {
-          return static_cast<int64_t>(std::get<uint64_t>(*param_int));
-        }
-      } else
-        return static_cast<int64_t>(num_params());
-    }
+  if (expr.is<ast::Integer>()) {
+    auto &integer = expr.as<ast::Integer>();
+    return integer.n;
+  } else if (expr.is<ast::PositionalParameter>()) {
+    auto &pp = expr.as<ast::PositionalParameter>();
+    if (pp.ptype == PositionalParameterType::positional) {
+      auto param_str = get_param(pp.n, false);
+      auto param_int = util::get_int_from_str(param_str);
+      if (!param_int.has_value()) {
+        // This case has to be handled at a higher layer, and it is also
+        // duplicated exactly in the semantic analyzer.
+        return std::nullopt;
+      }
+      if (std::holds_alternative<int64_t>(*param_int)) {
+        return std::get<int64_t>(*param_int);
+      } else {
+        return static_cast<int64_t>(std::get<uint64_t>(*param_int));
+      }
+    } else
+      return static_cast<int64_t>(num_params());
   }
 
   return std::nullopt;
@@ -2000,27 +1999,27 @@ bool BPFtrace::has_btf_data() const
 std::set<std::string> BPFtrace::list_modules(const ast::ASTContext &ctx)
 {
   std::set<std::string> modules;
-  for (const auto &probe : ctx.root->probes) {
-    for (const auto &ap : probe->attach_points) {
-      auto probe_type = probetype(ap->provider);
+  for (const ast::Probe &probe : ctx.root.probes) {
+    for (const ast::AttachPoint &ap : probe.attach_points) {
+      auto probe_type = probetype(ap.provider);
       if (probe_type == ProbeType::fentry || probe_type == ProbeType::fexit ||
           ((probe_type == ProbeType::kprobe ||
             probe_type == ProbeType::kretprobe) &&
-           !ap->target.empty())) {
-        if (ap->expansion != ast::ExpansionType::NONE) {
-          for (const auto &match : probe_matcher_->get_matches_for_ap(*ap)) {
+           !ap.target.empty())) {
+        if (ap.expansion != ast::ExpansionType::NONE) {
+          for (const auto &match : probe_matcher_->get_matches_for_ap(ap)) {
             std::string func = match;
             util::erase_prefix(func);
             auto match_modules = get_func_modules(func);
             modules.insert(match_modules.begin(), match_modules.end());
           }
         } else
-          modules.insert(ap->target);
+          modules.insert(ap.target);
       } else if (probe_type == ProbeType::tracepoint) {
         // For now, we support this for a single target only since tracepoints
         // need dumping of C definitions BTF and that is not available for
         // multiple modules at once.
-        modules.insert(ap->target);
+        modules.insert(ap.target);
       }
     }
   }

@@ -422,12 +422,12 @@ FuncParamLists ProbeMatcher::get_iters_params(
   return params;
 }
 
-void ProbeMatcher::list_probes(ast::Program* prog)
+void ProbeMatcher::list_probes(const ast::Program& prog)
 {
-  for (auto* probe : prog->probes) {
-    for (auto* ap : probe->attach_points) {
-      auto matches = get_matches_for_ap(*ap);
-      auto probe_type = probetype(ap->provider);
+  for (const ast::Probe& probe : prog.probes) {
+    for (const ast::AttachPoint& ap : probe.attach_points) {
+      auto matches = get_matches_for_ap(ap);
+      auto probe_type = probetype(ap.provider);
       FuncParamLists param_lists;
       if (bt_verbose) {
         if (probe_type == ProbeType::tracepoint)
@@ -441,7 +441,7 @@ void ProbeMatcher::list_probes(ast::Program* prog)
 
       for (const auto& match : matches) {
         std::string match_print = match;
-        if (ap->lang == "cpp") {
+        if (ap.lang == "cpp") {
           std::string target = util::erase_prefix(match_print);
           char* demangled_name = cxxdemangle(match_print.c_str());
           SCOPE_EXIT
@@ -455,7 +455,7 @@ void ProbeMatcher::list_probes(ast::Program* prog)
           auto func = demangled_name ? "\"" + std::string(demangled_name) + "\""
                                      : match_print;
 
-          match_print = target + ":" + ap->lang + ":" + func;
+          match_print = target + ":" + ap.lang + ":" + func;
         }
 
         std::cout << probe_type << ":" << match_print << std::endl;

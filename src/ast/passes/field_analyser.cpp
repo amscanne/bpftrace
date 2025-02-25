@@ -1,6 +1,6 @@
 #include <cassert>
 
-#include "arch/arch.h"
+#include "ast/context.h"
 #include "ast/passes/field_analyser.h"
 #include "ast/visitor.h"
 #include "bpftrace.h"
@@ -39,8 +39,8 @@ public:
 
 private:
   void resolve_args(Probe &probe);
-  void resolve_fields(SizedType &type);
-  void resolve_type(SizedType &type);
+  void resolve_fields(SizedType type);
+  void resolve_type(SizedType type);
 
   ProbeType probe_type_;
   std::string attach_func_;
@@ -166,33 +166,46 @@ void FieldAnalyser::visit(ArrayAccess &arr)
 void FieldAnalyser::visit(Cast &cast)
 {
   visit(cast.expr);
-  resolve_type(cast.type);
+  resolve_type(cast.type());
 }
 
 void FieldAnalyser::visit(Sizeof &szof)
 {
-  visit(szof.expr);
-  resolve_type(szof.argtype);
+  std::visit(
+      [&](auto &v) {
+        if constexpr (std::is_same_v<std::decay_t<decltype(v)>, SizedType>) {
+          resolve_type(v);
+        } else {
+          visit(v);
+        }
+      },
+      szof.expr);
 }
 
 void FieldAnalyser::visit(Offsetof &offof)
 {
-  if (offof.expr)
-    visit(*offof.expr);
-  resolve_type(offof.record);
+  std::visit(
+      [&](auto &v) {
+        if constexpr (std::is_same_v<std::decay_t<decltype(v)>, SizedType>) {
+          resolve_type(v);
+        } else {
+          visit(v);
+        }
+      },
+      offof.expr);
 }
 
 void FieldAnalyser::visit(AssignMapStatement &assignment)
 {
   visit(assignment.map);
   visit(assignment.expr);
-  var_types_.emplace(assignment.map->ident, sized_type_);
+  var_types_.emplace(assignment.map.ident, sized_type_);
 }
 
 void FieldAnalyser::visit(AssignVarStatement &assignment)
 {
   visit(assignment.expr);
-  var_types_.emplace(assignment.var->ident, sized_type_);
+  var_types_.emplace(assignment.var.ident, sized_type_);
 }
 
 void FieldAnalyser::visit(Unop &unop)
@@ -208,21 +221,22 @@ void FieldAnalyser::visit(Unop &unop)
 
 void FieldAnalyser::resolve_args(Probe &probe)
 {
-  for (auto *ap : probe.attach_points) {
-    // load probe arguments into a special record type "struct <probename>_args"
+  for (AttachPoint &ap : probe.attach_points) {
+    // load probe arguments into a special record type "struct
+    // <probename>_args"
     Struct probe_args;
 
-    auto probe_type = probetype(ap->provider);
+    auto probe_type = probetype(ap.provider);
     if (probe_type != ProbeType::fentry && probe_type != ProbeType::fexit &&
         probe_type != ProbeType::uprobe)
       continue;
 
-    if (ap->expansion != ExpansionType::NONE) {
+    if (ap.expansion != ExpansionType::NONE) {
       std::set<std::string> matches;
 
       // Find all the matches for the wildcard..
       try {
-        matches = bpftrace_.probe_matcher_->get_matches_for_ap(*ap);
+        matches = bpftrace_.probe_matcher_->get_matches_for_ap(ap);
       } catch (const WildcardException &e) {
         probe.addError() << e.what();
         return;
@@ -245,7 +259,7 @@ void FieldAnalyser::resolve_args(Probe &probe)
           auto maybe_ap_args = bpftrace_.btf_->resolve_args(
               func, probe_type == ProbeType::fexit, true, err);
           if (!maybe_ap_args.has_value()) {
-            ap->addWarning() << "fentry:" << ap->func << ": " << err;
+            ap.addWarning() << "fentry:" << ap.func << ": " << err;
             continue;
           }
           ap_args = std::move(*maybe_ap_args);
@@ -254,18 +268,19 @@ void FieldAnalyser::resolve_args(Probe &probe)
         if (probe_args.size == -1)
           probe_args = ap_args;
         else if (ap_args != probe_args) {
-          ap->addError() << "Probe has attach points with mixed arguments";
+          ap.addError() << "Probe has attach points with mixed arguments";
           break;
         }
       }
     } else {
-      // Resolving args for an explicit function failed, print an error and fail
+      // Resolving args for an explicit function failed, print an error and
+      // fail
       if (probe_type == ProbeType::fentry || probe_type == ProbeType::fexit) {
         std::string err;
         auto maybe_probe_args = bpftrace_.btf_->resolve_args(
-            ap->func, probe_type == ProbeType::fexit, true, err);
+            ap.func, probe_type == ProbeType::fexit, true, err);
         if (!maybe_probe_args.has_value()) {
-          ap->addError() << "fentry:" << ap->func << ": " << err;
+          ap.addError() << "fentry:" << ap.func << ": " << err;
           return;
         }
         probe_args = std::move(*maybe_probe_args);
@@ -276,7 +291,7 @@ void FieldAnalyser::resolve_args(Probe &probe)
     auto args = bpftrace_.structs.Lookup(probe.args_typename()).lock();
     if (args && *args != probe_args) {
       // we did, and it's different...trigger the error
-      ap->addError() << "Probe has attach points with mixed arguments";
+      ap.addError() << "Probe has attach points with mixed arguments";
     } else {
       // store/save args for each ap for later processing
       bpftrace_.structs.Add(probe.args_typename(), std::move(probe_args));
@@ -284,7 +299,7 @@ void FieldAnalyser::resolve_args(Probe &probe)
   }
 }
 
-void FieldAnalyser::resolve_fields(SizedType &type)
+void FieldAnalyser::resolve_fields(SizedType type)
 {
   if (!type.IsRecordTy())
     return;
@@ -293,7 +308,7 @@ void FieldAnalyser::resolve_fields(SizedType &type)
     bpftrace_.btf_->resolve_fields(type);
 }
 
-void FieldAnalyser::resolve_type(SizedType &type)
+void FieldAnalyser::resolve_type(SizedType type)
 {
   sized_type_ = CreateNone();
 
@@ -316,10 +331,10 @@ void FieldAnalyser::visit(Probe &probe)
 {
   probe_ = &probe;
 
-  for (AttachPoint *ap : probe.attach_points) {
-    probe_type_ = probetype(ap->provider);
+  for (AttachPoint &ap : probe.attach_points) {
+    probe_type_ = probetype(ap.provider);
     prog_type_ = progtype(probe_type_);
-    attach_func_ = ap->func;
+    attach_func_ = ap.func;
   }
   if (probe.pred) {
     visit(probe.pred);

@@ -1,6 +1,7 @@
 #include <vector>
 
 #include "ast/ast.h"
+#include "ast/context.h"
 #include "ast/passes/deprecated.h"
 #include "ast/visitor.h"
 

@@ -63,14 +63,10 @@ AttachPointParser::AttachPointParser(ASTContext &ctx,
 
 int AttachPointParser::parse()
 {
-  if (!ctx_.root)
-    return 1;
-
   uint32_t failed = 0;
-  for (Probe *probe : ctx_.root->probes) {
-    for (size_t i = 0; i < probe->attach_points.size(); ++i) {
-      auto *ap_ptr = probe->attach_points[i];
-      auto &ap = *ap_ptr;
+  for (Probe &probe : ctx_.root.probes) {
+    for (size_t i = 0; i < probe.attach_points.size(); ++i) {
+      AttachPoint &ap = probe.attach_points[i];
       new_attach_points.clear();
 
       State s = parse_attachpoint(ap);
@@ -79,13 +75,13 @@ int AttachPointParser::parse()
         ap.addError() << errs_.str();
       } else if (s == SKIP || s == NEW_APS) {
         // Remove the current attach point
-        probe->attach_points.erase(probe->attach_points.begin() + i);
+        probe.attach_points.erase(probe.attach_points.begin() + i);
         i--;
         if (s == NEW_APS) {
           // The removed attach point is replaced by new ones
-          probe->attach_points.insert(probe->attach_points.end(),
-                                      new_attach_points.begin(),
-                                      new_attach_points.end());
+          probe.attach_points.insert(probe.attach_points.end(),
+                                     new_attach_points.begin(),
+                                     new_attach_points.end());
         }
       }
 
@@ -94,14 +90,14 @@ int AttachPointParser::parse()
       errs_.str({});
     }
 
-    auto it = std::ranges::remove_if(probe->attach_points,
-                                     [](const AttachPoint *ap) {
-                                       return ap->provider.empty();
-                                     });
-    probe->attach_points.erase(it.begin(), it.end());
+    auto r = std::ranges::remove_if(probe.attach_points,
+                                    [](const AttachPoint &ap) {
+                                      return ap.provider.empty();
+                                    });
+    probe.attach_points.erase(r.begin(), r.end());
 
-    if (probe->attach_points.empty()) {
-      probe->addError() << "No attach points for probe";
+    if (probe.attach_points.empty()) {
+      probe.addError() << "No attach points for probe";
       failed++;
     }
   }
@@ -165,7 +161,7 @@ AttachPointParser::State AttachPointParser::parse_attachpoint(AttachPoint &ap)
       // New attach points have ignore_invalid set to true - probe types for
       // which raw_input has invalid number of parts will be ignored (instead
       // of throwing an error). These will have the same associated location.
-      new_attach_points.push_back(
+      new_attach_points.emplace_back(
           ctx_.make_node<AttachPoint>(raw_input, true, Location(ap.loc)));
     }
     return NEW_APS;

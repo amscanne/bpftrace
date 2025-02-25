@@ -1,6 +1,7 @@
 #include <unordered_set>
 
 #include "ast/ast.h"
+#include "ast/context.h"
 #include "ast/passes/recursion_check.h"
 #include "ast/visitor.h"
 #include "bpftrace.h"
@@ -28,8 +29,7 @@ bool is_recursive_func(const std::string &func_name)
 
 class RecursionCheck : public Visitor<RecursionCheck> {
 public:
-  explicit RecursionCheck(ASTContext &ast, BPFtrace &bpftrace)
-      : ast_(ast), bpftrace_(bpftrace)
+  explicit RecursionCheck(BPFtrace &bpftrace) : bpftrace_(bpftrace)
   {
   }
 
@@ -37,7 +37,6 @@ public:
   void visit(Program &program);
 
 private:
-  ASTContext &ast_;
   BPFtrace &bpftrace_;
 };
 
@@ -57,11 +56,11 @@ private:
 // probe_matcher to get the list of functions for the attach point.
 void RecursionCheck::visit(Program &program)
 {
-  for (auto *probe : program.probes) {
-    for (auto *ap : probe->attach_points) {
-      auto probe_type = probetype(ap->provider);
+  for (Probe &probe : program.probes) {
+    for (AttachPoint &ap : probe.attach_points) {
+      auto probe_type = probetype(ap.provider);
       if (probe_type == ProbeType::fentry || probe_type == ProbeType::fexit) {
-        auto matches = bpftrace_.probe_matcher_->get_matches_for_ap(*ap);
+        auto matches = bpftrace_.probe_matcher_->get_matches_for_ap(ap);
         for (const auto &match : matches) {
           if (is_recursive_func(match)) {
             LOG(WARNING)
@@ -80,7 +79,7 @@ void RecursionCheck::visit(Program &program)
 Pass CreateRecursionCheckPass()
 {
   return Pass::create("RecursionCheck", [](ASTContext &ast, BPFtrace &b) {
-    auto recursion_check = RecursionCheck(ast, b);
+    auto recursion_check = RecursionCheck(b);
     recursion_check.visit(ast.root);
   });
 };

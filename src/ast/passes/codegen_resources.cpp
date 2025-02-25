@@ -33,7 +33,7 @@ void CodegenResourceAnalyser::visit(Call &call)
   if (call.func == "join") {
     resources_.needs_join_map = true;
   } else if (call.func == "kstack" || call.func == "ustack") {
-    resources_.stackid_maps.insert(call.type.stack_type);
+    resources_.stackid_maps.insert(call.type().stack_type);
   }
 }
 

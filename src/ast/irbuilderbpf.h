@@ -25,15 +25,13 @@ public:
                AsyncIds &async_ids);
 
   AllocaInst *CreateAllocaBPF(llvm::Type *ty, const std::string &name = "");
-  AllocaInst *CreateAllocaBPF(const SizedType &stype,
-                              const std::string &name = "");
-  AllocaInst *CreateAllocaBPFInit(const SizedType &stype,
-                                  const std::string &name);
+  AllocaInst *CreateAllocaBPF(SizedType stype, const std::string &name = "");
+  AllocaInst *CreateAllocaBPFInit(SizedType stype, const std::string &name);
   AllocaInst *CreateAllocaBPF(int bytes, const std::string &name = "");
   void CreateMemsetBPF(Value *ptr, Value *val, uint32_t size);
   void CreateMemcpyBPF(Value *dst, Value *src, uint32_t size);
-  llvm::Type *GetType(const SizedType &stype, bool emit_codegen_types = true);
-  llvm::Type *GetMapValueType(const SizedType &stype);
+  llvm::Type *GetType(SizedType stype, bool emit_codegen_types = true);
+  llvm::Type *GetMapValueType(SizedType stype);
   llvm::ConstantInt *GetIntSameSize(uint64_t C, llvm::Value *expr);
   llvm::ConstantInt *GetIntSameSize(uint64_t C, llvm::Type *ty);
   Value *GetMapVar(const std::string &map_name);
@@ -48,12 +46,12 @@ public:
   Value *CreateMapLookupElem(Value *ctx,
                              const std::string &map_name,
                              Value *key,
-                             SizedType &type,
+                             SizedType type,
                              const Location &loc);
   Value *CreatePerCpuMapAggElems(Value *ctx,
                                  Map &map,
                                  Value *key,
-                                 const SizedType &type,
+                                 SizedType type,
                                  const Location &loc);
   void CreateMapUpdateElem(Value *ctx,
                            const std::string &map_ident,
@@ -82,8 +80,8 @@ public:
   // If provided, the optional AddrSpace argument is used instead of the type's
   // address space (which may not always be set).
   void CreateProbeRead(Value *ctx,
-                       Value *dst,
-                       const SizedType &type,
+                       Value *dest,
+                       SizedType type,
                        Value *src,
                        const Location &loc,
                        std::optional<AddrSpace> addrSpace = std::nullopt);
@@ -92,7 +90,7 @@ public:
   // those that have already been pulled onto the BPF stack. Correctly handles
   // pointer size differences (see CreateProbeRead).
   llvm::Value *CreateDatastructElemLoad(
-      const SizedType &type,
+      SizedType type,
       llvm::Value *ptr,
       bool isVolatile = false,
       std::optional<AddrSpace> addrSpace = std::nullopt);
@@ -124,9 +122,9 @@ public:
   Value *CreateIntegerArrayCmp(Value *ctx,
                                Value *val1,
                                Value *val2,
-                               const SizedType &val1_type,
-                               const SizedType &val2_type,
-                               bool inverse,
+                               SizedType val1_type,
+                               SizedType val2_type,
+                               const bool inverse,
                                const Location &loc,
                                MDNode *metadata);
   CallInst *CreateGetNs(TimestampMode ts, const Location &loc);
@@ -153,16 +151,16 @@ public:
   Value *CreateGetFmtStringArgsAllocation(StructType *struct_type,
                                           const std::string &name,
                                           const Location &loc);
-  Value *CreateTupleAllocation(const SizedType &tuple_type,
+  Value *CreateTupleAllocation(SizedType tuple_type,
                                const std::string &name,
                                const Location &loc);
-  Value *CreateWriteMapValueAllocation(const SizedType &value_type,
+  Value *CreateWriteMapValueAllocation(SizedType value_type,
                                        const std::string &name,
                                        const Location &loc);
-  Value *CreateVariableAllocationInit(const SizedType &value_type,
+  Value *CreateVariableAllocationInit(SizedType value_type,
                                       const std::string &name,
                                       const Location &loc);
-  Value *CreateMapKeyAllocation(const SizedType &value_type,
+  Value *CreateMapKeyAllocation(SizedType value_type,
                                 const std::string &name,
                                 const Location &loc);
   void CreateCheckSetRecursion(const Location &loc, int early_exit_ret);
@@ -224,10 +222,10 @@ public:
                          const Location &loc);
   Value *CreateRegisterRead(Value *ctx, const std::string &builtin);
   Value *CreateRegisterRead(Value *ctx, int offset, const std::string &name);
-  Value *CreateKFuncArg(Value *ctx, SizedType &type, std::string &name);
+  Value *CreateKFuncArg(Value *ctx, SizedType type, std::string &name);
   Value *CreateRawTracepointArg(Value *ctx, const std::string &builtin);
-  Value *CreateUprobeArgsRecord(Value *ctx, const SizedType &args_type);
-  llvm::Type *UprobeArgsType(const SizedType &args_type);
+  Value *CreateUprobeArgsRecord(Value *ctx, SizedType args_type);
+  llvm::Type *UprobeArgsType(SizedType args_type);
   CallInst *CreateSkbOutput(Value *skb,
                             Value *len,
                             AllocaInst *data,
@@ -247,7 +245,7 @@ public:
   // For a type T, creates an integer expression representing the byte offset
   // of the element at the given index in T[]. Used for array dereferences and
   // pointer arithmetic.
-  llvm::Value *CreatePtrOffset(const SizedType &type,
+  llvm::Value *CreatePtrOffset(SizedType type,
                                llvm::Value *index,
                                AddrSpace as);
 
@@ -314,7 +312,7 @@ private:
                                 const Location &loc,
                                 BasicBlock *failure_callback,
                                 int key = 0);
-  Value *CreateReadMapValueAllocation(const SizedType &value_type,
+  Value *CreateReadMapValueAllocation(SizedType value_type,
                                       const std::string &name,
                                       const Location &loc);
   Value *createAllocation(globalvars::GlobalVar globalvar,
@@ -323,7 +321,7 @@ private:
                           const Location &loc,
                           std::optional<std::function<size_t(AsyncIds &)>>
                               gen_async_id_cb = std::nullopt);
-  void CreateAllocationInit(const SizedType &stype, Value *alloc);
+  void CreateAllocationInit(SizedType stype, Value *alloc);
   Value *createScratchBuffer(globalvars::GlobalVar globalvar,
                              const Location &loc,
                              size_t key);
@@ -337,15 +335,15 @@ private:
                              size_t size,
                              const Location &loc);
 
-  void createPerCpuSum(AllocaInst *ret, CallInst *call, const SizedType &type);
+  void createPerCpuSum(AllocaInst *ret, CallInst *call, SizedType type);
   void createPerCpuMinMax(AllocaInst *ret,
                           AllocaInst *is_ret_set,
                           CallInst *call,
-                          const SizedType &type);
+                          SizedType type);
   void createPerCpuAvg(AllocaInst *total,
                        AllocaInst *count,
                        CallInst *call,
-                       const SizedType &type);
+                       SizedType type);
 
   std::map<std::string, StructType *> structs_;
   llvm::Function *preserve_static_offset_ = nullptr;

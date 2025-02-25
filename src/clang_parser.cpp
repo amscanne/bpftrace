@@ -34,7 +34,7 @@ void ClangParseError::log(llvm::raw_ostream &OS) const
 
 class ClangParser {
 public:
-  bool parse(ast::Program *program,
+  bool parse(ast::Program &program,
              BPFtrace &bpftrace,
              std::vector<std::string> extra_flags = {});
 
@@ -614,9 +614,9 @@ void ClangParser::resolve_incomplete_types_from_btf(
   // The maximum number of iterations can be also controlled by the
   // BPFTRACE_MAX_TYPE_RES_ITERATIONS env variable (0 is unlimited).
   uint64_t field_lvl = 1;
-  for (const auto &probe : probes)
-    if (probe->tp_args_structs_level > static_cast<int>(field_lvl))
-      field_lvl = probe->tp_args_structs_level;
+  for (const ast::Probe &probe : probes)
+    if (probe.tp_args_structs_level > static_cast<int>(field_lvl))
+      field_lvl = probe.tp_args_structs_level;
 
   unsigned max_iterations = std::max(
       bpftrace.config_->get(ConfigKeyInt::max_type_res_iterations), field_lvl);
@@ -661,12 +661,12 @@ void ClangParser::resolve_incomplete_types_from_btf(
 // In practice, this means that user may use kernel types without providing
 // their definitions but once he redefines any kernel type, he must provide all
 // necessary definitions.
-bool ClangParser::parse(ast::Program *program,
+bool ClangParser::parse(ast::Program &program,
                         BPFtrace &bpftrace,
                         std::vector<std::string> extra_flags)
 {
   input = "#include </bpftrace/include/__btf_generated_header.h>\n" +
-          program->c_definitions;
+          program.c_definitions;
 
   input_files = getTranslationUnitFiles(CXUnsavedFile{
       .Filename = "definitions.h",
@@ -714,7 +714,7 @@ bool ClangParser::parse(ast::Program *program,
       btf_conflict = true;
 
     if (!btf_conflict) {
-      resolve_incomplete_types_from_btf(bpftrace, program->probes);
+      resolve_incomplete_types_from_btf(bpftrace, program.probes);
 
       if (handler.parse_file("definitions.h", args, input_files, false) &&
           handler.has_redefinition_error())

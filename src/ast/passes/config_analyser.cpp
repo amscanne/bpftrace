@@ -2,6 +2,7 @@
 #include <string>
 
 #include "ast/ast.h"
+#include "ast/context.h"
 #include "ast/passes/config_analyser.h"
 #include "ast/visitor.h"
 #include "bpftrace.h"
@@ -58,25 +59,25 @@ void ConfigAnalyser::log_type_error(SizedType &type,
 void ConfigAnalyser::set_config(AssignConfigVarStatement &assignment,
                                 ConfigKeyInt key)
 {
-  auto &assignTy = assignment.expr->type;
+  auto assignTy = assignment.expr.type();
   if (!assignTy.IsIntegerTy()) {
     log_type_error(assignTy, Type::integer, assignment);
     return;
   }
 
-  config_setter_.set(key, dynamic_cast<Integer *>(assignment.expr)->n);
+  config_setter_.set(key, assignment.expr.as<Integer>().n);
 }
 
 void ConfigAnalyser::set_config(AssignConfigVarStatement &assignment,
                                 ConfigKeyBool key)
 {
-  auto &assignTy = assignment.expr->type;
+  auto assignTy = assignment.expr.type();
   if (!assignTy.IsIntegerTy()) {
     log_type_error(assignTy, Type::integer, assignment);
     return;
   }
 
-  auto val = dynamic_cast<Integer *>(assignment.expr)->n;
+  auto val = assignment.expr.as<Integer>().n;
   if (val == 0) {
     config_setter_.set(key, false);
   } else if (val == 1) {
@@ -90,19 +91,19 @@ void ConfigAnalyser::set_config(AssignConfigVarStatement &assignment,
 void ConfigAnalyser::set_config(AssignConfigVarStatement &assignment,
                                 [[maybe_unused]] ConfigKeyString key)
 {
-  auto &assignTy = assignment.expr->type;
+  auto assignTy = assignment.expr.type();
   if (!assignTy.IsStringTy()) {
     log_type_error(assignTy, Type::string, assignment);
     return;
   }
 
-  config_setter_.set(key, dynamic_cast<String *>(assignment.expr)->str);
+  config_setter_.set(key, assignment.expr.as<String>().str);
 }
 
 void ConfigAnalyser::set_config(AssignConfigVarStatement &assignment,
                                 [[maybe_unused]] ConfigKeyStackMode key)
 {
-  auto &assignTy = assignment.expr->type;
+  auto assignTy = assignment.expr.type();
   if (!assignTy.IsStackModeTy()) {
     log_type_error(assignTy, Type::stack_mode, assignment);
     return;
@@ -115,51 +116,29 @@ void ConfigAnalyser::set_config(
     AssignConfigVarStatement &assignment,
     [[maybe_unused]] ConfigKeyUserSymbolCacheType key)
 {
-  auto &assignTy = assignment.expr->type;
+  auto assignTy = assignment.expr.type();
   if (!assignTy.IsStringTy()) {
     log_type_error(assignTy, Type::string, assignment);
     return;
   }
 
-  auto val = dynamic_cast<String *>(assignment.expr)->str;
+  auto val = assignment.expr.as<String>().str;
   if (!config_setter_.set_user_symbol_cache_type(val))
-    assignment.expr->addError();
+    assignment.expr.node().addError();
 }
 
 void ConfigAnalyser::set_config(AssignConfigVarStatement &assignment,
                                 [[maybe_unused]] ConfigKeyMissingProbes key)
 {
-  auto &assignTy = assignment.expr->type;
+  auto assignTy = assignment.expr.type();
   if (!assignTy.IsStringTy()) {
     log_type_error(assignTy, Type::string, assignment);
     return;
   }
 
-  auto val = dynamic_cast<String *>(assignment.expr)->str;
+  auto val = assignment.expr.as<String>().str;
   if (!config_setter_.set_missing_probes_config(val))
-    assignment.expr->addError();
-}
-
-void ConfigAnalyser::visit(Integer &integer)
-{
-  integer.type = CreateInt64();
-}
-
-void ConfigAnalyser::visit(String &string)
-{
-  string.type = CreateString(string.str.size() + 1);
-}
-
-void ConfigAnalyser::visit(StackMode &mode)
-{
-  auto stack_mode = bpftrace::Config::get_stack_mode(mode.mode);
-  if (stack_mode.has_value()) {
-    mode.type = CreateStackMode();
-    mode.type.stack_type.mode = stack_mode.value();
-  } else {
-    mode.type = CreateNone();
-    mode.addError() << "Unknown stack mode: '" + mode.mode + "'";
-  }
+    assignment.expr.node().addError();
 }
 
 void ConfigAnalyser::visit(AssignConfigVarStatement &assignment)
@@ -176,7 +155,7 @@ void ConfigAnalyser::visit(AssignConfigVarStatement &assignment)
     return;
   }
 
-  if (!assignment.expr->is_literal) {
+  if (!assignment.expr.is_literal) {
     assignment.addError() << "Assignment for " << assignment.config_var
                           << " must be literal.";
     return;

@@ -3,6 +3,7 @@
 #include "ast/context.h"
 #include "ast/pass_manager.h"
 #include "bpftrace.h"
+#include "util/result.h"
 
 using yyscan_t = void *;
 
@@ -12,10 +13,21 @@ using yyscan_t = void *;
 
 namespace bpftrace {
 
+class NodesError : public ErrorInfo<NodesError> {
+public:
+  NodesError(int count, int max) : count_(count), max_(max){};
+  static char ID;
+  void log(llvm::raw_ostream &OS) const override;
+
+private:
+  int count_;
+  int max_;
+};
+
 class Driver {
 public:
   explicit Driver(ast::ASTContext &ctx, BPFtrace &bpftrace, bool debug = false)
-      : ctx(ctx), bpftrace(bpftrace), debug(debug) {};
+      : ctx(ctx), bpftrace(bpftrace), debug(debug){};
   void parse();
   void error(const location &l, const std::string &m);
 

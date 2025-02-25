@@ -1,8 +1,11 @@
 #pragma once
 
 #include <memory>
+#include <optional>
+#include <utility>
 #include <vector>
 
+#include "ast/ast.h"
 #include "ast/diagnostic.h"
 #include "ast/pass_manager.h"
 
@@ -11,10 +14,6 @@ namespace bpftrace {
 class Driver;
 
 namespace ast {
-
-class Location;
-class Node;
-class Program;
 
 template <typename T>
 concept NodeType = std::derived_from<T, Node>;
@@ -51,13 +50,13 @@ public:
 
   // Creates and returns a pointer to an AST node.
   template <NodeType T, typename... Args>
-  constexpr T *make_node(Args &&...args)
+  constexpr T &make_node(Args &&...args)
   {
     auto uniq_ptr = std::make_unique<T>(*diagnostics_,
                                         wrap(std::forward<Args>(args))...);
     auto *raw_ptr = uniq_ptr.get();
-    nodes_.push_back(std::move(uniq_ptr));
-    return raw_ptr;
+    nodes_.emplace_back(std::move(uniq_ptr));
+    return *raw_ptr;
   }
 
   unsigned int node_count()
@@ -70,7 +69,8 @@ public:
     return *diagnostics_;
   }
 
-  Program *root = nullptr;
+  // The root is the program which is filled in by parsing.
+  Program root;
 
 private:
   // wrap potentially converts external types to internal ones. At the moment,

@@ -22,7 +22,7 @@ void test(const std::vector<std::reference_wrapper<T>> &expected,
 TEST(CollectNodes, direct)
 {
   ASTContext ctx;
-  auto &var = *ctx.make_node<Variable>("myvar", bpftrace::location{});
+  auto &var = ctx.make_node<Variable>("myvar", bpftrace::location{});
 
   CollectNodes<Variable> visitor;
   visitor.visit(var);
@@ -33,8 +33,8 @@ TEST(CollectNodes, direct)
 TEST(CollectNodes, indirect)
 {
   ASTContext ctx;
-  auto &var = *ctx.make_node<Variable>("myvar", bpftrace::location{});
-  auto &unop = *ctx.make_node<Unop>(
+  auto &var = ctx.make_node<Variable>("myvar", bpftrace::location{});
+  auto &unop = ctx.make_node<Unop>(
       Operator::INCREMENT, &var, false, bpftrace::location{});
 
   CollectNodes<Variable> visitor;
@@ -46,8 +46,8 @@ TEST(CollectNodes, indirect)
 TEST(CollectNodes, none)
 {
   ASTContext ctx;
-  auto &map = *ctx.make_node<Map>("myvar", bpftrace::location{});
-  auto &unop = *ctx.make_node<Unop>(
+  auto &map = ctx.make_node<Map>("myvar", bpftrace::location{});
+  auto &unop = ctx.make_node<Unop>(
       Operator::INCREMENT, &map, false, bpftrace::location{});
 
   CollectNodes<Variable> visitor;
@@ -59,12 +59,12 @@ TEST(CollectNodes, none)
 TEST(CollectNodes, multiple_runs)
 {
   ASTContext ctx;
-  auto &var1 = *ctx.make_node<Variable>("myvar1", bpftrace::location{});
-  auto &unop1 = *ctx.make_node<Unop>(
+  auto &var1 = ctx.make_node<Variable>("myvar1", bpftrace::location{});
+  auto &unop1 = ctx.make_node<Unop>(
       Operator::INCREMENT, &var1, false, bpftrace::location{});
 
-  auto &var2 = *ctx.make_node<Variable>("myvar2", bpftrace::location{});
-  auto &unop2 = *ctx.make_node<Unop>(
+  auto &var2 = ctx.make_node<Variable>("myvar2", bpftrace::location{});
+  auto &unop2 = ctx.make_node<Unop>(
       Operator::INCREMENT, &var2, false, bpftrace::location{});
 
   CollectNodes<Variable> visitor;
@@ -77,9 +77,9 @@ TEST(CollectNodes, multiple_runs)
 TEST(CollectNodes, multiple_children)
 {
   ASTContext ctx;
-  auto &var1 = *ctx.make_node<Variable>("myvar1", bpftrace::location{});
-  auto &var2 = *ctx.make_node<Variable>("myvar2", bpftrace::location{});
-  auto &binop = *ctx.make_node<Binop>(
+  auto &var1 = ctx.make_node<Variable>("myvar1", bpftrace::location{});
+  auto &var2 = ctx.make_node<Variable>("myvar2", bpftrace::location{});
+  auto &binop = ctx.make_node<Binop>(
       &var1, Operator::PLUS, &var2, bpftrace::location{});
 
   CollectNodes<Variable> visitor;
@@ -91,9 +91,9 @@ TEST(CollectNodes, multiple_children)
 TEST(CollectNodes, predicate)
 {
   ASTContext ctx;
-  auto &var1 = *ctx.make_node<Variable>("myvar1", bpftrace::location{});
-  auto &var2 = *ctx.make_node<Variable>("myvar2", bpftrace::location{});
-  auto &binop = *ctx.make_node<Binop>(
+  auto &var1 = ctx.make_node<Variable>("myvar1", bpftrace::location{});
+  auto &var2 = ctx.make_node<Variable>("myvar2", bpftrace::location{});
+  auto &binop = ctx.make_node<Binop>(
       &var1, Operator::PLUS, &var2, bpftrace::location{});
 
   CollectNodes<Variable> visitor;
@@ -105,12 +105,12 @@ TEST(CollectNodes, predicate)
 TEST(CollectNodes, nested)
 {
   ASTContext ctx;
-  auto &var1 = *ctx.make_node<Variable>("myvar1", bpftrace::location{});
-  auto &var2 = *ctx.make_node<Variable>("myvar2", bpftrace::location{});
-  auto &var3 = *ctx.make_node<Variable>("myvar3", bpftrace::location{});
-  auto &binop1 = *ctx.make_node<Binop>(
+  auto &var1 = ctx.make_node<Variable>("myvar1", bpftrace::location{});
+  auto &var2 = ctx.make_node<Variable>("myvar2", bpftrace::location{});
+  auto &var3 = ctx.make_node<Variable>("myvar3", bpftrace::location{});
+  auto &binop1 = ctx.make_node<Binop>(
       &var1, Operator::PLUS, &var2, bpftrace::location{});
-  auto &binop2 = *ctx.make_node<Binop>(
+  auto &binop2 = ctx.make_node<Binop>(
       &binop1, Operator::MINUS, &var3, bpftrace::location{});
 
   CollectNodes<Binop> visitor;

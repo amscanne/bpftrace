@@ -7,6 +7,12 @@ extern int yylex_destroy(yyscan_t yyscanner);
 
 namespace bpftrace {
 
+char NodesError::ID;
+void NodesError::log(llvm::raw_ostream &OS) const
+{
+  OS << "node count (" << count_ << ") exceeds the limit (" << max_ << ")";
+}
+
 void Driver::parse()
 {
   // Reset state on every pass.
@@ -34,26 +40,26 @@ void Driver::error(const location &l, const std::string &m)
 
 ast::Pass CreateParsePass(bool debug)
 {
-  return ast::Pass::create("parse", [debug](ast::ASTContext &ast, BPFtrace &b) {
-    Driver driver(ast, b, debug);
-    driver.parse();
+  return ast::Pass::create(
+      "parse", [debug](ast::ASTContext &ast, BPFtrace &b) -> Result<OK> {
+        Driver driver(ast, b, debug);
+        driver.parse();
 
-    // Before proceeding, ensure that the size of the AST isn't past prescribed
-    // limits. This functionality goes back to 80642a994, where it was added in
-    // order to prevent stack overflow during fuzzing. It traveled through the
-    // passes and visitor pattern, and this is a final return to the simplest
-    // possible form. It is not necessary to walk the full AST in order to
-    // determine the number of nodes. This can be done before any passes.
-    if (ast.diagnostics().ok()) {
-      assert(ast.root != nullptr);
-      auto node_count = ast.node_count();
-      if (node_count > b.max_ast_nodes_) {
-        ast.root->addError()
-            << "node count (" << node_count << ") exceeds the limit ("
-            << b.max_ast_nodes_ << ")";
-      }
-    }
-  });
+        // Before proceeding, ensure that the size of the AST isn't past
+        // prescribed limits. This functionality goes back to 80642a994, where
+        // it was added in order to prevent stack overflow during fuzzing. It
+        // traveled through the passes and visitor pattern, and this is a final
+        // return to the simplest possible form. It is not necessary to walk the
+        // full AST in order to determine the number of nodes. This can be done
+        // before any passes.
+        if (ast.diagnostics().ok()) {
+          auto node_count = ast.node_count();
+          if (node_count > b.max_ast_nodes_) {
+            return make_error<NodesError>(node_count, b.max_ast_nodes_);
+          }
+        }
+        return OK();
+      });
 }
 
 } // namespace bpftrace

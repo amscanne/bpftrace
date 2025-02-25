@@ -4,7 +4,6 @@
 #include <variant>
 
 #include "ast/ast.h"
-#include "ast/context.h"
 
 namespace bpftrace::ast {
 
@@ -12,63 +11,47 @@ namespace bpftrace::ast {
 //
 // This uses CRTP to make all calls static, while still allowing the entrypoint
 // for a single visitor to be dispatched dynamically. The implementation may
-// optionally provide individual `visit` methods (matching either pointers or
-// references, the latter preferred), or `replace` methods (matching just the
-// relevant pointer types and returning the same) which can return new nodes
-// when replacement is required. This makes it simple to write self-contained
-// passes that rewrite part of the AST.
-//
-// Note that replacement is not currently possible for aggregate types (e.g.
-// std::vector), and these will still be visited (and possible replaced on an
-// item-side basis). If modification of these is needed, then the visitor
-// should do replacement inline within the owner of the list, i.e. replace the
-// full Block node, rather than attempting to intersect the list.
+// optionally provide individual `visit` methods (matching references, which
+// can be rewritten).
 template <typename Impl, typename R = void>
 class Visitor {
 public:
-  // See above; specific replace methods may be defined.
-  template <typename T>
-  T *replace(T *node, [[maybe_unused]] R *result)
-  {
-    return node;
-  }
-
   // visit methods are used to traverse the graph, and are provided a reference
   // to the underlying node. The visit is invoked *before* the replace call,
   // and can directly consume and modify the results of the visit.
-  R visit(Integer &integer __attribute__((__unused__)))
+  R visit([[maybe_unused]] Integer &integer)
   {
     return default_value();
   }
-  R visit(PositionalParameter &integer __attribute__((__unused__)))
+  R visit([[maybe_unused]] PositionalParameter &integer)
   {
     return default_value();
   }
-  R visit(String &string __attribute__((__unused__)))
+  R visit([[maybe_unused]] String &string)
   {
     return default_value();
   }
-  R visit(Builtin &builtin __attribute__((__unused__)))
+  R visit([[maybe_unused]] Builtin &builtin)
   {
     return default_value();
   }
-  R visit(Identifier &identifier __attribute__((__unused__)))
+  R visit([[maybe_unused]] Identifier &identifier)
   {
     return default_value();
   }
-  R visit(StackMode &mode __attribute__((__unused__)))
+  R visit([[maybe_unused]] StackMode &mode)
   {
     return default_value();
   }
-  R visit(Variable &var __attribute__((__unused__)))
+  R visit([[maybe_unused]] Variable &var)
   {
     return default_value();
   }
-  R visit(SubprogArg &subprog_arg __attribute__((__unused__)))
+  R visit([[maybe_unused]] SubprogArg &subprog_arg)
   {
     return default_value();
   }
-  R visit(AttachPoint &ap __attribute__((__unused__)))
+  R visit([[maybe_unused]] AttachPoint &ap)
   {
     return default_value();
   }
@@ -78,54 +61,56 @@ public:
   }
   R visit(Sizeof &szof)
   {
-    return visitAndReplace(&szof.expr);
+    // See `SizedType` below.
+    return visitImpl(szof.expr);
   }
   R visit(Offsetof &ofof)
   {
-    return visitAndReplace(&ofof.expr);
+    // See `SizedType` below.
+    return visitImpl(ofof.expr);
   }
-  R visit(MapDeclStatement &decl __attribute__((__unused__)))
+  R visit([[maybe_unused]] MapDecl &decl)
   {
     return default_value();
   }
   R visit(Map &map)
   {
-    return visitAndReplace(&map.key_expr);
+    return visitImpl(map.key_expr);
   }
   R visit(Binop &binop)
   {
-    visitAndReplace(&binop.left);
-    visitAndReplace(&binop.right);
+    visitImpl(binop.left);
+    visitImpl(binop.right);
     return default_value();
   }
   R visit(Unop &unop)
   {
-    return visitAndReplace(&unop.expr);
+    return visitImpl(unop.expr);
   }
   R visit(Ternary &ternary)
   {
-    visitAndReplace(&ternary.cond);
-    visitAndReplace(&ternary.left);
-    visitAndReplace(&ternary.right);
+    visitImpl(ternary.cond);
+    visitImpl(ternary.left);
+    visitImpl(ternary.right);
     return default_value();
   }
   R visit(FieldAccess &acc)
   {
-    return visitAndReplace(&acc.expr);
+    return visitImpl(acc.expr);
   }
   R visit(ArrayAccess &arr)
   {
-    visitAndReplace(&arr.expr);
-    visitAndReplace(&arr.indexpr);
+    visitImpl(arr.expr);
+    visitImpl(arr.indexpr);
     return default_value();
   }
   R visit(TupleAccess &acc)
   {
-    return visitAndReplace(&acc.expr);
+    return visitImpl(acc.expr);
   }
   R visit(Cast &cast)
   {
-    return visitAndReplace(&cast.expr);
+    return visitImpl(cast.expr);
   }
   R visit(Tuple &tuple)
   {
@@ -133,67 +118,67 @@ public:
   }
   R visit(ExprStatement &expr)
   {
-    return visitAndReplace(&expr.expr);
+    return visitImpl(expr.expr);
   }
   R visit(AssignMapStatement &assignment)
   {
-    visitAndReplace(&assignment.map);
-    visitAndReplace(&assignment.expr);
+    visitImpl(assignment.map);
+    visitImpl(assignment.expr);
     return default_value();
   }
   R visit(AssignVarStatement &assignment)
   {
-    visitAndReplace(&assignment.var);
-    visitAndReplace(&assignment.expr);
+    visitImpl(assignment.var);
+    visitImpl(assignment.expr);
     return default_value();
   }
   R visit(AssignConfigVarStatement &assignment)
   {
-    return visitAndReplace(&assignment.expr);
+    return visitImpl(assignment.expr);
   }
   R visit(VarDeclStatement &decl)
   {
-    return visitAndReplace(&decl.var);
+    return visitImpl(decl.var);
   }
   R visit(If &if_node)
   {
-    visitAndReplace(&if_node.cond);
-    visitAndReplace(&if_node.if_block);
-    visitAndReplace(&if_node.else_block);
+    visitImpl(if_node.cond);
+    visitImpl(if_node.if_block);
+    visitImpl(if_node.else_block);
     return default_value();
   }
   R visit(Jump &jump)
   {
-    return visitAndReplace(&jump.return_value);
+    return visitImpl(jump.return_value);
   }
   R visit(Unroll &unroll)
   {
-    visitAndReplace(&unroll.expr);
-    visitAndReplace(&unroll.block);
+    visitImpl(unroll.expr);
+    visitImpl(unroll.block);
     return default_value();
   }
   R visit(While &while_block)
   {
-    visitAndReplace(&while_block.cond);
-    visitAndReplace(&while_block.block);
+    visitImpl(while_block.cond);
+    visitImpl(while_block.block);
     return default_value();
   }
   R visit(For &for_loop)
   {
-    visitAndReplace(&for_loop.decl);
-    visitAndReplace(&for_loop.expr);
+    visitImpl(for_loop.decl);
+    visitImpl(for_loop.expr);
     visitImpl(for_loop.stmts);
     return default_value();
   }
   R visit(Predicate &pred)
   {
-    return visitAndReplace(&pred.expr);
+    return visitImpl(pred.expr);
   }
   R visit(Probe &probe)
   {
     visitImpl(probe.attach_points);
-    visitAndReplace(&probe.pred);
-    visitAndReplace(&probe.block);
+    visitImpl(probe.pred);
+    visitImpl(probe.block);
     return default_value();
   }
   R visit(Config &config)
@@ -204,7 +189,7 @@ public:
   R visit(Block &block)
   {
     visitImpl(block.stmts);
-    visitAndReplace(&block.expr);
+    visitImpl(block.expr);
     return default_value();
   }
   R visit(Subprog &subprog)
@@ -216,29 +201,19 @@ public:
   R visit(Program &program)
   {
     // This order is important
+    visitImpl(program.config);
     visitImpl(program.functions);
-    visitAndReplace(&program.config);
     visitImpl(program.map_decls);
     visitImpl(program.probes);
     return default_value();
   }
-
-  // Temporarily allow visits to expression and statement references. This
-  // does not permit the modification of the underlying value, but does allow
-  // the existing passes to continue to work (which do not modify anything, so
-  // this is not a problem for the time being).
-  template <NodeType T>
-  R visit(T &t)
+  R visit(Expression &expr)
   {
-    T *ptr = &t;
-    if constexpr (!std::is_void_v<R>) {
-      auto rval = visitAndReplace(&ptr);
-      assert(ptr == &t); // Should not be modified.
-      return rval;
-    } else {
-      visitAndReplace(&ptr);
-      assert(ptr == &t); // See above.
-    }
+    return std::visit([&](auto &v) { return visitImpl(v); }, expr.value());
+  }
+  R visit(Statement &stmt)
+  {
+    return std::visit([&](auto &v) { return visitImpl(v); }, stmt.value());
   }
 
   // Automatically unpack and dispatch all variant and vector types into the
@@ -250,113 +225,40 @@ public:
   // function, which could e.g. return the replacement pointer, but this would
   // be a single specialized pass for this case.
   template <typename... Ts>
-  R visit(std::variant<Ts *...> var)
+  R visit(std::variant<Ts...> &var)
   {
-    return std::visit(
-        [this](auto &value) -> R { return visitAndReplace(&value); }, var);
+    return std::visit([&](auto &value) -> R { return visitImpl(value); }, var);
   }
   template <typename T>
-  R visit(std::vector<T *> &var)
-  {
-    for (auto &value : var) {
-      visitAndReplace(&value);
-    }
-    return default_value();
-  }
-  template <typename T>
-  R visit(std::optional<T *> &var)
+  R visit(std::optional<T> &var)
   {
     if (var) {
-      return visitAndReplace(&(*var));
+      return visitImpl(var.value());
     }
     return default_value();
   }
-
-  // This is a convenience for dispatching directly from a pointer type, it
-  // does not allow for replacement of this specific instance.
   template <typename T>
-  R visit(T *ptr)
+  R visit(std::reference_wrapper<T> ref)
   {
-    if (ptr)
-      return visitImpl(*ptr);
-    return default_value();
+    return visitImpl(ref.get());
   }
-
   template <typename T>
-  R visitAndReplace(T **t)
+  R visit(std::vector<T> &vec)
   {
-    auto orig = *t; // Prior to replacement.
-    Impl *impl = static_cast<Impl *>(this);
-    if constexpr (!std::is_void_v<R>) {
-      auto rval = impl->visit(orig);
-      *t = impl->replace(orig, &rval);
-      return rval;
-    } else {
-      impl->visit(orig);
-      *t = impl->replace(orig, nullptr);
-      return default_value();
-    }
-  }
-
-  // These are the runtime-type adaptors that are currently required for
-  // Expression and Statement, but can be removed by encoding this type
-  // information into the AST directly.
-  template <typename Orig, typename T, typename... Ts>
-  R tryVisitAndReplace(Orig **node)
-  {
-    if (auto *t = dynamic_cast<T>(*node)) {
-      if constexpr (!std::is_void_v<R>) {
-        auto rval = visitAndReplace(&t);
-        *node = static_cast<Orig *>(t); // Copy the modification.
-        return rval;
-      } else {
-        visitAndReplace(&t);
-        *node = static_cast<Orig *>(t); // See above.
-        return;
-      }
-    } else if constexpr (sizeof...(Ts) != 0) {
-      return tryVisitAndReplace<Orig, Ts...>(node);
+    for (auto &v : vec) {
+      visit(v);
     }
     return default_value();
   }
-  R visitAndReplace(Expression **expr)
+  R visit([[maybe_unused]] std::monostate &var)
   {
-    return tryVisitAndReplace<Expression,
-                              Integer *,
-                              PositionalParameter *,
-                              String *,
-                              StackMode *,
-                              Identifier *,
-                              Builtin *,
-                              Call *,
-                              Sizeof *,
-                              Offsetof *,
-                              Map *,
-                              Variable *,
-                              Binop *,
-                              Unop *,
-                              FieldAccess *,
-                              ArrayAccess *,
-                              TupleAccess *,
-                              Cast *,
-                              Tuple *,
-                              Ternary *,
-                              Block *>(expr);
+    return default_value();
   }
-  R visitAndReplace(Statement **stmt)
+  R visit([[maybe_unused]] SizedType &var)
   {
-    return tryVisitAndReplace<Statement,
-                              ExprStatement *,
-                              VarDeclStatement *,
-                              AssignMapStatement *,
-                              AssignVarStatement *,
-                              AssignConfigVarStatement *,
-                              If *,
-                              Unroll *,
-                              Jump *,
-                              While *,
-                              For *,
-                              Config *>(stmt);
+    // Some nodes contain variants over expressions and types (`Offsetof` and
+    // `Sizeof`). For simplicity, simply allow these visits and ignore them.
+    return default_value();
   }
 
 private:
@@ -364,7 +266,7 @@ private:
   R visitImpl(T &t)
   {
     Impl *impl = static_cast<Impl *>(this);
-    return impl->visit(t);
+    impl->visit(t);
   }
   R default_value()
   {

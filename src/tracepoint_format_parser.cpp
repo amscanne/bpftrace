@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include "ast/ast.h"
+#include "ast/context.h"
 #include "bpftrace.h"
 #include "tracefs/tracefs.h"
 #include "tracepoint_format_parser.h"
@@ -14,14 +15,12 @@ namespace bpftrace {
 
 std::set<std::string> TracepointFormatParser::struct_list;
 
-bool TracepointFormatParser::parse(ast::ASTContext &ctx, BPFtrace &bpftrace)
+bool TracepointFormatParser::parse(ast::ASTContext &ast, BPFtrace &bpftrace)
 {
-  ast::Program *program = ctx.root;
-
-  std::vector<ast::Probe *> probes_with_tracepoint;
-  for (ast::Probe *probe : program->probes) {
-    if (probe->has_ap_of_probetype(ProbeType::tracepoint))
-      probes_with_tracepoint.push_back(probe);
+  std::vector<std::reference_wrapper<ast::Probe>> probes_with_tracepoint;
+  for (ast::Probe &probe : ast.root.probes) {
+    if (probe.has_ap_of_probetype(ProbeType::tracepoint))
+      probes_with_tracepoint.emplace_back(std::ref(probe));
   }
 
   if (probes_with_tracepoint.empty())
@@ -29,14 +28,14 @@ bool TracepointFormatParser::parse(ast::ASTContext &ctx, BPFtrace &bpftrace)
 
   ast::TracepointArgsVisitor n;
   if (!bpftrace.has_btf_data())
-    program->c_definitions += "#include <linux/types.h>\n";
-  for (ast::Probe *probe : probes_with_tracepoint) {
-    n.visit(*probe);
+    ast.root.c_definitions += "#include <linux/types.h>\n";
+  for (ast::Probe &probe : probes_with_tracepoint) {
+    n.visit(probe);
 
-    for (ast::AttachPoint *ap : probe->attach_points) {
-      if (ap->provider == "tracepoint") {
-        std::string &category = ap->target;
-        std::string &event_name = ap->func;
+    for (ast::AttachPoint &ap : probe.attach_points) {
+      if (ap.provider == "tracepoint") {
+        std::string &category = ap.target;
+        std::string &event_name = ap.func;
         std::string format_file_path = tracefs::event_format_file(category,
                                                                   event_name);
         glob_t glob_result;
@@ -47,7 +46,7 @@ bool TracepointFormatParser::parse(ast::ASTContext &ctx, BPFtrace &bpftrace)
           int ret = glob(format_file_path.c_str(), 0, nullptr, &glob_result);
           if (ret != 0) {
             if (ret == GLOB_NOMATCH) {
-              auto &err = ap->addError();
+              auto &err = ap.addError();
               err << "tracepoints not found: " << category << ":" << event_name;
               // helper message:
               if (category == "syscall")
@@ -55,13 +54,13 @@ bool TracepointFormatParser::parse(ast::ASTContext &ctx, BPFtrace &bpftrace)
               return false;
             } else {
               // unexpected error
-              ap->addError()
+              ap.addError()
                   << "unexpected error: " << std::string(strerror(errno));
               return false;
             }
           }
 
-          if (probe->tp_args_structs_level <= 0) {
+          if (probe.tp_args_structs_level <= 0) {
             globfree(&glob_result);
             continue;
           }
@@ -82,7 +81,7 @@ bool TracepointFormatParser::parse(ast::ASTContext &ctx, BPFtrace &bpftrace)
             std::string struct_name = get_struct_name(real_category,
                                                       real_event);
             if (!TracepointFormatParser::struct_list.contains(struct_name)) {
-              program->c_definitions += get_tracepoint_struct(
+              ast.root.c_definitions += get_tracepoint_struct(
                   format_file, real_category, real_event, bpftrace);
               TracepointFormatParser::struct_list.insert(struct_name);
             }
@@ -97,13 +96,13 @@ bool TracepointFormatParser::parse(ast::ASTContext &ctx, BPFtrace &bpftrace)
 
             // Do not fail if trying to attach to multiple tracepoints
             // (at least one of them could succeed)
-            bool fail = probe->attach_points.size() == 1;
+            bool fail = probe.attach_points.size() == 1;
             auto msg = "tracepoint not found: " + category + ":" + event_name;
             auto select = [&]() -> ast::Diagnostic & {
               if (fail)
-                return ap->addError();
+                return ap.addError();
               else
-                return ap->addWarning();
+                return ap.addWarning();
             };
             auto &err = select();
             err << msg;
@@ -115,7 +114,7 @@ bool TracepointFormatParser::parse(ast::ASTContext &ctx, BPFtrace &bpftrace)
             if (fail && bt_verbose) {
               // Having the location info isn't really useful here, so no
               // bpftrace.error
-              ap->addError()
+              ap.addError()
                   << strerror(saved_errno) << ": " << format_file_path;
             }
             if (fail)
@@ -124,13 +123,13 @@ bool TracepointFormatParser::parse(ast::ASTContext &ctx, BPFtrace &bpftrace)
               continue;
           }
 
-          if (probe->tp_args_structs_level <= 0)
+          if (probe.tp_args_structs_level <= 0)
             continue;
 
           // Check to avoid adding the same struct more than once to definitions
           std::string struct_name = get_struct_name(category, event_name);
           if (TracepointFormatParser::struct_list.insert(struct_name).second)
-            program->c_definitions += get_tracepoint_struct(
+            ast.root.c_definitions += get_tracepoint_struct(
                 format_file, category, event_name, bpftrace);
         }
       }

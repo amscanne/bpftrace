@@ -186,8 +186,8 @@ public:
   std::unordered_map<std::string, Probe> special_probes;
   std::vector<Probe> watchpoint_probes;
 
-  // List of probes using userspace symbol resolution
-  std::unordered_set<const ast::Probe *> probes_using_usym;
+  // List of probes using userspace symbol resolution.
+  std::unordered_set<std::string> probes_using_usym;
 
 private:
   friend class cereal::access;

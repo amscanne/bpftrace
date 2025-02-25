@@ -23,7 +23,7 @@ public:
   void visit(Sizeof &szof);
   void visit(Offsetof &offof);
   void visit(Map &map);
-  void visit(MapDeclStatement &decl);
+  void visit(MapDecl &decl);
   void visit(Variable &var);
   void visit(Binop &binop);
   void visit(Unop &unop);

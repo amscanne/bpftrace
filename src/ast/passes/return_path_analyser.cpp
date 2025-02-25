@@ -1,5 +1,6 @@
 #include <algorithm>
 
+#include "ast/context.h"
 #include "ast/passes/return_path_analyser.h"
 #include "ast/visitor.h"
 
@@ -22,8 +23,9 @@ public:
 
 bool ReturnPathAnalyser::visit(Program &prog)
 {
-  return std::ranges::all_of(prog.functions,
-                             [this](auto *subprog) { return visit(*subprog); });
+  return std::ranges::all_of(prog.functions, [this](Subprog &subprog) {
+    return visit(subprog);
+  });
 }
 
 bool ReturnPathAnalyser::visit(Subprog &subprog)
@@ -31,8 +33,8 @@ bool ReturnPathAnalyser::visit(Subprog &subprog)
   if (subprog.return_type.IsVoidTy())
     return true;
 
-  for (Statement *stmt : subprog.stmts) {
-    if (visit(*stmt))
+  for (auto &stmt : subprog.stmts) {
+    if (visit(stmt))
       return true;
   }
   subprog.addError() << "Not all code paths returned a value";
@@ -47,7 +49,7 @@ bool ReturnPathAnalyser::visit(Jump &jump)
 bool ReturnPathAnalyser::visit(If &if_node)
 {
   bool result = false;
-  for (Statement *stmt : if_node.if_block->stmts) {
+  for (auto &stmt : if_node.if_block.stmts) {
     if (visit(stmt))
       result = true;
   }
@@ -58,8 +60,8 @@ bool ReturnPathAnalyser::visit(If &if_node)
 
   // True if both blocks have a return.
   // False if else block has no return (or there is no else block).
-  return std::ranges::any_of(if_node.else_block->stmts,
-                             [this](auto *stmt) { return visit(stmt); });
+  return std::ranges::any_of(if_node.else_block.stmts,
+                             [this](auto &stmt) { return visit(stmt); });
 }
 
 Pass CreateReturnPathPass()

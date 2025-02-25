@@ -273,26 +273,26 @@ TEST(tracepoint_format_parser, args_field_access)
   ast::TracepointArgsVisitor visitor;
 
   test("BEGIN { args.f1->f2->f3 }", [&](ast::ASTContext &ast) {
-    visitor.visit(*ast.root->probes.at(0));
-    EXPECT_EQ(ast.root->probes.at(0)->tp_args_structs_level, 3);
+    visitor.visit(ast.root.probes.at(0));
+    EXPECT_EQ(ast.root.probes.at(0).get().tp_args_structs_level, 3);
   });
 
   // Should work via intermediary variable, too
   test("BEGIN { $x = args.f1; $x->f2->f3 }", [&](ast::ASTContext &ast) {
-    visitor.visit(*ast.root->probes.at(0));
-    EXPECT_EQ(ast.root->probes.at(0)->tp_args_structs_level, 3);
+    visitor.visit(ast.root.probes.at(0));
+    EXPECT_EQ(ast.root.probes.at(0).get().tp_args_structs_level, 3);
   });
 
   // "args" used without field access => level should be 0
   test("BEGIN { args }", [&](ast::ASTContext &ast) {
-    visitor.visit(*ast.root->probes.at(0));
-    EXPECT_EQ(ast.root->probes.at(0)->tp_args_structs_level, 0);
+    visitor.visit(ast.root.probes.at(0));
+    EXPECT_EQ(ast.root.probes.at(0).get().tp_args_structs_level, 0);
   });
 
   // "args" not used => level should be -1
   test("BEGIN { x->f1->f2->f3 }", [&](ast::ASTContext &ast) {
-    visitor.visit(*ast.root->probes.at(0));
-    EXPECT_EQ(ast.root->probes.at(0)->tp_args_structs_level, -1);
+    visitor.visit(ast.root.probes.at(0));
+    EXPECT_EQ(ast.root.probes.at(0).get().tp_args_structs_level, -1);
   });
 }
 

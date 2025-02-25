@@ -1,5 +1,6 @@
 #include "ast/passes/pid_filter_pass.h"
 #include "ast/ast.h"
+#include "ast/context.h"
 #include "ast/visitor.h"
 #include "bpftrace.h"
 
@@ -22,13 +23,15 @@ private:
   BPFtrace &bpftrace_;
 };
 
+} // namespace
+
 // If the probe can't filter by pid when attaching
 // then we inject custom AST to filter by pid.
 // Note: this doesn't work for AOT as the code has already
 // been generated
-bool probe_needs_pid_filter(AttachPoint *ap)
+static bool probe_needs_pid_filter(AttachPoint &ap)
 {
-  ProbeType type = probetype(ap->provider);
+  ProbeType type = probetype(ap.provider);
 
   switch (type) {
     case ProbeType::kprobe:
@@ -57,35 +60,36 @@ bool probe_needs_pid_filter(AttachPoint *ap)
   return false;
 }
 
-} // namespace
-
-static Statement *create_pid_filter(ASTContext &ast,
-                                    int pid,
-                                    const Location &loc)
+static Statement create_pid_filter(ASTContext &ast,
+                                   int pid,
+                                   const Location &loc)
 {
-  return ast.make_node<If>(
-      ast.make_node<Binop>(ast.make_node<Builtin>("pid", Location(loc)),
-                           Operator::NE,
-                           ast.make_node<Integer>(pid, Location(loc)),
-                           Location(loc)),
-      ast.make_node<Block>(std::vector<Statement *>{ ast.make_node<Jump>(
-                               JumpType::RETURN, Location(loc)) },
-                           Location(loc)),
-      ast.make_node<Block>(std::vector<Statement *>{}, Location(loc)),
-      Location(loc));
+  std::vector<Statement> stmts(
+      { Statement(ast.make_node<Jump>(JumpType::RETURN, Location(loc))) });
+  Expression cond(ast.make_node<Binop>(
+      Expression(ast.make_node<Builtin>("pid", Location(loc))),
+      Operator::NE,
+      Expression(ast.make_node<Integer>(pid, Location(loc))),
+      Location(loc)));
+  Statement filter(ast.make_node<If>(
+      cond,
+      ast.make_node<Block>(std::move(stmts), Location(loc)),
+      ast.make_node<Block>(std::vector<Statement>(), Location(loc)),
+      Location(loc)));
+  return filter;
 }
 
 void PidFilterPass::visit(Probe &probe)
 {
   const auto pid = bpftrace_.pid();
-  if (!pid.has_value()) {
+  if (!pid.has_value() || probe.block.stmts.empty()) {
     return;
   }
 
-  for (AttachPoint *ap : probe.attach_points) {
+  for (AttachPoint &ap : probe.attach_points) {
     if (probe_needs_pid_filter(ap)) {
-      probe.block->stmts.insert(probe.block->stmts.begin(),
-                                create_pid_filter(ast_, *pid, probe.loc));
+      probe.block.stmts.insert(probe.block.stmts.begin(),
+                               create_pid_filter(ast_, *pid, probe.loc));
       return;
     }
   }

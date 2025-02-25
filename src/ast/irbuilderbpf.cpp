@@ -230,14 +230,14 @@ AllocaInst *IRBuilderBPF::CreateAllocaBPF(llvm::Type *ty,
   return alloca;
 }
 
-AllocaInst *IRBuilderBPF::CreateAllocaBPF(const SizedType &stype,
+AllocaInst *IRBuilderBPF::CreateAllocaBPF(SizedType stype,
                                           const std::string &name)
 {
   llvm::Type *ty = GetType(stype);
   return CreateAllocaBPF(ty, name);
 }
 
-void IRBuilderBPF::CreateAllocationInit(const SizedType &stype, Value *alloc)
+void IRBuilderBPF::CreateAllocationInit(SizedType stype, Value *alloc)
 {
   if (needMemcpy(stype)) {
     CreateMemsetBPF(alloc, getInt8(0), stype.GetSize());
@@ -246,7 +246,7 @@ void IRBuilderBPF::CreateAllocationInit(const SizedType &stype, Value *alloc)
   }
 }
 
-AllocaInst *IRBuilderBPF::CreateAllocaBPFInit(const SizedType &stype,
+AllocaInst *IRBuilderBPF::CreateAllocaBPFInit(SizedType stype,
                                               const std::string &name)
 {
   // Anything this large should be allocated in a scratch map instead
@@ -365,8 +365,7 @@ llvm::ConstantInt *IRBuilderBPF::GetIntSameSize(uint64_t C, llvm::Value *expr)
 /// At the moment, `emit_codegen_types=false` only applies to pointers as it is
 /// sufficient for our use cases (and we don't need to bother with emitting
 /// struct types with all the fields). This should be changed eventually.
-llvm::Type *IRBuilderBPF::GetType(const SizedType &stype,
-                                  bool emit_codegen_types)
+llvm::Type *IRBuilderBPF::GetType(SizedType stype, bool emit_codegen_types)
 {
   llvm::Type *ty;
   if (stype.IsByteArray() || stype.IsRecordTy()) {
@@ -418,7 +417,7 @@ llvm::Type *IRBuilderBPF::GetType(const SizedType &stype,
   return ty;
 }
 
-llvm::Type *IRBuilderBPF::GetMapValueType(const SizedType &stype)
+llvm::Type *IRBuilderBPF::GetMapValueType(SizedType stype)
 {
   llvm::Type *ty;
   if (stype.IsMinTy() || stype.IsMaxTy()) {
@@ -556,7 +555,7 @@ Value *IRBuilderBPF::CreateGetFmtStringArgsAllocation(StructType *struct_type,
                           loc);
 }
 
-Value *IRBuilderBPF::CreateTupleAllocation(const SizedType &tuple_type,
+Value *IRBuilderBPF::CreateTupleAllocation(SizedType tuple_type,
                                            const std::string &name,
                                            const Location &loc)
 {
@@ -569,7 +568,7 @@ Value *IRBuilderBPF::CreateTupleAllocation(const SizedType &tuple_type,
                           });
 }
 
-Value *IRBuilderBPF::CreateReadMapValueAllocation(const SizedType &value_type,
+Value *IRBuilderBPF::CreateReadMapValueAllocation(SizedType value_type,
                                                   const std::string &name,
                                                   const Location &loc)
 {
@@ -581,7 +580,7 @@ Value *IRBuilderBPF::CreateReadMapValueAllocation(const SizedType &value_type,
       [](AsyncIds &async_ids) { return async_ids.read_map_value(); });
 }
 
-Value *IRBuilderBPF::CreateWriteMapValueAllocation(const SizedType &value_type,
+Value *IRBuilderBPF::CreateWriteMapValueAllocation(SizedType value_type,
                                                    const std::string &name,
                                                    const Location &loc)
 {
@@ -592,7 +591,7 @@ Value *IRBuilderBPF::CreateWriteMapValueAllocation(const SizedType &value_type,
       loc);
 }
 
-Value *IRBuilderBPF::CreateVariableAllocationInit(const SizedType &value_type,
+Value *IRBuilderBPF::CreateVariableAllocationInit(SizedType value_type,
                                                   const std::string &name,
                                                   const Location &loc)
 {
@@ -614,7 +613,7 @@ Value *IRBuilderBPF::CreateVariableAllocationInit(const SizedType &value_type,
   return alloc;
 }
 
-Value *IRBuilderBPF::CreateMapKeyAllocation(const SizedType &value_type,
+Value *IRBuilderBPF::CreateMapKeyAllocation(SizedType value_type,
                                             const std::string &name,
                                             const Location &loc)
 {
@@ -733,13 +732,13 @@ Value *IRBuilderBPF::CreateMapLookupElem(Value *ctx,
                                          const Location &loc)
 {
   assert(ctx && ctx->getType() == getPtrTy());
-  return CreateMapLookupElem(ctx, map.ident, key, map.type, loc);
+  return CreateMapLookupElem(ctx, map.ident, key, map.type(), loc);
 }
 
 Value *IRBuilderBPF::CreateMapLookupElem(Value *ctx,
                                          const std::string &map_name,
                                          Value *key,
-                                         SizedType &type,
+                                         SizedType type,
                                          const Location &loc)
 {
   assert(ctx && ctx->getType() == getPtrTy());
@@ -794,7 +793,7 @@ Value *IRBuilderBPF::CreateMapLookupElem(Value *ctx,
 Value *IRBuilderBPF::CreatePerCpuMapAggElems(Value *ctx,
                                              Map &map,
                                              Value *key,
-                                             const SizedType &type,
+                                             SizedType type,
                                              const Location &loc)
 {
   // int ret = 0;
@@ -975,7 +974,7 @@ Value *IRBuilderBPF::CreatePerCpuMapAggElems(Value *ctx,
 
 void IRBuilderBPF::createPerCpuSum(AllocaInst *ret,
                                    CallInst *call,
-                                   const SizedType &type)
+                                   SizedType type)
 {
   CreateStore(CreateAdd(CreateLoad(GetType(type), call),
                         CreateLoad(getInt64Ty(), ret)),
@@ -985,7 +984,7 @@ void IRBuilderBPF::createPerCpuSum(AllocaInst *ret,
 void IRBuilderBPF::createPerCpuMinMax(AllocaInst *ret,
                                       AllocaInst *is_ret_set,
                                       CallInst *call,
-                                      const SizedType &type)
+                                      SizedType type)
 {
   auto *value_type = GetMapValueType(type);
   bool is_max = type.IsMaxTy();
@@ -1074,7 +1073,7 @@ void IRBuilderBPF::createPerCpuMinMax(AllocaInst *ret,
 void IRBuilderBPF::createPerCpuAvg(AllocaInst *total,
                                    AllocaInst *count,
                                    CallInst *call,
-                                   const SizedType &type)
+                                   SizedType type)
 {
   auto *value_type = GetMapValueType(type);
 
@@ -1435,7 +1434,7 @@ Value *IRBuilderBPF::CreateUSDTReadArgument(Value *ctx,
                                ctx,
                                getInt64(offset * sizeof(uintptr_t)),
                                "load_register");
-    AllocaInst *dst = CreateAllocaBPF(builtin.type, builtin.ident);
+    AllocaInst *dst = CreateAllocaBPF(builtin.type(), builtin.ident);
     Value *index_offset = nullptr;
     if (argument->valid & BCC_USDT_ARGUMENT_INDEX_REGISTER_NAME) {
       int ioffset = arch::offset(argument->index_register_name);
@@ -1786,8 +1785,8 @@ CallInst *IRBuilderBPF::CreateJiffies64(const Location &loc)
 Value *IRBuilderBPF::CreateIntegerArrayCmp(Value *ctx,
                                            Value *val1,
                                            Value *val2,
-                                           const SizedType &val1_type,
-                                           const SizedType &val2_type,
+                                           SizedType val1_type,
+                                           SizedType val2_type,
                                            const bool inverse,
                                            const Location &loc,
                                            MDNode *metadata)
@@ -2234,7 +2233,7 @@ void IRBuilderBPF::CreateMapElemAdd(Value *ctx,
                                     const Location &loc)
 {
   CallInst *call = CreateMapLookup(map, key);
-  SizedType &type = map.type;
+  SizedType type = map.type();
 
   llvm::Function *parent = GetInsertBlock()->getParent();
   BasicBlock *lookup_success_block = BasicBlock::Create(module_.getContext(),
@@ -2404,7 +2403,7 @@ CallInst *IRBuilderBPF::CreateSkbOutput(Value *skb,
 }
 
 Value *IRBuilderBPF::CreateKFuncArg(Value *ctx,
-                                    SizedType &type,
+                                    SizedType type,
                                     std::string &name)
 {
   assert(type.IsIntTy() || type.IsPtrTy());
@@ -2434,8 +2433,7 @@ Value *IRBuilderBPF::CreateRawTracepointArg(Value *ctx,
   return expr;
 }
 
-Value *IRBuilderBPF::CreateUprobeArgsRecord(Value *ctx,
-                                            const SizedType &args_type)
+Value *IRBuilderBPF::CreateUprobeArgsRecord(Value *ctx, SizedType args_type)
 {
   assert(args_type.IsRecordTy());
 
@@ -2456,7 +2454,7 @@ Value *IRBuilderBPF::CreateUprobeArgsRecord(Value *ctx,
   return result;
 }
 
-llvm::Type *IRBuilderBPF::UprobeArgsType(const SizedType &args_type)
+llvm::Type *IRBuilderBPF::UprobeArgsType(SizedType args_type)
 {
   auto type_name = args_type.GetName();
   type_name.erase(0, strlen("struct "));
@@ -2658,7 +2656,7 @@ StoreInst *IRBuilderBPF::createAlignedStore(Value *val,
 
 void IRBuilderBPF::CreateProbeRead(Value *ctx,
                                    Value *dst,
-                                   const SizedType &type,
+                                   SizedType type,
                                    Value *src,
                                    const Location &loc,
                                    std::optional<AddrSpace> addrSpace)
@@ -2690,7 +2688,7 @@ void IRBuilderBPF::CreateProbeRead(Value *ctx,
 }
 
 llvm::Value *IRBuilderBPF::CreateDatastructElemLoad(
-    const SizedType &type,
+    SizedType type,
     llvm::Value *ptr,
     bool isVolatile,
     std::optional<AddrSpace> addrSpace)
@@ -2711,7 +2709,7 @@ llvm::Value *IRBuilderBPF::CreateDatastructElemLoad(
   return CreateIntCast(expr, getInt64Ty(), false);
 }
 
-llvm::Value *IRBuilderBPF::CreatePtrOffset(const SizedType &type,
+llvm::Value *IRBuilderBPF::CreatePtrOffset(SizedType type,
                                            llvm::Value *index,
                                            AddrSpace as)
 {
