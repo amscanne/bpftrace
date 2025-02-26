@@ -358,11 +358,11 @@ static void parse_env(BPFtrace& bpftrace)
     const std::vector<std::string>& include_dirs,
     const std::vector<std::string>& include_files)
 {
-  Driver driver(bpftrace);
-  driver.source(name, program);
-  int err;
+  Driver driver(ast,
+                /*listing=*/false,
+                /*debug=*/bt_debug.find(DebugStage::Parse) != bt_debug.end());
 
-  err = driver.parse();
+  err = driver.parse(program);
   if (err)
     return std::nullopt;
 
@@ -830,15 +830,16 @@ int main(int argc, char* argv[])
           << args.search << "\' as a search pattern.";
     }
 
-    Driver driver(bpftrace);
-    driver.listing_ = true;
+    Driver driver(ast,
+                  /*listing=*/true,
+                  /*debug=*/bt_debug.find(DebugStage::Parse) != bt_debug.end());
     driver.source("stdin", args.search);
 
     int err = driver.parse();
     if (err)
       return err;
 
-    bpftrace.parse_btf(driver.list_modules());
+    bpftrace.parse_btf(driver.list_modules(bpftrace));
 
     ast::SemanticAnalyser semantics(driver.ctx, bpftrace, false, true);
     err = semantics.analyse();

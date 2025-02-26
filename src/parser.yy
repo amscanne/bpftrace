@@ -39,7 +39,9 @@ class Node;
 #include <iostream>
 
 #include "driver.h"
-#include "lexer.h"
+#include "parser.tab.hh"
+
+YY_DECL;
 
 void yyerror(bpftrace::Driver &driver, const char *s);
 %}
@@ -321,7 +323,7 @@ probes_and_subprogs:
 probe:
                 attach_points pred block
                 {
-                  if (!driver.listing_)
+                  if (!driver.listing)
                     $$ = driver.ctx.make_node<ast::Probe>(std::move($1), $2, driver.ctx.make_node<ast::Block>(std::move($3), @3), @$);
                   else
                   {
@@ -331,7 +333,7 @@ probe:
                 }
         |       attach_points END
                 {
-                  if (driver.listing_)
+                  if (driver.listing)
                     $$ = driver.ctx.make_node<ast::Probe>(std::move($1), nullptr, driver.ctx.make_node<ast::Block>(ast::StatementList(), @$), @$);
                   else
                   {
