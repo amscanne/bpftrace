@@ -12,14 +12,9 @@ libbpf::bpf_map_type BpfMap::type() const
   return type_;
 }
 
-cstring_view BpfMap::bpf_name() const
+const std::string& BpfMap::name() const
 {
   return name_;
-}
-
-std::string BpfMap::name() const
-{
-  return bpftrace_map_name(bpf_name());
 }
 
 uint32_t BpfMap::key_size() const
@@ -39,7 +34,7 @@ uint32_t BpfMap::max_entries() const
 
 bool BpfMap::is_stack_map() const
 {
-  return name().compare(0, 6, "stack_") == 0;
+  return name().starts_with("stack_");
 }
 
 bool BpfMap::is_per_cpu_type() const
@@ -56,7 +51,7 @@ bool BpfMap::is_clearable() const
 bool BpfMap::is_printable() const
 {
   // Internal maps are not printable
-  return bpf_name().compare(0, 3, "AT_") == 0;
+  return name().starts_with("AT_");
 }
 
 std::string to_string(MapType t)
