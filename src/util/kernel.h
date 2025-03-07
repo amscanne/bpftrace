@@ -9,13 +9,13 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <sys/utsname.h>
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
-#include <utility>
 #include <variant>
 #include <vector>
 
@@ -31,7 +31,7 @@ struct vmlinux_location {
 extern const struct vmlinux_location vmlinux_locs[];
 class MountNSException : public std::exception {
 public:
-  MountNSException(std::string msg) : msg_(std::move(msg))
+  MountNSException(const std::string &msg) : msg_(msg)
   {
   }
 
@@ -132,8 +132,8 @@ struct DeprecatedName {
   }
 };
 
-using FuncsModulesMap =
-    std::unordered_map<std::string, std::unordered_set<std::string>>;
+typedef std::unordered_map<std::string, std::unordered_set<std::string>>
+    FuncsModulesMap;
 
 struct KConfig {
   KConfig();
@@ -147,10 +147,7 @@ struct KConfig {
 };
 
 static std::vector<DeprecatedName> DEPRECATED_LIST = {
-  { .old_name = "sarg*",
-    .new_name = "*(reg(\"sp\") + <stack_offset>)",
-    .show_warning = true,
-    .replace_by_new_name = false }
+  { "sarg*", "*(reg(\"sp\") + <stack_offset>)", true, false }
 };
 
 static std::vector<std::string> UNSAFE_BUILTIN_FUNCS = {
@@ -348,8 +345,8 @@ T min_max_value(const std::vector<uint8_t> &value, int nvalues, bool is_max)
   bool mm_set = false;
   for (int i = 0; i < nvalues; i++) {
     T val = read_data<T>(value.data() + i * (sizeof(T) * 2));
-    auto is_set = read_data<uint32_t>(value.data() + sizeof(T) +
-                                      i * (sizeof(T) * 2));
+    uint32_t is_set = read_data<uint32_t>(value.data() + sizeof(T) +
+                                          i * (sizeof(T) * 2));
     if (!is_set) {
       continue;
     }
@@ -382,7 +379,7 @@ stats<T> stats_value(const std::vector<uint8_t> &value, int nvalues)
     ret.count += cpu_count;
     ret.total += val;
   }
-  ret.avg = static_cast<T>(ret.total / ret.count);
+  ret.avg = (T)(ret.total / ret.count);
   return ret;
 }
 
@@ -400,48 +397,3 @@ inline void hash_combine(std::size_t &seed, const T &value)
   std::hash<T> hasher;
   seed ^= hasher(value) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 }
-
-struct symbol {
-  std::string name;
-  uint64_t start;
-  uint64_t size;
-  uint64_t address;
-};
-
-inline int sym_name_cb(const char *symname,
-                       uint64_t start,
-                       uint64_t size,
-                       void *p)
-{
-  auto *sym = static_cast<struct symbol *>(p);
-
-  if (sym->name == symname) {
-    sym->start = start;
-    sym->size = size;
-    return -1;
-  }
-
-  return 0;
-}
-
-inline int sym_address_cb(const char *symname,
-                          uint64_t start,
-                          uint64_t size,
-                          void *p)
-{
-  auto *sym = static_cast<struct symbol *>(p);
-
-  // When size is 0, then [start, start + size) = [start, start) = ø.
-  // So we need a special case when size=0, but address matches the symbol's
-  if (sym->address == start ||
-      (sym->address > start && sym->address < (start + size))) {
-    sym->start = start;
-    sym->size = size;
-    sym->name = symname;
-    return -1;
-  }
-
-  return 0;
-}
-
-} // namespace bpftrace

@@ -1,7 +1,8 @@
 #include <cstdint>
+#include <optional>
 #include <string>
 
-namespace bpftrace::ast::int_parser {
+namespace bpftrace::util {
 
 //   String -> int conversion specific to bpftrace
 //
@@ -15,4 +16,7 @@ namespace bpftrace::ast::int_parser {
 int64_t to_int(const std::string &num, int base);
 uint64_t to_uint(const std::string &num, int base);
 
-} // namespace bpftrace::ast::int_parser
+// Parse a pid specifically.
+std::optional<pid_t> parse_pid(const std::string &str, std::string &err);
+
+} // namespace bpftrace::util
