@@ -455,6 +455,12 @@ void Printer::visit(Subprog &subprog)
   --depth_;
 }
 
+void Printer::visit(Import &imp)
+{
+  std::string indent(depth_, ' ');
+  out_ << indent << "import " << imp.name() << std::endl;
+}
+
 void Printer::visit(Program &program)
 {
   if (!program.c_definitions.empty())
@@ -465,6 +471,10 @@ void Printer::visit(Program &program)
 
   ++depth_;
   visit(program.config);
+  --depth_;
+
+  ++depth_;
+  visit(program.imports);
   --depth_;
 
   ++depth_;
