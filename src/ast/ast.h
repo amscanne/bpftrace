@@ -4,7 +4,8 @@
 #include <string>
 #include <vector>
 
-#include "diagnostic.h"
+#include "ast/diagnostic.h"
+#include "ast/symbol.h"
 #include "types.h"
 #include "usdt.h"
 
@@ -157,23 +158,24 @@ public:
 
 class Identifier : public Expression {
 public:
-  explicit Identifier(Diagnostics &d, std::string ident, Location &&loc);
+  explicit Identifier(Diagnostics &d, Symbol ident, Location &&loc);
 
-  std::string ident;
+  Symbol ident;
 };
 
 class Builtin : public Expression {
 public:
-  explicit Builtin(Diagnostics &d, const std::string &ident, Location &&loc);
+  explicit Builtin(Diagnostics &d, Symbol ident, Location &&loc);
 
-  std::string ident;
+  Symbol ident;
   int probe_id;
 
   // Check if the builtin is 'arg0' - 'arg9'
   bool is_argx() const
   {
-    return !ident.compare(0, 3, "arg") && ident.size() == 4 &&
-           ident.at(3) >= '0' && ident.at(3) <= '9';
+    return ident.ns().components().size() == 0 && !ident.ident().compare(0, 3,
+        "arg") && ident.ident().size() == 4 && ident.ident().at(3) >= '0' &&
+      ident.ident().at(3) <= '9';
   }
 };
 

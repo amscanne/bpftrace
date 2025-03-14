@@ -8,6 +8,7 @@
 
 #include "ast/ast.h"
 #include "ast/location.h"
+#include "ast/symbol.h"
 #include "types.h"
 
 namespace bpftrace {
@@ -39,6 +40,8 @@ private:
 // The function's implementation is not contained here.
 class Function {
 public:
+  using Symbol = ast::Symbol;
+
   // "Builtin" functions are hardcoded into bpftrace.
   // "Script" functions are user-defined in BpfScript.
   // "External" functions are imported from pre-compiled BPF programs.
@@ -49,19 +52,19 @@ public:
   };
 
   Function(Origin origin,
-           std::string name,
+           Symbol symbol,
            SizedType return_type,
            const std::vector<Param> &params)
-      : name_(std::move(name)),
+      : symbol_(std::move(symbol)),
         return_type_(std::move(return_type)),
         params_(params),
         origin_(origin)
   {
   }
 
-  const std::string &name() const
+  const Symbol &symbol() const
   {
-    return name_;
+    return symbol_;
   }
   const SizedType &return_type() const
   {
@@ -77,7 +80,7 @@ public:
   }
 
 private:
-  std::string name_;
+  Symbol symbol_;
   SizedType return_type_;
   std::vector<Param> params_;
   Origin origin_;
@@ -89,53 +92,21 @@ private:
 // and a non-builtin function share a name, the non-builtin is preferred.
 class FunctionRegistry {
 public:
+  using Symbol = ast::Symbol;
+
   const Function *add(Function::Origin origin,
-                      std::string_view name,
-                      const SizedType &return_type,
-                      const std::vector<Param> &params);
-  const Function *add(Function::Origin origin,
-                      std::string_view ns,
-                      std::string_view name,
+                      Symbol symbol,
                       const SizedType &return_type,
                       const std::vector<Param> &params);
 
-  // Returns the best match for the given function name and arguments
-  const Function *get(std::string_view ns,
-                      std::string_view name,
+  // Returns the best match for the given function name and arguments.
+  const Function *get(Symbol symbol,
                       const std::vector<SizedType> &arg_types,
                       const ast::Node &node) const;
 
 private:
-  struct FqName {
-    std::string ns;
-    std::string name;
-
-    std::string str() const
-    {
-      if (ns.empty())
-        return name;
-      return ns + "::" + name;
-    }
-
-    bool operator==(const FqName &other) const
-    {
-      return ns == other.ns && name == other.name;
-    }
-  };
-
-  class HashFqName {
-  public:
-    size_t operator()(const FqName &fq_name) const
-    {
-      return std::hash<std::string>()(fq_name.ns) ^
-             std::hash<std::string>()(fq_name.name);
-    }
-  };
-
-  std::unordered_map<FqName,
-                     std::vector<std::reference_wrapper<const Function>>,
-                     HashFqName>
-      funcs_by_fq_name_;
+  std::unordered_map<Symbol, std::vector<std::reference_wrapper<const Function>>>
+      funcs_by_symbol_;
   std::vector<std::unique_ptr<Function>> all_funcs_;
 };
 

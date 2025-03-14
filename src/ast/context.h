@@ -5,6 +5,7 @@
 
 #include "ast/diagnostic.h"
 #include "ast/pass_manager.h"
+#include "ast/symbol.h"
 
 namespace bpftrace {
 

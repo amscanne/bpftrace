@@ -30,7 +30,7 @@ StackMode::StackMode(Diagnostics &d, std::string mode, Location &&loc)
   is_literal = true;
 }
 
-Builtin::Builtin(Diagnostics &d, const std::string &ident, Location &&loc)
+Builtin::Builtin(Diagnostics &d, Symbol symbol, Location &&loc)
     : Expression(d, std::move(loc)), ident(is_deprecated(ident))
 {
 }

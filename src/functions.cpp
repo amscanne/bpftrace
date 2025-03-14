@@ -33,29 +33,15 @@ std::string param_types_str(const std::vector<Param> &params)
 } // namespace
 
 const Function *FunctionRegistry::add(Function::Origin origin,
-                                      std::string_view name,
+                                      Symbol symbol,
                                       const SizedType &return_type,
                                       const std::vector<Param> &params)
 {
-  return add(origin, {}, name, return_type, params);
-}
-
-const Function *FunctionRegistry::add(Function::Origin origin,
-                                      std::string_view ns,
-                                      std::string_view name,
-                                      const SizedType &return_type,
-                                      const std::vector<Param> &params)
-{
-  FqName fq_name{
-    .ns = std::string{ ns },
-    .name = std::string{ name },
-  };
-
   // Check for duplicate function definitions
   // The assumption is that builtin functions are all added to the registry
   // before any user-defined functions.
   // Builtin functions can be duplicated. Other functions can not.
-  for (const Function &func : funcs_by_fq_name_[fq_name]) {
+  for (const Function &func : funcs_by_symbol_[symbol]) {
     if (func.origin() != Function::Origin::Builtin) {
       return nullptr;
     }
@@ -65,7 +51,7 @@ const Function *FunctionRegistry::add(Function::Origin origin,
       origin, std::string{ name }, return_type, params));
   Function &new_func = *all_funcs_.back().get();
 
-  funcs_by_fq_name_[fq_name].emplace_back(new_func);
+  funcs_by_symbol_[symbol].emplace_back(new_func);
   return &new_func;
 }
 
@@ -90,7 +76,7 @@ bool can_implicit_cast(const SizedType &from, const SizedType &to)
 }
 } // namespace
 
-// Find the best function by name for the given argument types.
+// Find the best function by symbol for the given argument types.
 //
 // Returns either a single function or nullptr, when no such function exists.
 //
@@ -99,18 +85,13 @@ bool can_implicit_cast(const SizedType &from, const SizedType &to)
 //
 // Valid functions have the correct name and all arguments can be implicitly
 // casted into all parameter types.
-const Function *FunctionRegistry::get(std::string_view ns,
-                                      std::string_view name,
+const Function *FunctionRegistry::get(Symbol symbol,
                                       const std::vector<SizedType> &arg_types,
                                       const ast::Node &node) const
 {
-  FqName fq_name = {
-    .ns = std::string{ ns },
-    .name = std::string{ name },
-  };
-  auto it = funcs_by_fq_name_.find(fq_name);
-  if (it == funcs_by_fq_name_.end()) {
-    node.addError() << "Function not found: '" << name << "'";
+  auto it = funcs_by_symbol_.find(symbol);
+  if (it == funcs_by_symbol_.end()) {
+    node.addError() << "Function not found: '" << symbol << "'";
     return nullptr;
   }
 
@@ -149,9 +130,9 @@ const Function *FunctionRegistry::get(std::string_view ns,
   }
 
   auto &err = node.addError();
-  err << "Cannot call function '" << name
+  err << "Cannot call function '" << symbol
       << "' using argument types: " << arg_types_str(arg_types);
-  err.addHint() << "Candidate function:\n  " << candidate->name()
+  err.addHint() << "Candidate function:\n  " << candidate->symbol()
                 << param_types_str(candidate->params());
 
   return nullptr;
