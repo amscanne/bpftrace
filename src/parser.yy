@@ -101,9 +101,6 @@ void yyerror(bpftrace::Driver &driver, const char *s);
   UNION      "union"
 ;
 
-%token <std::string> BUILTIN "builtin"
-%token <std::string> CALL "call"
-%token <std::string> CALL_BUILTIN "call_builtin"
 %token <std::string> INT_TYPE "integer type"
 %token <std::string> BUILTIN_TYPE "builtin type"
 %token <std::string> SUBPROG "subprog"
@@ -487,8 +484,6 @@ primary_expr:
         |       int                { $$ = $1; }
         |       STRING             { $$ = driver.ctx.make_node<ast::String>($1, @$); }
         |       STACK_MODE         { $$ = driver.ctx.make_node<ast::StackMode>($1, @$); }
-        |       BUILTIN            { $$ = driver.ctx.make_node<ast::Builtin>($1, @$); }
-        |       CALL_BUILTIN       { $$ = driver.ctx.make_node<ast::Builtin>($1, @$); }
         |       LPAREN expr RPAREN { $$ = $2; }
         |       param              { $$ = $1; }
         |       map_or_var         { $$ = $1; }
@@ -655,15 +650,6 @@ keyword:
         |       SUBPROG       { $$ = $1; }
         ;
 
-ident:
-                IDENT         { $$ = $1; }
-        |       BUILTIN       { $$ = $1; }
-        |       BUILTIN_TYPE  { $$ = $1; }
-        |       CALL          { $$ = $1; }
-        |       CALL_BUILTIN  { $$ = $1; }
-        |       STACK_MODE    { $$ = $1; }
-                ;
-
 struct_field:
                 external_name                       { $$.push_back($1); }
         |       struct_field DOT external_name      { $$ = std::move($1); $$.push_back($3); }
@@ -671,21 +657,17 @@ struct_field:
 
 external_name:
                 keyword       { $$ = $1; }
-        |       ident         { $$ = $1; }
+        |       IDENT         { $$ = $1; }
+        |       BUILTIN_TYPE  { $$ = $1; }
+        |       SIZED_TYPE    { $$ = $1; }
+        |       INT_TYPE      { $$ = $1; }
+        |       STACK_MODE    { $$ = $1; }
         ;
 
 call:
-                CALL "(" ")"                 { $$ = driver.ctx.make_node<ast::Call>($1, @$); }
-        |       CALL "(" vargs ")"           { $$ = driver.ctx.make_node<ast::Call>($1, std::move($3), @$); }
-        |       CALL_BUILTIN  "(" ")"        { $$ = driver.ctx.make_node<ast::Call>($1, @$); }
-        |       CALL_BUILTIN "(" vargs ")"   { $$ = driver.ctx.make_node<ast::Call>($1, std::move($3), @$); }
-        |       IDENT "(" ")"                { error(@1, "Unknown function: " + $1); YYERROR;  }
-        |       IDENT "(" vargs ")"          { error(@1, "Unknown function: " + $1); YYERROR;  }
-        |       BUILTIN "(" ")"              { error(@1, "Unknown function: " + $1); YYERROR;  }
-        |       BUILTIN "(" vargs ")"        { error(@1, "Unknown function: " + $1); YYERROR;  }
-        |       STACK_MODE "(" ")"           { error(@1, "Unknown function: " + $1); YYERROR;  }
-        |       STACK_MODE "(" vargs ")"     { error(@1, "Unknown function: " + $1); YYERROR;  }
-                ;
+                IDENT "(" ")"                { $$ = driver.ctx.make_node<ast::Call>($1, @$); }
+        |       IDENT "(" vargs ")"          { $$ = driver.ctx.make_node<ast::Call>($1, std::move($3), @$); }
+        ;
 
 map:
                 MAP               { $$ = driver.ctx.make_node<ast::Map>($1, @$); }

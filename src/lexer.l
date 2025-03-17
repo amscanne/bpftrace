@@ -36,16 +36,11 @@ hspace   [ \t]
 vspace   [\n\r]
 space    {hspace}|{vspace}
 path     :(\\.|[_\-\./a-zA-Z0-9#+\*])+
-builtin  arg[0-9]|args|cgroup|comm|cpid|numaid|cpu|ctx|curtask|elapsed|func|gid|pid|probe|rand|retval|sarg[0-9]|tid|uid|username|jiffies
-call     avg|buf|cat|cgroupid|clear|count|delete|exit|hist|join|kaddr|kptr|ksym|len|lhist|macaddr|max|min|ntop|override|print|printf|cgroup_path|reg|signal|stats|str|strerror|strftime|strncmp|strcontains|sum|system|time|uaddr|uptr|usym|zero|path|unwatch|bswap|skboutput|pton|debugf|has_key|percpu_kaddr
 
 int_type        bool|(u)?int(8|16|32|64)
 builtin_type    void|(u)?(min|max|sum|count|avg|stats)_t|probe_t|username|lhist_t|hist_t|usym_t|ksym_t|timestamp|macaddr_t|cgroup_path_t|strerror_t|kstack_t|ustack_t
 sized_type      string|inet|buffer
 subprog         fn
-
-/* Don't add to this! Use builtin OR call not both */
-call_and_builtin kstack|ustack|nsecs
 
 /* escape sequences in strings */
 hex_esc  (x|X)[0-9a-fA-F]{1,2}
