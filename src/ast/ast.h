@@ -160,13 +160,6 @@ public:
   explicit Identifier(Diagnostics &d, std::string ident, Location &&loc);
 
   std::string ident;
-};
-
-class Builtin : public Expression {
-public:
-  explicit Builtin(Diagnostics &d, std::string ident, Location &&loc);
-
-  std::string ident;
   int probe_id;
 
   // Check if the builtin is 'arg0' - 'arg9'

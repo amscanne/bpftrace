@@ -70,133 +70,133 @@ TEST(Parser, builtin_variables)
   test("kprobe:f { pid }", R"(
 Program
  kprobe:f
-  builtin: pid
+  identifier: pid
 )");
 
   test("kprobe:f { tid }", R"(
 Program
  kprobe:f
-  builtin: tid
+  identifier: tid
 )");
 
   test("kprobe:f { cgroup }", R"(
 Program
  kprobe:f
-  builtin: cgroup
+  identifier: cgroup
 )");
 
   test("kprobe:f { uid }", R"(
 Program
  kprobe:f
-  builtin: uid
+  identifier: uid
 )");
 
   test("kprobe:f { username }", R"(
 Program
  kprobe:f
-  builtin: username
+  identifier: username
 )");
 
   test("kprobe:f { gid }", R"(
 Program
  kprobe:f
-  builtin: gid
+  identifier: gid
 )");
 
   test("kprobe:f { nsecs }", R"(
 Program
  kprobe:f
-  builtin: nsecs
+  identifier: nsecs
 )");
 
   test("kprobe:f { elapsed }", R"(
 Program
  kprobe:f
-  builtin: elapsed
+  identifier: elapsed
 )");
 
   test("kprobe:f { numaid }", R"(
 Program
  kprobe:f
-  builtin: numaid
+  identifier: numaid
 )");
 
   test("kprobe:f { cpu }", R"(
 Program
  kprobe:f
-  builtin: cpu
+  identifier: cpu
 )");
 
   test("kprobe:f { curtask }", R"(
 Program
  kprobe:f
-  builtin: curtask
+  identifier: curtask
 )");
 
   test("kprobe:f { rand }", R"(
 Program
  kprobe:f
-  builtin: rand
+  identifier: rand
 )");
 
   test("kprobe:f { ctx }", R"(
 Program
  kprobe:f
-  builtin: ctx
+  identifier: ctx
 )");
 
   test("kprobe:f { comm }", R"(
 Program
  kprobe:f
-  builtin: comm
+  identifier: comm
 )");
 
   test("kprobe:f { kstack }", R"(
 Program
  kprobe:f
-  builtin: kstack
+  identifier: kstack
 )");
 
   test("kprobe:f { ustack }", R"(
 Program
  kprobe:f
-  builtin: ustack
+  identifier: ustack
 )");
 
   test("kprobe:f { arg0 }", R"(
 Program
  kprobe:f
-  builtin: arg0
+  identifier: arg0
 )");
 
   test("kprobe:f { sarg0 }", R"(
 Program
  kprobe:f
-  builtin: sarg0
+  identifier: sarg0
 )");
 
   test("kprobe:f { retval }", R"(
 Program
  kprobe:f
-  builtin: retval
+  identifier: retval
 )");
 
   test("kprobe:f { func }", R"(
 Program
  kprobe:f
-  builtin: func
+  identifier: func
 )");
 
   test("kprobe:f { probe }", R"(
 Program
  kprobe:f
-  builtin: probe
+  identifier: probe
 )");
 
   test("kprobe:f { args }", R"(
 Program
  kprobe:f
-  builtin: args
+  identifier: args
 )");
 }
 
@@ -350,7 +350,7 @@ TEST(Parser, map_assign)
        " kprobe:sys_open\n"
        "  =\n"
        "   map: @x\n"
-       "   builtin: arg0\n");
+       "   identifier: arg0\n");
   test("kprobe:sys_open { @x = count(); }",
        "Program\n"
        " kprobe:sys_open\n"
@@ -363,35 +363,35 @@ TEST(Parser, map_assign)
        "  =\n"
        "   map: @x\n"
        "   call: sum\n"
-       "    builtin: arg2\n");
+       "    identifier: arg2\n");
   test("kprobe:sys_read { @x = min(arg2); }",
        "Program\n"
        " kprobe:sys_read\n"
        "  =\n"
        "   map: @x\n"
        "   call: min\n"
-       "    builtin: arg2\n");
+       "    identifier: arg2\n");
   test("kprobe:sys_read { @x = max(arg2); }",
        "Program\n"
        " kprobe:sys_read\n"
        "  =\n"
        "   map: @x\n"
        "   call: max\n"
-       "    builtin: arg2\n");
+       "    identifier: arg2\n");
   test("kprobe:sys_read { @x = avg(arg2); }",
        "Program\n"
        " kprobe:sys_read\n"
        "  =\n"
        "   map: @x\n"
        "   call: avg\n"
-       "    builtin: arg2\n");
+       "    identifier: arg2\n");
   test("kprobe:sys_read { @x = stats(arg2); }",
        "Program\n"
        " kprobe:sys_read\n"
        "  =\n"
        "   map: @x\n"
        "   call: stats\n"
-       "    builtin: arg2\n");
+       "    identifier: arg2\n");
   test("kprobe:sys_open { @x = \"mystring\" }",
        "Program\n"
        " kprobe:sys_open\n"
@@ -706,7 +706,7 @@ TEST(Parser, map_key)
        "    tuple:\n"
        "     int: 0\n"
        "     string: hi\n"
-       "     builtin: tid\n"
+       "     identifier: tid\n"
        "   int: 1\n");
 
   test("kprobe:sys_open { @x[@a] = 1; @x[@a,@b,@c] = 1; }",
@@ -729,14 +729,14 @@ TEST(Parser, map_key)
        " kprobe:sys_open\n"
        "  =\n"
        "   map: @x\n"
-       "    builtin: pid\n"
+       "    identifier: pid\n"
        "   int: 1\n"
        "  =\n"
        "   map: @x\n"
        "    tuple:\n"
-       "     builtin: tid\n"
-       "     builtin: uid\n"
-       "     builtin: arg9\n"
+       "     identifier: tid\n"
+       "     identifier: uid\n"
+       "     identifier: arg9\n"
        "   int: 1\n");
 }
 
@@ -788,7 +788,7 @@ TEST(Parser, expressions)
        "      ~\n"
        "       int: 0\n"
        "    ==\n"
-       "     builtin: comm\n"
+       "     identifier: comm\n"
        "     string: string\n"
        "  int: 1\n");
 }
@@ -882,7 +882,7 @@ TEST(Parser, ternary_int)
        "   map: @x\n"
        "   ?:\n"
        "    <\n"
-       "     builtin: pid\n"
+       "     identifier: pid\n"
        "     int: 10000\n"
        "    int: 1\n"
        "    int: 2\n");
@@ -896,12 +896,12 @@ TEST(Parser, if_block)
        " kprobe:sys_open\n"
        "  if\n"
        "   >\n"
-       "    builtin: pid\n"
+       "    identifier: pid\n"
        "    int: 10000\n"
        "   then\n"
        "    call: printf\n"
        "     string: %d is high\\n\n"
-       "     builtin: pid\n");
+       "     identifier: pid\n");
 }
 
 TEST(Parser, if_stmt_if)
@@ -912,23 +912,23 @@ TEST(Parser, if_stmt_if)
        " kprobe:sys_open\n"
        "  if\n"
        "   >\n"
-       "    builtin: pid\n"
+       "    identifier: pid\n"
        "    int: 10000\n"
        "   then\n"
        "    call: printf\n"
        "     string: %d is high\\n\n"
-       "     builtin: pid\n"
+       "     identifier: pid\n"
        "  =\n"
        "   map: @pid\n"
-       "   builtin: pid\n"
+       "   identifier: pid\n"
        "  if\n"
        "   <\n"
-       "    builtin: pid\n"
+       "    identifier: pid\n"
        "    int: 1000\n"
        "   then\n"
        "    call: printf\n"
        "     string: %d is low\\n\n"
-       "     builtin: pid\n");
+       "     identifier: pid\n");
 }
 
 TEST(Parser, if_block_variable)
@@ -938,7 +938,7 @@ TEST(Parser, if_block_variable)
        " kprobe:sys_open\n"
        "  if\n"
        "   >\n"
-       "    builtin: pid\n"
+       "    identifier: pid\n"
        "    int: 10000\n"
        "   then\n"
        "    =\n"
@@ -954,7 +954,7 @@ TEST(Parser, if_else)
        " kprobe:sys_open\n"
        "  if\n"
        "   >\n"
-       "    builtin: pid\n"
+       "    identifier: pid\n"
        "    int: 10000\n"
        "   then\n"
        "    =\n"
@@ -966,7 +966,7 @@ TEST(Parser, if_else)
        "     string: b\n"
        "  call: printf\n"
        "   string: %d is high\\n\n"
-       "   builtin: pid\n"
+       "   identifier: pid\n"
        "   variable: $s\n");
 }
 
@@ -978,7 +978,7 @@ TEST(Parser, if_elseif)
        " kprobe:f\n"
        "  if\n"
        "   >\n"
-       "    builtin: pid\n"
+       "    identifier: pid\n"
        "    int: 10000\n"
        "   then\n"
        "    =\n"
@@ -987,7 +987,7 @@ TEST(Parser, if_elseif)
        "   else\n"
        "    if\n"
        "     <\n"
-       "      builtin: pid\n"
+       "      identifier: pid\n"
        "      int: 10\n"
        "     then\n"
        "      =\n"
@@ -1003,7 +1003,7 @@ TEST(Parser, if_elseif_else)
        " kprobe:f\n"
        "  if\n"
        "   >\n"
-       "    builtin: pid\n"
+       "    identifier: pid\n"
        "    int: 10000\n"
        "   then\n"
        "    =\n"
@@ -1012,7 +1012,7 @@ TEST(Parser, if_elseif_else)
        "   else\n"
        "    if\n"
        "     <\n"
-       "      builtin: pid\n"
+       "      identifier: pid\n"
        "      int: 10\n"
        "     then\n"
        "      =\n"
@@ -1032,7 +1032,7 @@ TEST(Parser, if_elseif_elseif_else)
        " kprobe:f\n"
        "  if\n"
        "   >\n"
-       "    builtin: pid\n"
+       "    identifier: pid\n"
        "    int: 10000\n"
        "   then\n"
        "    =\n"
@@ -1041,7 +1041,7 @@ TEST(Parser, if_elseif_elseif_else)
        "   else\n"
        "    if\n"
        "     <\n"
-       "      builtin: pid\n"
+       "      identifier: pid\n"
        "      int: 10\n"
        "     then\n"
        "      =\n"
@@ -1050,7 +1050,7 @@ TEST(Parser, if_elseif_elseif_else)
        "     else\n"
        "      if\n"
        "       >\n"
-       "        builtin: pid\n"
+       "        identifier: pid\n"
        "        int: 999999\n"
        "       then\n"
        "        =\n"
@@ -1093,7 +1093,7 @@ TEST(Parser, ternary_str)
        "   map: @x\n"
        "   ?:\n"
        "    <\n"
-       "     builtin: pid\n"
+       "     identifier: pid\n"
        "     int: 10000\n"
        "    string: lo\n"
        "    string: high\n");
@@ -1108,11 +1108,11 @@ TEST(Parser, ternary_nested)
        "   map: @x\n"
        "   ?:\n"
        "    <\n"
-       "     builtin: pid\n"
+       "     identifier: pid\n"
        "     int: 10000\n"
        "    ?:\n"
        "     <\n"
-       "      builtin: pid\n"
+       "      identifier: pid\n"
        "      int: 5000\n"
        "     int: 1\n"
        "     int: 2\n"
@@ -1135,43 +1135,6 @@ TEST(Parser, call)
        "    int: 3\n"
        "  call: delete\n"
        "   map: @x\n");
-}
-
-TEST(Parser, call_unknown_function)
-{
-  test_parse_failure("kprobe:sys_open { myfunc() }", R"(
-stdin:1:19-25: ERROR: Unknown function: myfunc
-kprobe:sys_open { myfunc() }
-                  ~~~~~~
-)");
-
-  test_parse_failure("k:f { probe(); }", R"(
-stdin:1:7-12: ERROR: Unknown function: probe
-k:f { probe(); }
-      ~~~~~
-)");
-}
-
-TEST(Parser, call_builtin)
-{
-  // Builtins should not be usable as function
-  test_parse_failure("k:f { probe(\"blah\"); }", R"(
-stdin:1:7-12: ERROR: Unknown function: probe
-k:f { probe("blah"); }
-      ~~~~~
-)");
-
-  test_parse_failure("k:f { probe(); }", R"(
-stdin:1:7-12: ERROR: Unknown function: probe
-k:f { probe(); }
-      ~~~~~
-)");
-
-  test_parse_failure("k:f { probe(123); }", R"(
-stdin:1:7-12: ERROR: Unknown function: probe
-k:f { probe(123); }
-      ~~~~~
-)");
 }
 
 TEST(Parser, call_kaddr)
@@ -1630,15 +1593,15 @@ TEST(Parser, wildcard_attach_points)
        "  =\n"
        "   map: @x\n"
        "   *\n"
-       "    builtin: cpu\n"
-       "    builtin: retval\n");
+       "    identifier: cpu\n"
+       "    identifier: retval\n");
   test("kprobe:sys_* { @x = *arg0 }",
        "Program\n"
        " kprobe:sys_*\n"
        "  =\n"
        "   map: @x\n"
        "   dereference\n"
-       "    builtin: arg0\n");
+       "    identifier: arg0\n");
 }
 
 TEST(Parser, wildcard_path)
@@ -1799,8 +1762,8 @@ TEST(Parser, brackets)
        "Program\n"
        " kprobe:sys_read\n"
        "  *\n"
-       "   builtin: arg0\n"
-       "   builtin: arg1\n");
+       "   identifier: arg0\n"
+       "   identifier: arg1\n");
 }
 
 TEST(Parser, cast_simple_type)
@@ -1809,7 +1772,7 @@ TEST(Parser, cast_simple_type)
        "Program\n"
        " kprobe:sys_read\n"
        "  (int32)\n"
-       "   builtin: arg0\n");
+       "   identifier: arg0\n");
 }
 
 TEST(Parser, cast_simple_type_pointer)
@@ -1818,7 +1781,7 @@ TEST(Parser, cast_simple_type_pointer)
        "Program\n"
        " kprobe:sys_read\n"
        "  (int32 *)\n"
-       "   builtin: arg0\n");
+       "   identifier: arg0\n");
 }
 
 TEST(Parser, cast_sized_type)
@@ -1827,7 +1790,7 @@ TEST(Parser, cast_sized_type)
        "Program\n"
        " kprobe:sys_read\n"
        "  (string[0])\n"
-       "   builtin: arg0\n");
+       "   identifier: arg0\n");
 }
 
 TEST(Parser, cast_sized_type_pointer)
@@ -1836,7 +1799,7 @@ TEST(Parser, cast_sized_type_pointer)
        "Program\n"
        " kprobe:sys_read\n"
        "  (string[0] *)\n"
-       "   builtin: arg0\n");
+       "   identifier: arg0\n");
 }
 
 TEST(Parser, cast_sized_type_pointer_with_size)
@@ -1845,7 +1808,7 @@ TEST(Parser, cast_sized_type_pointer_with_size)
        "Program\n"
        " kprobe:sys_read\n"
        "  (string[1] *)\n"
-       "   builtin: arg0\n");
+       "   identifier: arg0\n");
 }
 
 TEST(Parser, cast_struct)
@@ -1854,12 +1817,12 @@ TEST(Parser, cast_struct)
        "Program\n"
        " kprobe:sys_read\n"
        "  (struct mytype)\n"
-       "   builtin: arg0\n");
+       "   identifier: arg0\n");
   test("kprobe:sys_read { (union mytype)arg0; }",
        "Program\n"
        " kprobe:sys_read\n"
        "  (union mytype)\n"
-       "   builtin: arg0\n");
+       "   identifier: arg0\n");
 }
 
 TEST(Parser, cast_struct_ptr)
@@ -1868,12 +1831,12 @@ TEST(Parser, cast_struct_ptr)
        "Program\n"
        " kprobe:sys_read\n"
        "  (struct mytype *)\n"
-       "   builtin: arg0\n");
+       "   identifier: arg0\n");
   test("kprobe:sys_read { (union mytype*)arg0; }",
        "Program\n"
        " kprobe:sys_read\n"
        "  (union mytype *)\n"
-       "   builtin: arg0\n");
+       "   identifier: arg0\n");
 }
 
 TEST(Parser, cast_typedef)
@@ -1882,7 +1845,7 @@ TEST(Parser, cast_typedef)
        "Program\n"
        " kprobe:sys_read\n"
        "  (mytype)\n"
-       "   builtin: arg0\n");
+       "   identifier: arg0\n");
 }
 
 TEST(Parser, cast_ptr_typedef)
@@ -1891,7 +1854,7 @@ TEST(Parser, cast_ptr_typedef)
        "Program\n"
        " kprobe:sys_read\n"
        "  (mytype *)\n"
-       "   builtin: arg0\n");
+       "   identifier: arg0\n");
 }
 
 TEST(Parser, cast_multiple_pointer)
@@ -1900,7 +1863,7 @@ TEST(Parser, cast_multiple_pointer)
        "Program\n"
        " kprobe:sys_read\n"
        "  (int32 * * * * *)\n"
-       "   builtin: arg0\n");
+       "   identifier: arg0\n");
 }
 
 TEST(Parser, cast_or_expr1)
@@ -1910,7 +1873,7 @@ TEST(Parser, cast_or_expr1)
        " kprobe:sys_read\n"
        "  (struct mytype)\n"
        "   dereference\n"
-       "    builtin: arg0\n");
+       "    identifier: arg0\n");
 }
 
 TEST(Parser, cast_or_expr2)
@@ -1919,8 +1882,8 @@ TEST(Parser, cast_or_expr2)
        "Program\n"
        " kprobe:sys_read\n"
        "  *\n"
-       "   builtin: arg1\n"
-       "   builtin: arg0\n");
+       "   identifier: arg1\n"
+       "   identifier: arg0\n");
 }
 
 TEST(Parser, cast_precedence)
@@ -1930,7 +1893,7 @@ TEST(Parser, cast_precedence)
        " kprobe:sys_read\n"
        "  (struct mytype)\n"
        "   .\n"
-       "    builtin: arg0\n"
+       "    identifier: arg0\n"
        "    field\n");
 
   test("kprobe:sys_read { (struct mytype*)arg0->field; }",
@@ -1939,7 +1902,7 @@ TEST(Parser, cast_precedence)
        "  (struct mytype *)\n"
        "   .\n"
        "    dereference\n"
-       "     builtin: arg0\n"
+       "     identifier: arg0\n"
        "    field\n");
 
   test("kprobe:sys_read { (struct mytype)arg0+123; }",
@@ -1947,7 +1910,7 @@ TEST(Parser, cast_precedence)
        " kprobe:sys_read\n"
        "  +\n"
        "   (struct mytype)\n"
-       "    builtin: arg0\n"
+       "    identifier: arg0\n"
        "   int: 123\n");
 }
 
@@ -1968,7 +1931,7 @@ TEST(Parser, sizeof_expression)
        "Program\n"
        " kprobe:sys_read\n"
        "  sizeof: \n"
-       "   builtin: arg0\n");
+       "   identifier: arg0\n");
 }
 
 TEST(Parser, sizeof_type)
@@ -2700,7 +2663,7 @@ TEST(Parser, keywords_as_identifiers)
              keyword + "\n");
     test("BEGIN { $x = offsetof(*curtask, " + keyword + "); }",
          "Program\n BEGIN\n  =\n   variable: $x\n   offsetof: \n    "
-         "dereference\n     builtin: curtask\n    " +
+         "dereference\n     identifier: curtask\n    " +
              keyword + "\n");
   }
 }

@@ -14,11 +14,11 @@ namespace ast {
 class TracepointArgsVisitor : public Visitor<TracepointArgsVisitor> {
 public:
   using Visitor<TracepointArgsVisitor>::visit;
-  void visit(Builtin &builtin)
+  void visit(Identifier &identifier)
   {
-    Visitor<TracepointArgsVisitor>::visit(builtin);
+    Visitor<TracepointArgsVisitor>::visit(identifier);
 
-    if (builtin.ident == "args" && probe_->tp_args_structs_level == -1)
+    if (identifier.ident == "args" && probe_->tp_args_structs_level == -1)
       probe_->tp_args_structs_level = 0;
   };
   void visit(FieldAccess &acc)

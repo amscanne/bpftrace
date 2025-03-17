@@ -356,6 +356,27 @@ TEST(semantic_analyser, builtin_functions)
   test("kprobe:f { nsecs() }");
 }
 
+TEST(semantic_analyser, unknown_functions)
+{
+  test_error("kprobe:sys_open { myfunc() }", R"(
+stdin:1:19-25: ERROR: Unknown function: myfunc
+kprobe:sys_open { myfunc() }
+                  ~~~~~~
+)");
+
+  // Builtins should not be usable as function
+  test_error("k:f { probe(); }", R"(
+stdin:1:7-12: ERROR: Unknown function: probe
+k:f { probe(); }
+      ~~~~~
+)");
+  test_error("k:f { probe(123); }", R"(
+stdin:1:7-12: ERROR: Unknown function: probe
+k:f { probe(123); }
+      ~~~~~
+)");
+}
+
 TEST(semantic_analyser, undefined_map)
 {
   test("kprobe:f / @mymap == 123 / { @mymap = 0 }");

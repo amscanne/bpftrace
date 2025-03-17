@@ -34,6 +34,12 @@ void Driver::error(const location &l, const std::string &m)
   ctx.diagnostics_->addError(ctx.wrap(l)) << m;
 }
 
+void Driver::warning(const location &l, const std::string &m)
+{
+  // See above.
+  ctx.diagnostics_->addWarning(ctx.wrap(l)) << m;
+}
+
 ast::Pass CreateParsePass(bool debug)
 {
   return ast::Pass::create("parse", [debug](ast::ASTContext &ast, BPFtrace &b) {

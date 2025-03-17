@@ -34,7 +34,7 @@ public:
   using Visitor<ResourceAnalyser>::visit;
   void visit(Probe &probe);
   void visit(Subprog &subprog);
-  void visit(Builtin &map);
+  void visit(Identifier &identifier);
   void visit(Call &call);
   void visit(Map &map);
   void visit(MapDeclStatement &decl);
@@ -165,9 +165,9 @@ void ResourceAnalyser::visit(Subprog &subprog)
   Visitor<ResourceAnalyser>::visit(subprog);
 }
 
-void ResourceAnalyser::visit(Builtin &builtin)
+void ResourceAnalyser::visit(Identifier &identifier)
 {
-  if (uses_usym_table(builtin.ident)) {
+  if (uses_usym_table(identifier.ident)) {
     // mark probe as using usym, so that the symbol table can be pre-loaded
     // and symbols resolved even when unavailable at resolution time
     resources_.probes_using_usym.insert(probe_);

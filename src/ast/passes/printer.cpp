@@ -81,13 +81,6 @@ void Printer::visit(StackMode &mode)
   out_ << indent << "stack_mode: " << mode.mode << type(mode.type) << std::endl;
 }
 
-void Printer::visit(Builtin &builtin)
-{
-  std::string indent(depth_, ' ');
-  out_ << indent << "builtin: " << builtin.ident << type(builtin.type)
-       << std::endl;
-}
-
 void Printer::visit(Identifier &identifier)
 {
   std::string indent(depth_, ' ');

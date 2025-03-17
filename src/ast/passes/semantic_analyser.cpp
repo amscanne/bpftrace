@@ -95,7 +95,6 @@ public:
   void visit(String &string);
   void visit(StackMode &mode);
   void visit(Identifier &identifier);
-  void visit(Builtin &builtin);
   void visit(Call &call);
   void visit(Sizeof &szof);
   void visit(Offsetof &offof);
@@ -172,7 +171,8 @@ private:
   void validate_map_key(const SizedType &key, Node &node);
   void resolve_struct_type(SizedType &type, Node &node);
 
-  void builtin_args_tracepoint(AttachPoint *attach_point, Builtin &builtin);
+  void builtin_args_tracepoint(AttachPoint *attach_point,
+                               Identifier &identifier);
   ProbeType single_provider_type(Probe *probe);
   AddrSpace find_addrspace(ProbeType pt);
 
@@ -302,7 +302,7 @@ static bool IsValidVarDeclType(const SizedType &ty)
     case Type::ksym_t:
     case Type::usym_t:
     case Type::inet:
-    case Type::username:
+    case Type::username_t:
     case Type::string:
     case Type::buffer:
     case Type::pointer:
@@ -429,38 +429,8 @@ void SemanticAnalyser::visit(StackMode &mode)
   }
 }
 
-void SemanticAnalyser::visit(Identifier &identifier)
-{
-  if (bpftrace_.enums_.contains(identifier.ident)) {
-    const auto &enum_name = std::get<1>(bpftrace_.enums_[identifier.ident]);
-    identifier.type = CreateEnum(64, enum_name);
-  } else if (bpftrace_.structs.Has(identifier.ident)) {
-    identifier.type = CreateRecord(identifier.ident,
-                                   bpftrace_.structs.Lookup(identifier.ident));
-  } else if (func_ == "sizeof" && getIntcasts().contains(identifier.ident)) {
-    identifier.type = CreateInt(
-        std::get<0>(getIntcasts().at(identifier.ident)));
-  } else if (func_ == "nsecs") {
-    identifier.type = CreateTimestampMode();
-    if (identifier.ident == "monotonic") {
-      identifier.type.ts_mode = TimestampMode::monotonic;
-    } else if (identifier.ident == "boot") {
-      identifier.type.ts_mode = TimestampMode::boot;
-    } else if (identifier.ident == "tai") {
-      identifier.type.ts_mode = TimestampMode::tai;
-    } else if (identifier.ident == "sw_tai") {
-      identifier.type.ts_mode = TimestampMode::sw_tai;
-    } else {
-      identifier.addError() << "Invalid timestamp mode: " << identifier.ident;
-    }
-  } else {
-    identifier.type = CreateNone();
-    identifier.addError() << "Unknown identifier: '" + identifier.ident + "'";
-  }
-}
-
 void SemanticAnalyser::builtin_args_tracepoint(AttachPoint *attach_point,
-                                               Builtin &builtin)
+                                               Identifier &identifier)
 {
   // tracepoint wildcard expansion, part 2 of 3. This:
   // 1. expands the wildcard, then sets args to be the first matched probe.
@@ -473,12 +443,13 @@ void SemanticAnalyser::builtin_args_tracepoint(AttachPoint *attach_point,
     auto &match = *matches.begin();
     std::string tracepoint_struct = TracepointFormatParser::get_struct_name(
         match);
-    builtin.type = CreateRecord(tracepoint_struct,
-                                bpftrace_.structs.Lookup(tracepoint_struct));
-    builtin.type.SetAS(attach_point->target == "syscalls" ? AddrSpace::user
-                                                          : AddrSpace::kernel);
-    builtin.type.MarkCtxAccess();
-    builtin.type.is_tparg = true;
+    identifier.type = CreateRecord(tracepoint_struct,
+                                   bpftrace_.structs.Lookup(tracepoint_struct));
+    identifier.type.SetAS(attach_point->target == "syscalls"
+                              ? AddrSpace::user
+                              : AddrSpace::kernel);
+    identifier.type.MarkCtxAccess();
+    identifier.type.is_tparg = true;
   }
 }
 
@@ -531,10 +502,10 @@ AddrSpace SemanticAnalyser::find_addrspace(ProbeType pt)
   return {}; // unreached
 }
 
-void SemanticAnalyser::visit(Builtin &builtin)
+void SemanticAnalyser::visit(Identifier &identifier)
 {
-  if (builtin.ident == "ctx") {
-    auto probe = get_probe(builtin, builtin.ident);
+  if (identifier.ident == "ctx") {
+    auto probe = get_probe(identifier, identifier.ident);
     if (probe == nullptr)
       return;
     ProbeType pt = probetype(probe->attach_points[0]->provider);
@@ -545,86 +516,86 @@ void SemanticAnalyser::visit(Builtin &builtin)
       ProbeType pt = probetype(attach_point->provider);
       libbpf::bpf_prog_type bt2 = progtype(pt);
       if (bt != bt2)
-        builtin.addError()
+        identifier.addError()
             << "ctx cannot be used in different BPF program types: "
             << progtypeName(bt) << " and " << progtypeName(bt2);
     }
     switch (static_cast<libbpf::bpf_prog_type>(bt)) {
       case libbpf::BPF_PROG_TYPE_KPROBE:
-        builtin.type = CreatePointer(CreateRecord("struct pt_regs",
-                                                  bpftrace_.structs.Lookup(
-                                                      "struct pt_regs")),
-                                     AddrSpace::kernel);
-        builtin.type.MarkCtxAccess();
+        identifier.type = CreatePointer(CreateRecord("struct pt_regs",
+                                                     bpftrace_.structs.Lookup(
+                                                         "struct pt_regs")),
+                                        AddrSpace::kernel);
+        identifier.type.MarkCtxAccess();
         break;
       case libbpf::BPF_PROG_TYPE_TRACEPOINT:
-        builtin.addError() << "Use args instead of ctx in tracepoint";
+        identifier.addError() << "Use args instead of ctx in tracepoint";
         break;
       case libbpf::BPF_PROG_TYPE_PERF_EVENT:
-        builtin.type = CreatePointer(
+        identifier.type = CreatePointer(
             CreateRecord("struct bpf_perf_event_data",
                          bpftrace_.structs.Lookup(
                              "struct bpf_perf_event_data")),
             AddrSpace::kernel);
-        builtin.type.MarkCtxAccess();
+        identifier.type.MarkCtxAccess();
         break;
       case libbpf::BPF_PROG_TYPE_TRACING:
         if (pt == ProbeType::iter) {
           std::string type = "struct bpf_iter__" + func;
-          builtin.type = CreatePointer(
+          identifier.type = CreatePointer(
               CreateRecord(type, bpftrace_.structs.Lookup(type)),
               AddrSpace::kernel);
-          builtin.type.MarkCtxAccess();
-          builtin.type.is_btftype = true;
+          identifier.type.MarkCtxAccess();
+          identifier.type.is_btftype = true;
         } else {
-          builtin.addError() << "invalid program type";
+          identifier.addError() << "invalid program type";
         }
         break;
       default:
-        builtin.addError() << "invalid program type";
+        identifier.addError() << "invalid program type";
         break;
     }
-  } else if (builtin.ident == "pid" || builtin.ident == "tid") {
-    builtin.type = CreateUInt32();
-  } else if (builtin.ident == "nsecs" || builtin.ident == "elapsed" ||
-             builtin.ident == "cgroup" || builtin.ident == "uid" ||
-             builtin.ident == "gid" || builtin.ident == "cpu" ||
-             builtin.ident == "rand" || builtin.ident == "numaid" ||
-             builtin.ident == "jiffies") {
-    builtin.type = CreateUInt64();
-    if (builtin.ident == "cgroup" &&
+  } else if (identifier.ident == "pid" || identifier.ident == "tid") {
+    identifier.type = CreateUInt32();
+  } else if (identifier.ident == "nsecs" || identifier.ident == "elapsed" ||
+             identifier.ident == "cgroup" || identifier.ident == "uid" ||
+             identifier.ident == "gid" || identifier.ident == "cpu" ||
+             identifier.ident == "rand" || identifier.ident == "numaid" ||
+             identifier.ident == "jiffies") {
+    identifier.type = CreateUInt64();
+    if (identifier.ident == "cgroup" &&
         !bpftrace_.feature_->has_helper_get_current_cgroup_id()) {
-      builtin.addError()
+      identifier.addError()
           << "BPF_FUNC_get_current_cgroup_id is not available for your kernel "
              "version";
-    } else if (builtin.ident == "jiffies" &&
+    } else if (identifier.ident == "jiffies" &&
                !bpftrace_.feature_->has_helper_jiffies64()) {
-      builtin.addError()
+      identifier.addError()
           << "BPF_FUNC_jiffies64 is not available for your kernel version";
     }
-  } else if (builtin.ident == "curtask") {
+  } else if (identifier.ident == "curtask") {
     // Retype curtask to its original type: struct task_struct.
-    builtin.type = CreatePointer(CreateRecord("struct task_struct",
-                                              bpftrace_.structs.Lookup(
-                                                  "struct task_struct")),
-                                 AddrSpace::kernel);
-  } else if (builtin.ident == "retval") {
-    auto probe = get_probe(builtin, builtin.ident);
+    identifier.type = CreatePointer(CreateRecord("struct task_struct",
+                                                 bpftrace_.structs.Lookup(
+                                                     "struct task_struct")),
+                                    AddrSpace::kernel);
+  } else if (identifier.ident == "retval") {
+    auto probe = get_probe(identifier, identifier.ident);
     if (probe == nullptr)
       return;
     ProbeType type = single_provider_type(probe);
 
     if (type == ProbeType::kretprobe || type == ProbeType::uretprobe) {
-      builtin.type = CreateUInt64();
+      identifier.type = CreateUInt64();
     } else if (type == ProbeType::fentry || type == ProbeType::fexit) {
       auto arg = bpftrace_.structs.GetProbeArg(*probe, RETVAL_FIELD_NAME);
       if (arg) {
-        builtin.type = arg->type;
-        builtin.type.is_btftype = true;
+        identifier.type = arg->type;
+        identifier.type.is_btftype = true;
       } else
-        builtin.addError() << "Can't find a field " << RETVAL_FIELD_NAME;
+        identifier.addError() << "Can't find a field " << RETVAL_FIELD_NAME;
     } else {
-      builtin.addError()
+      identifier.addError()
           << "The retval builtin can only be used with 'kretprobe' and "
           << "'uretprobe' and 'fentry' probes"
           << (type == ProbeType::tracepoint ? " (try to use args.ret instead)"
@@ -632,50 +603,52 @@ void SemanticAnalyser::visit(Builtin &builtin)
     }
     // For kretprobe, fentry, fexit -> AddrSpace::kernel
     // For uretprobe -> AddrSpace::user
-    builtin.type.SetAS(find_addrspace(type));
-  } else if (builtin.ident == "kstack") {
-    builtin.type = CreateStack(true,
-                               StackType{ .mode = bpftrace_.config_->get(
-                                              ConfigKeyStackMode::default_) });
-  } else if (builtin.ident == "ustack") {
-    builtin.type = CreateStack(false,
-                               StackType{ .mode = bpftrace_.config_->get(
-                                              ConfigKeyStackMode::default_) });
-  } else if (builtin.ident == "comm") {
-    builtin.type = CreateString(COMM_SIZE);
+    identifier.type.SetAS(find_addrspace(type));
+  } else if (identifier.ident == "kstack") {
+    identifier.type = CreateStack(true,
+                                  StackType{
+                                      .mode = bpftrace_.config_->get(
+                                          ConfigKeyStackMode::default_) });
+  } else if (identifier.ident == "ustack") {
+    identifier.type = CreateStack(false,
+                                  StackType{
+                                      .mode = bpftrace_.config_->get(
+                                          ConfigKeyStackMode::default_) });
+  } else if (identifier.ident == "comm") {
+    identifier.type = CreateString(COMM_SIZE);
     // comm allocated in the bpf stack. See codegen
     // Case: @=comm and strncmp(@, "name")
-    builtin.type.SetAS(AddrSpace::kernel);
-  } else if (builtin.ident == "func") {
-    auto probe = get_probe(builtin, builtin.ident);
+    identifier.type.SetAS(AddrSpace::kernel);
+  } else if (identifier.ident == "func") {
+    auto probe = get_probe(identifier, identifier.ident);
     if (probe == nullptr)
       return;
     for (auto *attach_point : probe->attach_points) {
       ProbeType type = probetype(attach_point->provider);
       if (type == ProbeType::kprobe || type == ProbeType::kretprobe)
-        builtin.type = CreateKSym();
+        identifier.type = CreateKSym();
       else if (type == ProbeType::uprobe || type == ProbeType::uretprobe)
-        builtin.type = CreateUSym();
+        identifier.type = CreateUSym();
       else if (type == ProbeType::fentry || type == ProbeType::fexit) {
         if (!bpftrace_.feature_->has_helper_get_func_ip()) {
-          builtin.addError()
+          identifier.addError()
               << "BPF_FUNC_get_func_ip not available for your kernel version";
         }
-        builtin.type = CreateKSym();
+        identifier.type = CreateKSym();
       } else
-        builtin.addError() << "The func builtin can not be used with '"
-                           << attach_point->provider << "' probes";
+        identifier.addError() << "The func builtin can not be used with '"
+                              << attach_point->provider << "' probes";
 
       if ((type == ProbeType::kretprobe || type == ProbeType::uretprobe) &&
           !bpftrace_.feature_->has_helper_get_func_ip()) {
-        builtin.addError()
+        identifier.addError()
             << "The 'func' builtin is not available for " << type
             << "s on kernels without the get_func_ip BPF feature. Consider "
                "using the 'probe' builtin instead.";
       }
     }
-  } else if (builtin.is_argx()) {
-    auto probe = get_probe(builtin, builtin.ident);
+  } else if (identifier.is_argx()) {
+    auto probe = get_probe(identifier, identifier.ident);
     if (probe == nullptr)
       return;
     ProbeType pt = probetype(probe->attach_points[0]->provider);
@@ -684,25 +657,25 @@ void SemanticAnalyser::visit(Builtin &builtin)
       ProbeType type = probetype(attach_point->provider);
       if (type == ProbeType::uprobe &&
           bpftrace_.config_->get(ConfigKeyBool::probe_inline))
-        builtin.addError() << "The " + builtin.ident +
-                                  " builtin can only be used when "
-                           << "the probe_inline config is disabled.";
+        identifier.addError()
+            << "The " + identifier.ident + " builtin can only be used when "
+            << "the probe_inline config is disabled.";
       if (type != ProbeType::kprobe && type != ProbeType::uprobe &&
           type != ProbeType::usdt && type != ProbeType::rawtracepoint)
-        builtin.addError() << "The " << builtin.ident
-                           << " builtin can only be used with "
-                           << "'kprobes', 'uprobes' and 'usdt' probes";
+        identifier.addError()
+            << "The " << identifier.ident << " builtin can only be used with "
+            << "'kprobes', 'uprobes' and 'usdt' probes";
     }
-    int arg_num = atoi(builtin.ident.substr(3).c_str());
+    int arg_num = atoi(identifier.ident.substr(3).c_str());
     if (arg_num > arch::max_arg())
-      builtin.addError() << arch::name() << " doesn't support "
-                         << builtin.ident;
-    builtin.type = CreateUInt64();
-    builtin.type.SetAS(addrspace);
-  } else if (!builtin.ident.compare(0, 4, "sarg") &&
-             builtin.ident.size() == 5 && builtin.ident.at(4) >= '0' &&
-             builtin.ident.at(4) <= '9') {
-    auto probe = get_probe(builtin, builtin.ident);
+      identifier.addError()
+          << arch::name() << " doesn't support " << identifier.ident;
+    identifier.type = CreateUInt64();
+    identifier.type.SetAS(addrspace);
+  } else if (!identifier.ident.compare(0, 4, "sarg") &&
+             identifier.ident.size() == 5 && identifier.ident.at(4) >= '0' &&
+             identifier.ident.at(4) <= '9') {
+    auto probe = get_probe(identifier, identifier.ident);
     if (probe == nullptr)
       return;
     ProbeType pt = probetype(probe->attach_points[0]->provider);
@@ -710,28 +683,28 @@ void SemanticAnalyser::visit(Builtin &builtin)
     for (auto *attach_point : probe->attach_points) {
       ProbeType type = probetype(attach_point->provider);
       if (type != ProbeType::kprobe && type != ProbeType::uprobe)
-        builtin.addError()
-            << "The " + builtin.ident
+        identifier.addError()
+            << "The " + identifier.ident
             << " builtin can only be used with 'kprobes' and 'uprobes' probes";
       if (type == ProbeType::uprobe &&
           bpftrace_.config_->get(ConfigKeyBool::probe_inline))
-        builtin.addError() << "The " + builtin.ident +
-                                  " builtin can only be used when "
-                           << "the probe_inline config is disabled.";
+        identifier.addError()
+            << "The " + identifier.ident + " builtin can only be used when "
+            << "the probe_inline config is disabled.";
       if (is_final_pass() &&
           (attach_point->address != 0 || attach_point->func_offset != 0)) {
         // If sargX values are needed when using an offset, they can be stored
         // in a map when entering the function and then referenced from an
         // offset-based probe
-        builtin.addWarning()
+        identifier.addWarning()
             << "Using an address offset with the sargX built-in can"
                "lead to unexpected behavior ";
       }
     }
-    builtin.type = CreateUInt64();
-    builtin.type.SetAS(addrspace);
-  } else if (builtin.ident == "probe") {
-    auto probe = get_probe(builtin, builtin.ident);
+    identifier.type = CreateUInt64();
+    identifier.type.SetAS(addrspace);
+  } else if (identifier.ident == "probe") {
+    auto probe = get_probe(identifier, identifier.ident);
     if (probe == nullptr)
       return;
     size_t str_size = 0;
@@ -748,17 +721,17 @@ void SemanticAnalyser::visit(Builtin &builtin)
                                 .length());
       }
     }
-    builtin.type = CreateString(str_size + 1);
+    identifier.type = CreateString(str_size + 1);
     probe->need_expansion = true;
-  } else if (builtin.ident == "username") {
-    builtin.type = CreateUsername();
-  } else if (builtin.ident == "cpid") {
+  } else if (identifier.ident == "username") {
+    identifier.type = CreateUsername();
+  } else if (identifier.ident == "cpid") {
     if (!has_child_) {
-      builtin.addError() << "cpid cannot be used without child command";
+      identifier.addError() << "cpid cannot be used without child command";
     }
-    builtin.type = CreateUInt32();
-  } else if (builtin.ident == "args") {
-    auto probe = get_probe(builtin, builtin.ident);
+    identifier.type = CreateUInt32();
+  } else if (identifier.ident == "args") {
+    auto probe = get_probe(identifier, identifier.ident);
     if (probe == nullptr)
       return;
     for (auto *attach_point : probe->attach_points) {
@@ -766,14 +739,14 @@ void SemanticAnalyser::visit(Builtin &builtin)
 
       if (type == ProbeType::tracepoint) {
         attach_point->expansion = ExpansionType::FULL;
-        builtin_args_tracepoint(attach_point, builtin);
+        builtin_args_tracepoint(attach_point, identifier);
       }
     }
 
     ProbeType type = single_provider_type(probe);
 
     if (type == ProbeType::invalid) {
-      builtin.addError()
+      identifier.addError()
           << "The args builtin can only be used within the context of a single "
              "probe type, e.g. \"probe1 {args}\" is valid while "
              "\"probe1,probe2 {args}\" is not.";
@@ -781,32 +754,54 @@ void SemanticAnalyser::visit(Builtin &builtin)
                type == ProbeType::uprobe) {
       if (type == ProbeType::uprobe &&
           bpftrace_.config_->get(ConfigKeyBool::probe_inline))
-        builtin.addError() << "The args builtin can only be used when "
-                           << "the probe_inline config is disabled.";
+        identifier.addError() << "The args builtin can only be used when "
+                              << "the probe_inline config is disabled.";
 
       auto type_name = probe->args_typename();
-      builtin.type = CreateRecord(type_name,
-                                  bpftrace_.structs.Lookup(type_name));
-      if (builtin.type.GetFieldCount() == 0)
-        builtin.addError() << "Cannot read function parameters";
+      identifier.type = CreateRecord(type_name,
+                                     bpftrace_.structs.Lookup(type_name));
+      if (identifier.type.GetFieldCount() == 0)
+        identifier.addError() << "Cannot read function parameters";
 
-      builtin.type.MarkCtxAccess();
-      builtin.type.is_funcarg = true;
-      builtin.type.SetAS(type == ProbeType::uprobe ? AddrSpace::user
-                                                   : AddrSpace::kernel);
+      identifier.type.MarkCtxAccess();
+      identifier.type.is_funcarg = true;
+      identifier.type.SetAS(type == ProbeType::uprobe ? AddrSpace::user
+                                                      : AddrSpace::kernel);
       // We'll build uprobe args struct on stack
       if (type == ProbeType::uprobe)
-        builtin.type.is_internal = true;
+        identifier.type.is_internal = true;
     } else if (type != ProbeType::tracepoint) // no special action for
                                               // tracepoint
     {
-      builtin.addError() << "The args builtin can only be used with "
-                            "tracepoint/fentry/uprobe probes ("
-                         << type << " used here)";
+      identifier.addError() << "The args builtin can only be used with "
+                               "tracepoint/fentry/uprobe probes ("
+                            << type << " used here)";
+    }
+  } else if (bpftrace_.enums_.count(identifier.ident) != 0) {
+    const auto &enum_name = std::get<1>(bpftrace_.enums_[identifier.ident]);
+    identifier.type = CreateEnum(64, enum_name);
+  } else if (bpftrace_.structs.Has(identifier.ident)) {
+    identifier.type = CreateRecord(identifier.ident,
+                                   bpftrace_.structs.Lookup(identifier.ident));
+  } else if (func_ == "sizeof" && getIntcasts().count(identifier.ident) != 0) {
+    identifier.type = CreateInt(
+        std::get<0>(getIntcasts().at(identifier.ident)));
+  } else if (func_ == "nsecs") {
+    identifier.type = CreateTimestampMode();
+    if (identifier.ident == "monotonic") {
+      identifier.type.ts_mode = TimestampMode::monotonic;
+    } else if (identifier.ident == "boot") {
+      identifier.type.ts_mode = TimestampMode::boot;
+    } else if (identifier.ident == "tai") {
+      identifier.type.ts_mode = TimestampMode::tai;
+    } else if (identifier.ident == "sw_tai") {
+      identifier.type.ts_mode = TimestampMode::sw_tai;
+    } else {
+      identifier.addError() << "Invalid timestamp mode: " << identifier.ident;
     }
   } else {
-    builtin.type = CreateNone();
-    builtin.addError() << "Unknown builtin variable: '" << builtin.ident << "'";
+    identifier.type = CreateNone();
+    identifier.addError() << "Unknown identifier: '" + identifier.ident + "'";
   }
 }
 
@@ -2771,9 +2766,9 @@ void SemanticAnalyser::visit(For &f)
 
   // Currently, we do not pass BPF context to the callback so disable builtins
   // which require ctx access.
-  CollectNodes<Builtin> builtins;
+  CollectNodes<Identifier> builtins;
   builtins.visit(f.stmts);
-  for (const Builtin &builtin : builtins.nodes()) {
+  for (const Identifier &builtin : builtins.nodes()) {
     if (builtin.type.IsCtxAccess() || builtin.is_argx() ||
         builtin.ident == "retval") {
       builtin.addError() << "'" << builtin.ident
@@ -2887,9 +2882,9 @@ void SemanticAnalyser::visit(FieldAccess &acc)
 
     for (AttachPoint *attach_point : probe->attach_points) {
       if (probetype(attach_point->provider) != ProbeType::tracepoint) {
-        // The args builtin can only be used with tracepoint
-        // an error message is already generated in visit(Builtin)
-        // just continue semantic analysis
+        // The args builtin can only be used with tracepoint an error message
+        // is already generated in visit(Identifier) just continue semantic
+        // analysis.
         continue;
       }
 

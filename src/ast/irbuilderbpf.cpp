@@ -1379,7 +1379,7 @@ CallInst *IRBuilderBPF::CreateProbeReadStr(Value *ctx,
 
 Value *IRBuilderBPF::CreateUSDTReadArgument(Value *ctx,
                                             struct bcc_usdt_argument *argument,
-                                            Builtin &builtin,
+                                            Identifier &identifier,
                                             AddrSpace as,
                                             const Location &loc)
 {
@@ -1389,8 +1389,8 @@ Value *IRBuilderBPF::CreateUSDTReadArgument(Value *ctx,
   int abs_size = std::abs(argument->size);
   assert(abs_size == 1 || abs_size == 2 || abs_size == 4 || abs_size == 8);
   if (argument->valid & BCC_USDT_ARGUMENT_DEREF_IDENT)
-    builtin.addError() << "deref ident is not handled yet ["
-                       << argument->deref_ident << "]";
+    identifier.addError() << "deref ident is not handled yet ["
+                          << argument->deref_ident << "]";
   // USDT arguments can be any valid gas (GNU asm) operand.
   // BCC normalises these into the bcc_usdt_argument and supports most
   // valid gas operands.
@@ -1416,8 +1416,8 @@ Value *IRBuilderBPF::CreateUSDTReadArgument(Value *ctx,
   if (argument->valid & BCC_USDT_ARGUMENT_INDEX_REGISTER_NAME &&
       !(argument->valid & BCC_USDT_ARGUMENT_BASE_REGISTER_NAME)) {
     // Invalid combination??
-    builtin.addError() << "index register set without base register;"
-                       << " this case is not yet handled";
+    identifier.addError() << "index register set without base register;"
+                          << " this case is not yet handled";
   }
   Value *result = nullptr;
   if (argument->valid & BCC_USDT_ARGUMENT_BASE_REGISTER_NAME) {
@@ -1435,13 +1435,13 @@ Value *IRBuilderBPF::CreateUSDTReadArgument(Value *ctx,
                                ctx,
                                getInt64(offset * sizeof(uintptr_t)),
                                "load_register");
-    AllocaInst *dst = CreateAllocaBPF(builtin.type, builtin.ident);
+    AllocaInst *dst = CreateAllocaBPF(identifier.type, identifier.ident);
     Value *index_offset = nullptr;
     if (argument->valid & BCC_USDT_ARGUMENT_INDEX_REGISTER_NAME) {
       int ioffset = arch::offset(argument->index_register_name);
       if (ioffset < 0) {
-        builtin.addError() << "offset for register "
-                           << argument->index_register_name << " not known";
+        identifier.addError() << "offset for register "
+                              << argument->index_register_name << " not known";
       }
       index_offset = CreateSafeGEP(getInt8Ty(),
                                    ctx,
@@ -1474,7 +1474,7 @@ Value *IRBuilderBPF::CreateUSDTReadArgument(Value *ctx,
                                             AttachPoint *attach_point,
                                             int usdt_location_index,
                                             int arg_num,
-                                            Builtin &builtin,
+                                            Identifier &identifier,
                                             std::optional<pid_t> pid,
                                             AddrSpace as,
                                             const Location &loc)
@@ -1492,8 +1492,8 @@ Value *IRBuilderBPF::CreateUSDTReadArgument(Value *ctx,
   }
 
   if (usdt == nullptr) {
-    builtin.addError() << "failed to initialize usdt context for probe "
-                       << attach_point->target;
+    identifier.addError() << "failed to initialize usdt context for probe "
+                          << attach_point->target;
     exit(-1);
   }
 
@@ -1506,13 +1506,13 @@ Value *IRBuilderBPF::CreateUSDTReadArgument(Value *ctx,
                             usdt_location_index,
                             arg_num,
                             &argument) != 0) {
-    builtin.addError() << "couldn't get argument " << arg_num << " for "
-                       << attach_point->target << ":" << attach_point->ns << ":"
-                       << attach_point->func;
+    identifier.addError() << "couldn't get argument " << arg_num << " for "
+                          << attach_point->target << ":" << attach_point->ns
+                          << ":" << attach_point->func;
     exit(-2);
   }
 
-  Value *result = CreateUSDTReadArgument(ctx, &argument, builtin, as, loc);
+  Value *result = CreateUSDTReadArgument(ctx, &argument, identifier, as, loc);
 
   bcc_usdt_close(usdt);
   return result;

@@ -395,17 +395,17 @@ diff --git a/src/ast/codegen_llvm.cpp b/src/ast/codegen_llvm.cpp
 index 27fa477..d3dd1ff 100644
 --- a/src/ast/codegen_llvm.cpp
 +++ b/src/ast/codegen_llvm.cpp
-@@ -70,6 +70,10 @@ void CodegenLLVM::visit(Builtin &builtin)
+@@ -70,6 +70,10 @@ void CodegenLLVM::visit(Identifier &identifier)
    {
      expr_ = b_.CreateGetCpuId();
    }
-+  else if (builtin.ident == "curtask")
++  else if (identifier.ident == "curtask")
 +  {
 +    expr_ = b_.CreateGetCurrentTask();
 +  }
-   else if (builtin.ident == "comm")
+   else if (identifier.ident == "comm")
    {
-     AllocaInst *buf = b_.CreateAllocaBPF(builtin.type, "comm");
+     AllocaInst *buf = b_.CreateAllocaBPF(identifier.type, "comm");
 diff --git a/src/ast/irbuilderbpf.cpp b/src/ast/irbuilderbpf.cpp
 index ccae94c..3ccf1e6 100644
 --- a/src/ast/irbuilderbpf.cpp
@@ -446,27 +446,14 @@ diff --git a/src/ast/semantic_analyser.cpp b/src/ast/semantic_analyser.cpp
 index 8eb5744..64c9411 100644
 --- a/src/ast/semantic_analyser.cpp
 +++ b/src/ast/semantic_analyser.cpp
-@@ -32,6 +32,7 @@ void SemanticAnalyser::visit(Builtin &builtin)
-       builtin.ident == "uid" ||
-       builtin.ident == "gid" ||
-       builtin.ident == "cpu" ||
-+      builtin.ident == "curtask" ||
-       builtin.ident == "retval") {
-     builtin.type = CreateUInt64();
+@@ -32,6 +32,7 @@ void SemanticAnalyser::visit(Identifier &ident)
+       identifier.ident == "uid" ||
+       identifier.ident == "gid" ||
+       identifier.ident == "cpu" ||
++      identifier.ident == "curtask" ||
+       identifier.ident == "retval") {
+     identifier.type = CreateUInt64();
    }
-diff --git a/src/lexer.l b/src/lexer.l
-index c5996b6..3bec616 100644
---- a/src/lexer.l
-+++ b/src/lexer.l
-@@ -38,7 +38,7 @@ header <(\\.|[_\-\./a-zA-Z0-9])*>
- {vspace}+               { loc.lines(yyleng); loc.step(); }
- "//".*$  // Comments
- 
--pid|tid|uid|gid|nsecs|cpu|comm|stack|ustack|arg[0-9]|retval|func|name {
-+pid|tid|uid|gid|nsecs|cpu|comm|stack|ustack|arg[0-9]|retval|func|name|curtask {
-                           return Parser::make_BUILTIN(yytext, loc); }
- {ident}                 { return Parser::make_IDENT(yytext, loc); }
- {path}                  { return Parser::make_PATH(yytext, loc); }
 diff --git a/tests/codegen.cpp b/tests/codegen.cpp
 index 38918ca..c00d25f 100644
 --- a/tests/codegen.cpp

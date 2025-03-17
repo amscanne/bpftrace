@@ -24,7 +24,7 @@ using namespace bpftrace;
 int_size (([uU])|([uU]?[lL]?[lL]))
 
 /* Number with underscores in it, e.g. 1_000_000 */
-int      [0-9]([0-9_]*[0-9])?{int_size}?
+int      -?[0-9]([0-9_]*[0-9])?{int_size}?
 hex      0[xX][0-9a-fA-F]+
 /* scientific notation, e.g. 2e4 or 1e6 */
 exponent {int}[eE]{int}
@@ -38,7 +38,7 @@ space    {hspace}|{vspace}
 path     :(\\.|[_\-\./a-zA-Z0-9#+\*])+
 
 int_type        bool|(u)?int(8|16|32|64)
-builtin_type    void|(u)?(min|max|sum|count|avg|stats)_t|probe_t|username|lhist_t|hist_t|usym_t|ksym_t|timestamp|macaddr_t|cgroup_path_t|strerror_t|kstack_t|ustack_t
+builtin_type    void|(u)?(min|max|sum|count|avg|stats)_t|probe_t|username_t|lhist_t|hist_t|usym_t|ksym_t|timestamp|macaddr_t|cgroup_path_t|strerror_t|kstack_t|ustack_t
 sized_type      string|inet|buffer
 subprog         fn
 
@@ -70,9 +70,6 @@ oct_esc  [0-7]{1,3}
 }
 
 bpftrace|perf|raw       { return Parser::make_STACK_MODE(yytext, loc); }
-{builtin}               { return Parser::make_BUILTIN(yytext, loc); }
-{call}                  { return Parser::make_CALL(yytext, loc); }
-{call_and_builtin}      { return Parser::make_CALL_BUILTIN(yytext, loc); }
 {subprog}               { return Parser::make_SUBPROG(yytext, loc); }
 {int}|{hex}|{exponent}  {
                           try

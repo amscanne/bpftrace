@@ -18,7 +18,6 @@ public:
   void visit(String &string);
   void visit(StackMode &mode);
   void visit(Identifier &identifier);
-  void visit(Builtin &builtin);
   void visit(Call &call);
   void visit(Sizeof &szof);
   void visit(Offsetof &offof);

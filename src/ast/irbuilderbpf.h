@@ -112,7 +112,7 @@ public:
                                 AttachPoint *attach_point,
                                 int usdt_location_index,
                                 int arg_name,
-                                Builtin &builtin,
+                                Identifier &identifier,
                                 std::optional<pid_t> pid,
                                 AddrSpace as,
                                 const Location &loc);
@@ -292,7 +292,7 @@ private:
   llvm::Type *BpfPidnsInfoType();
   Value *CreateUSDTReadArgument(Value *ctx,
                                 struct bcc_usdt_argument *argument,
-                                Builtin &builtin,
+                                Identifier &identifier,
                                 AddrSpace as,
                                 const Location &loc);
   CallInst *createMapLookup(const std::string &map_name,

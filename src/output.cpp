@@ -29,7 +29,7 @@ bool is_quoted_type(const SizedType &ty)
     case Type::strerror_t:
     case Type::string:
     case Type::timestamp:
-    case Type::username:
+    case Type::username_t:
     case Type::ustack_t:
     case Type::usym_t:
       return true;
@@ -277,7 +277,7 @@ std::string Output::value_to_str(BPFtrace &bpftrace,
                                    static_cast<const uint8_t *>(value.data() +
                                                                 8));
     }
-    case Type::username: {
+    case Type::username_t: {
       return bpftrace.resolve_uid(util::read_data<uint64_t>(value.data()));
     }
     case Type::buffer: {
@@ -445,7 +445,7 @@ std::string Output::map_key_str(BPFtrace &bpftrace,
     case Type::ksym_t:
     case Type::usym_t:
     case Type::inet:
-    case Type::username:
+    case Type::username_t:
     case Type::string:
     case Type::buffer:
     case Type::pointer:

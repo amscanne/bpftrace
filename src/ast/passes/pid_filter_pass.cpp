@@ -64,7 +64,7 @@ static Statement *create_pid_filter(ASTContext &ast,
                                     const Location &loc)
 {
   return ast.make_node<If>(
-      ast.make_node<Binop>(ast.make_node<Builtin>("pid", Location(loc)),
+      ast.make_node<Binop>(ast.make_node<Identifier>("pid", Location(loc)),
                            Operator::NE,
                            ast.make_node<Integer>(pid, Location(loc)),
                            Location(loc)),

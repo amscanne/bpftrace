@@ -30,11 +30,6 @@ StackMode::StackMode(Diagnostics &d, std::string mode, Location &&loc)
   is_literal = true;
 }
 
-Builtin::Builtin(Diagnostics &d, std::string ident, Location &&loc)
-    : Expression(d, std::move(loc)), ident(std::move(ident))
-{
-}
-
 Identifier::Identifier(Diagnostics &d, std::string ident, Location &&loc)
     : Expression(d, std::move(loc)), ident(std::move(ident))
 {

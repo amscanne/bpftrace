@@ -24,7 +24,6 @@ public:
 
   using Visitor<FieldAnalyser>::visit;
   void visit(Identifier &identifier);
-  void visit(Builtin &builtin);
   void visit(Map &map);
   void visit(Variable &var);
   void visit(FieldAccess &acc);
@@ -58,14 +57,9 @@ private:
 
 void FieldAnalyser::visit(Identifier &identifier)
 {
-  bpftrace_.btf_set_.insert(identifier.ident);
-}
-
-void FieldAnalyser::visit(Builtin &builtin)
-{
   std::string builtin_type;
   sized_type_ = CreateNone();
-  if (builtin.ident == "ctx") {
+  if (identifier.ident == "ctx") {
     if (!probe_)
       return;
     switch (prog_type_) {
@@ -82,15 +76,15 @@ void FieldAnalyser::visit(Builtin &builtin)
     // make them resolved and available
     if (probe_type_ == ProbeType::iter)
       builtin_type = "struct bpf_iter__" + attach_func_;
-  } else if (builtin.ident == "curtask") {
+  } else if (identifier.ident == "curtask") {
     builtin_type = "struct task_struct";
-  } else if (builtin.ident == "args") {
+  } else if (identifier.ident == "args") {
     if (!probe_)
       return;
     resolve_args(*probe_);
     has_builtin_args_ = true;
     return;
-  } else if (builtin.ident == "retval") {
+  } else if (identifier.ident == "retval") {
     if (!probe_)
       return;
     resolve_args(*probe_);
@@ -99,9 +93,11 @@ void FieldAnalyser::visit(Builtin &builtin)
     if (arg)
       sized_type_ = arg->type;
     return;
+  } else {
+    bpftrace_.btf_set_.insert(identifier.ident);
   }
 
-  if (bpftrace_.has_btf_data())
+  if (!builtin_type.empty() && bpftrace_.has_btf_data())
     sized_type_ = bpftrace_.btf_->get_stype(builtin_type);
 }
 

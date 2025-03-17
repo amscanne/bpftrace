@@ -10,7 +10,7 @@
 %define define_location_comparison
 %define parse.assert
 %define parse.trace
-%expect 4
+%expect 6
 
 %define parse.error verbose
 
@@ -37,6 +37,7 @@ class Node;
 
 %{
 #include <iostream>
+#include <unordered_set>
 
 #include "driver.h"
 #include "parser.tab.hh"
@@ -44,6 +45,14 @@ class Node;
 YY_DECL;
 
 void yyerror(bpftrace::Driver &driver, const char *s);
+
+static const std::unordered_set<std::string> LEGACY_IDENTS = {
+  "arg0", "arg1", "arg2", "arg3", "arg4", "arg5", "arg6", "arg7", "arg8", "arg9",
+  "sarg0", "sarg1", "sarg2", "sarg3", "sarg4", "sarg5", "sarg6", "sarg7", "sarg8",
+  "args", "cgroup", "comm", "cpid", "numaid", "cpu", "ctx", "curtask", "elapsed",
+  "func", "gid", "pid", "probe", "rand", "retval", "tid", "uid", "username", "jiffies",
+  "kstack", "ustack", "nsecs",
+};
 %}
 
 %token
@@ -130,8 +139,8 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %token <std::string> LET "let"
 
 
-%type <ast::Operator> unary_op compound_op
-%type <std::string> attach_point_def c_definitions ident keyword external_name
+%type <ast::Operator> compound_op
+%type <std::string> attach_point_def c_definitions keyword external_name attach_point_name
 %type <std::vector<std::string>> struct_field
 
 %type <ast::AttachPoint *> attach_point
@@ -140,8 +149,8 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %type <ast::Call *> call
 %type <ast::Sizeof *> sizeof_expr
 %type <ast::Offsetof *> offsetof_expr
-%type <ast::Expression *> and_expr addi_expr primary_expr cast_expr conditional_expr equality_expr expr logical_and_expr muli_expr
-%type <ast::Expression *> logical_or_expr map_or_var or_expr postfix_expr relational_expr shift_expr tuple_access_expr unary_expr xor_expr
+%type <ast::Expression *> and_expr addi_expr primary_expr cast_expr cast_expr_strict conditional_expr equality_expr expr logical_and_expr muli_expr
+%type <ast::Expression *> logical_or_expr map_or_var or_expr postfix_expr relational_expr shift_expr tuple_access_expr unary_expr_strict xor_expr
 %type <ast::ExpressionList> vargs
 %type <ast::Subprog *> subprog
 %type <ast::SubprogArg *> subprog_arg
@@ -336,8 +345,31 @@ attach_point:
                 attach_point_def                { $$ = driver.ctx.make_node<ast::AttachPoint>($1, false, @$); }
                 ;
 
+// attach_point_name includes nearly all keywords, with the exception of
+// `CONFIG`, `SUBPROG` and `LET`. Unfortunately the existence of these things
+// at the top level imply that we can't unambiguously parse with this grammar,
+// and would require pretty significant surgery. They can be included by a user
+// by using the fairly simple workaround of string-quoting the attach point.
+attach_point_name:
+                BREAK         { $$ = $1; }
+        |       CONTINUE      { $$ = $1; }
+        |       ELSE          { $$ = $1; }
+        |       FOR           { $$ = $1; }
+        |       IF            { $$ = $1; }
+        |       OFFSETOF      { $$ = $1; }
+        |       RETURN        { $$ = $1; }
+        |       SIZEOF        { $$ = $1; }
+        |       UNROLL        { $$ = $1; }
+        |       WHILE         { $$ = $1; }
+        |       IDENT         { $$ = $1; }
+        |       BUILTIN_TYPE  { $$ = $1; }
+        |       SIZED_TYPE    { $$ = $1; }
+        |       INT_TYPE      { $$ = $1; }
+        |       STACK_MODE    { $$ = $1; }
+        ;
+
 attach_point_def:
-                attach_point_def ident    { $$ = $1 + $2; }
+                attach_point_def attach_point_name { $$ = $1 + $2; }
                 // Since we're double quoting the STRING for the benefit of the
                 // AttachPointParser, we have to make sure we re-escape any double
                 // quotes.
@@ -510,8 +542,8 @@ postfix_expr:
         |       map_or_var INCREMENT           { $$ = driver.ctx.make_node<ast::Unop>(ast::Operator::INCREMENT, $1, true, @2); }
         |       map_or_var DECREMENT           { $$ = driver.ctx.make_node<ast::Unop>(ast::Operator::DECREMENT, $1, true, @2); }
 /* errors */
-        |       INCREMENT ident                { error(@1, "The ++ operator must be applied to a map or variable"); YYERROR; }
-        |       DECREMENT ident                { error(@1, "The -- operator must be applied to a map or variable"); YYERROR; }
+        |       INCREMENT IDENT                { error(@1, "The ++ operator must be applied to a map or variable"); YYERROR; }
+        |       DECREMENT IDENT                { error(@1, "The -- operator must be applied to a map or variable"); YYERROR; }
                 ;
 
 /* Tuple factored out so we can use it in the tuple field assignment error */
@@ -523,23 +555,32 @@ block_expr:
                 "{" stmt_list expr "}" { $$ = driver.ctx.make_node<ast::Block>(std::move($2), $3, @$); }
                 ;
 
+/*
 unary_expr:
-                unary_op cast_expr   { $$ = driver.ctx.make_node<ast::Unop>($1, $2, false, @1); }
-        |       postfix_expr         { $$ = $1; }
-        |       INCREMENT map_or_var { $$ = driver.ctx.make_node<ast::Unop>(ast::Operator::INCREMENT, $2, false, @1); }
-        |       DECREMENT map_or_var { $$ = driver.ctx.make_node<ast::Unop>(ast::Operator::DECREMENT, $2, false, @1); }
-        |       block_expr           { $$ = $1; }
+                unary_expr_strict { $$ = $1; }
+        |       MUL cast_expr                  { $$ = driver.ctx.make_node<ast::Unop>(ast::Operator::MUL, $2, false, @1); }
+        |       BNOT cast_expr
+*/
+
+// Does not allow `MUL`, in order to resolve ambiguity with cast and multiple
+// expressions. This is handled by `cast_expr_strict` and `cast_expr`, above.
+unary_expr_strict:
+                BNOT cast_expr_strict  { $$ = driver.ctx.make_node<ast::Unop>(ast::Operator::BNOT, $2, false, @1); }
+        |       LNOT cast_expr_strict  { $$ = driver.ctx.make_node<ast::Unop>(ast::Operator::LNOT, $2, false, @1); }
+        |       MINUS cast_expr_strict { $$ = driver.ctx.make_node<ast::Unop>(ast::Operator::MINUS, $2, false, @1); }
+        |       postfix_expr           { $$ = $1; }
+        |       INCREMENT map_or_var   { $$ = driver.ctx.make_node<ast::Unop>(ast::Operator::INCREMENT, $2, false, @1); }
+        |       DECREMENT map_or_var   { $$ = driver.ctx.make_node<ast::Unop>(ast::Operator::DECREMENT, $2, false, @1); }
+        |       block_expr             { $$ = $1; }
 /* errors */
-        |       ident DECREMENT      { error(@1, "The -- operator must be applied to a map or variable"); YYERROR; }
-        |       ident INCREMENT      { error(@1, "The ++ operator must be applied to a map or variable"); YYERROR; }
+        |       IDENT DECREMENT        { error(@1, "The -- operator must be applied to a map or variable"); YYERROR; }
+        |       IDENT INCREMENT        { error(@1, "The ++ operator must be applied to a map or variable"); YYERROR; }
                 ;
 
 unary_op:
-                MUL    { $$ = ast::Operator::MUL; }
         |       BNOT   { $$ = ast::Operator::BNOT; }
         |       LNOT   { $$ = ast::Operator::LNOT; }
         |       MINUS  { $$ = ast::Operator::MINUS; }
-                ;
 
 expr:
                 conditional_expr    { $$ = $1; }
@@ -596,26 +637,51 @@ shift_expr:
         |       shift_expr RIGHT addi_expr { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::RIGHT, $3, @2); }
                 ;
 
-muli_expr:
-                cast_expr                  { $$ = $1; }
-        |       muli_expr MUL cast_expr    { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::MUL, $3, @2); }
-        |       muli_expr DIV cast_expr    { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::DIV, $3, @2); }
-        |       muli_expr MOD cast_expr    { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::MOD, $3, @2); }
-                ;
-
 addi_expr:
                 muli_expr                  { $$ = $1; }
         |       addi_expr PLUS muli_expr   { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::PLUS, $3, @2); }
         |       addi_expr MINUS muli_expr  { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::MINUS, $3, @2); }
                 ;
 
+// There is ambiguity regarding casts, as `(foo)*bar` is a cast + unary
+// expression if `foo` is a type, but is a multiply operation if `foo` is not a
+// type. The way this works is that the multiply operator above does *not*
+// naively expand to a cast expression as a base case, and instead will
+// explicitly find this case. If it does, a warning will be emitted noting that
+// the cast is ambiguous and recommended an unambiguous cast `(foo)(*bar)`.
+//
+// This results in some additional parsing conflicts, but since this node is
+// higher it will be prioritized.
+muli_expr:
+                cast_expr_strict                  { $$ = $1; }
+        |       LPAREN IDENT RPAREN MUL cast_expr {
+                        if (LEGACY_IDENTS.contains($2)) {
+                          $$ = driver.ctx.make_node<ast::Binop>(driver.ctx.make_node<ast::Identifier>($2, @2), ast::Operator::MUL, $5, @4);
+                        } else {
+                          // Although this is the default interpretation, it is always going to be
+                          // an ambiguous cast unless the parser is fully type-aware, which it can't
+                          // really be since the types are external. We should consider remove support
+                          // for this syntax entirely, but leave it as a warning for now.
+                          driver.warning(@$, "Ambiguous cast, consider using `(type)(expr)` instead; in the future, the current expression will not be treated as a cast.");
+                          $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 0), driver.ctx.make_node<ast::Unop>(ast::Operator::MUL, $5, false, @4), @1 + @3);
+                        }
+                }
+        |       muli_expr DIV cast_expr           { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::DIV, $3, @2); }
+        |       muli_expr MOD cast_expr           { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::MOD, $3, @2); }
+        |       muli_expr MUL cast_expr           { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::MUL, $3, @2); }
+                ;
+
 cast_expr:
-                unary_expr                                  { $$ = $1; }
-        |       LPAREN type RPAREN cast_expr                { $$ = driver.ctx.make_node<ast::Cast>($2, $4, @1 + @3); }
+                cast_expr_strict               { $$ = $1; }
+        |       MUL cast_expr                  { $$ = driver.ctx.make_node<ast::Unop>(ast::Operator::MUL, $2, false, @1); }
+        |       LPAREN IDENT RPAREN cast_expr  { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 0), $4, @1 + @3); }
+
+cast_expr_strict:
+                unary_expr_strict                     { $$ = $1; }
+        |       LPAREN type RPAREN cast_expr          { $$ = driver.ctx.make_node<ast::Cast>($2, $4, @1 + @3); }
 /* workaround for typedef types, see https://github.com/bpftrace/bpftrace/pull/2560#issuecomment-1521783935 */
-        |       LPAREN IDENT RPAREN cast_expr               { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 0), $4, @1 + @3); }
-        |       LPAREN IDENT "*" RPAREN cast_expr           { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 1), $5, @1 + @4); }
-        |       LPAREN IDENT "*" "*" RPAREN cast_expr       { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 2), $6, @1 + @5); }
+        |       LPAREN IDENT "*" RPAREN cast_expr     { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 1), $5, @1 + @4); }
+        |       LPAREN IDENT "*" "*" RPAREN cast_expr { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 2), $6, @1 + @5); }
                 ;
 
 sizeof_expr:

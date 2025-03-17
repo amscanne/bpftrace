@@ -48,10 +48,6 @@ public:
   {
     return default_value();
   }
-  R visit(Builtin &builtin __attribute__((__unused__)))
-  {
-    return default_value();
-  }
   R visit(Identifier &identifier __attribute__((__unused__)))
   {
     return default_value();
@@ -323,7 +319,6 @@ public:
                               String *,
                               StackMode *,
                               Identifier *,
-                              Builtin *,
                               Call *,
                               Sizeof *,
                               Offsetof *,

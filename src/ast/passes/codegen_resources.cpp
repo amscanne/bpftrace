@@ -16,11 +16,11 @@ CodegenResources CodegenResourceAnalyser::analyse(Program &program)
   return std::move(resources_);
 }
 
-void CodegenResourceAnalyser::visit(Builtin &builtin)
+void CodegenResourceAnalyser::visit(Identifier &identifier)
 {
-  if (builtin.ident == "elapsed") {
+  if (identifier.ident == "elapsed") {
     resources_.needs_elapsed_map = true;
-  } else if (builtin.ident == "kstack" || builtin.ident == "ustack") {
+  } else if (identifier.ident == "kstack" || identifier.ident == "ustack") {
     resources_.stackid_maps.insert(
         StackType{ .mode = config_.get(ConfigKeyStackMode::default_) });
   }

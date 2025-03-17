@@ -10,7 +10,7 @@ namespace {
 class DeprecatedAnalyser : public Visitor<DeprecatedAnalyser> {
 public:
   using Visitor<DeprecatedAnalyser>::visit;
-  void visit(Builtin &builtin);
+  void visit(Identifier &identifier);
   void visit(Call &call);
 };
 
@@ -53,11 +53,23 @@ static std::vector<DeprecatedName> DEPRECATED_BUILTINS = {
       .old_name = "sarg*",
       .new_name = "*(reg(\"sp\") + <stack_offset>)",
   },
+  {
+      .old_name = "kstack",
+      .new_name = "kstack()",
+  },
+  {
+      .old_name = "ustack",
+      .new_name = "ustack()",
+  },
+  {
+      .old_name = "nsecs",
+      .new_name = "nsecs()",
+  },
 };
 
-void DeprecatedAnalyser::visit(Builtin &builtin)
+void DeprecatedAnalyser::visit(Identifier &identifier)
 {
-  check(DEPRECATED_BUILTINS, builtin.ident, builtin);
+  check(DEPRECATED_BUILTINS, identifier.ident, identifier);
 }
 
 static std::vector<DeprecatedName> DEPRECATED_CALLS = {};

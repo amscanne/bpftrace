@@ -190,7 +190,6 @@ public:
   ScopedExpr visit(PositionalParameter &param);
   ScopedExpr visit(String &string);
   ScopedExpr visit(Identifier &identifier);
-  ScopedExpr visit(Builtin &builtin);
   ScopedExpr visit(Call &call);
   ScopedExpr visit(Sizeof &szof);
   ScopedExpr visit(Offsetof &offof);
@@ -502,19 +501,6 @@ ScopedExpr CodegenLLVM::visit(String &string)
   return ScopedExpr(string_var);
 }
 
-// NB: we do not resolve identifiers that are structs. That is because in
-// bpftrace you cannot really instantiate a struct.
-ScopedExpr CodegenLLVM::visit(Identifier &identifier)
-{
-  if (bpftrace_.enums_.contains(identifier.ident)) {
-    return ScopedExpr(
-        b_.getInt64(std::get<0>(bpftrace_.enums_[identifier.ident])));
-  } else {
-    LOG(BUG) << "unknown identifier \"" << identifier.ident << "\"";
-    __builtin_unreachable();
-  }
-}
-
 ScopedExpr CodegenLLVM::kstack_ustack(const std::string &ident,
                                       StackType stack_type,
                                       const Location &loc)
@@ -633,56 +619,59 @@ int CodegenLLVM::get_probe_id()
   return std::distance(begin, found);
 }
 
-ScopedExpr CodegenLLVM::visit(Builtin &builtin)
+ScopedExpr CodegenLLVM::visit(Identifier &identifier)
 {
-  if (builtin.ident == "nsecs") {
-    return ScopedExpr(b_.CreateGetNs(TimestampMode::boot, builtin.loc));
-  } else if (builtin.ident == "elapsed") {
+  if (identifier.ident == "nsecs") {
+    return ScopedExpr(b_.CreateGetNs(TimestampMode::boot, identifier.loc));
+  } else if (identifier.ident == "elapsed") {
     AllocaInst *key = b_.CreateAllocaBPF(b_.getInt64Ty(), "elapsed_key");
     b_.CreateStore(b_.getInt64(0), key);
 
     auto type = CreateUInt64();
     auto start = b_.CreateMapLookupElem(
-        ctx_, to_string(MapType::Elapsed), key, type, builtin.loc);
-    Value *ns_value = b_.CreateGetNs(TimestampMode::boot, builtin.loc);
+        ctx_, to_string(MapType::Elapsed), key, type, identifier.loc);
+    Value *ns_value = b_.CreateGetNs(TimestampMode::boot, identifier.loc);
     Value *ns_delta = b_.CreateSub(ns_value, start);
     // start won't be on stack, no need to LifeTimeEnd it
     b_.CreateLifetimeEnd(key);
     return ScopedExpr(ns_delta);
-  } else if (builtin.ident == "kstack" || builtin.ident == "ustack") {
-    return kstack_ustack(builtin.ident, builtin.type.stack_type, builtin.loc);
-  } else if (builtin.ident == "pid") {
-    return ScopedExpr(b_.CreateGetPid(ctx_, builtin.loc));
-  } else if (builtin.ident == "tid") {
-    return ScopedExpr(b_.CreateGetTid(ctx_, builtin.loc));
-  } else if (builtin.ident == "cgroup") {
-    return ScopedExpr(b_.CreateGetCurrentCgroupId(builtin.loc));
-  } else if (builtin.ident == "uid" || builtin.ident == "gid" ||
-             builtin.ident == "username") {
-    Value *uidgid = b_.CreateGetUidGid(builtin.loc);
-    if (builtin.ident == "uid" || builtin.ident == "username") {
+  } else if (identifier.ident == "kstack" || identifier.ident == "ustack") {
+    return kstack_ustack(identifier.ident,
+                         identifier.type.stack_type,
+                         identifier.loc);
+  } else if (identifier.ident == "pid") {
+    return ScopedExpr(b_.CreateGetPid(ctx_, identifier.loc));
+  } else if (identifier.ident == "tid") {
+    return ScopedExpr(b_.CreateGetTid(ctx_, identifier.loc));
+  } else if (identifier.ident == "cgroup") {
+    return ScopedExpr(b_.CreateGetCurrentCgroupId(identifier.loc));
+  } else if (identifier.ident == "uid" || identifier.ident == "gid" ||
+             identifier.ident == "username") {
+    Value *uidgid = b_.CreateGetUidGid(identifier.loc);
+    if (identifier.ident == "uid" || identifier.ident == "username") {
       return ScopedExpr(b_.CreateAnd(uidgid, 0xffffffff));
-    } else if (builtin.ident == "gid") {
+    } else if (identifier.ident == "gid") {
       return ScopedExpr(b_.CreateLShr(uidgid, 32));
     }
     __builtin_unreachable();
-  } else if (builtin.ident == "numaid") {
-    return ScopedExpr(b_.CreateGetNumaId(builtin.loc));
-  } else if (builtin.ident == "cpu") {
-    Value *cpu = b_.CreateGetCpuId(builtin.loc);
+  } else if (identifier.ident == "numaid") {
+    return ScopedExpr(b_.CreateGetNumaId(identifier.loc));
+  } else if (identifier.ident == "cpu") {
+    Value *cpu = b_.CreateGetCpuId(identifier.loc);
     return ScopedExpr(b_.CreateZExt(cpu, b_.getInt64Ty()));
-  } else if (builtin.ident == "curtask") {
-    return ScopedExpr(b_.CreateGetCurrentTask(builtin.loc));
-  } else if (builtin.ident == "rand") {
-    Value *random = b_.CreateGetRandom(builtin.loc);
+  } else if (identifier.ident == "curtask") {
+    return ScopedExpr(b_.CreateGetCurrentTask(identifier.loc));
+  } else if (identifier.ident == "rand") {
+    Value *random = b_.CreateGetRandom(identifier.loc);
     return ScopedExpr(b_.CreateZExt(random, b_.getInt64Ty()));
-  } else if (builtin.ident == "comm") {
-    AllocaInst *buf = b_.CreateAllocaBPF(builtin.type, "comm");
+  } else if (identifier.ident == "comm") {
+    AllocaInst *buf = b_.CreateAllocaBPF(identifier.type, "comm");
     // initializing memory needed for older kernels:
-    b_.CreateMemsetBPF(buf, b_.getInt8(0), builtin.type.GetSize());
-    b_.CreateGetCurrentComm(ctx_, buf, builtin.type.GetSize(), builtin.loc);
+    b_.CreateMemsetBPF(buf, b_.getInt8(0), identifier.type.GetSize());
+    b_.CreateGetCurrentComm(
+        ctx_, buf, identifier.type.GetSize(), identifier.loc);
     return ScopedExpr(buf, [this, buf]() { b_.CreateLifetimeEnd(buf); });
-  } else if (builtin.ident == "func") {
+  } else if (identifier.ident == "func") {
     // fentry/fexit probes do not have access to registers, so require use of
     // the get_func_ip helper to get the instruction pointer.
     //
@@ -701,102 +690,107 @@ ScopedExpr CodegenLLVM::visit(Builtin &builtin)
     if (probe_type == ProbeType::fentry || probe_type == ProbeType::fexit ||
         probe_type == ProbeType::kretprobe ||
         probe_type == ProbeType::uretprobe) {
-      value = b_.CreateGetFuncIp(ctx_, builtin.loc);
+      value = b_.CreateGetFuncIp(ctx_, identifier.loc);
     } else {
-      value = b_.CreateRegisterRead(ctx_, builtin.ident);
+      value = b_.CreateRegisterRead(ctx_, identifier.ident);
     }
 
-    if (builtin.type.IsUsymTy()) {
-      value = b_.CreateUSym(ctx_, value, get_probe_id(), builtin.loc);
+    if (identifier.type.IsUsymTy()) {
+      value = b_.CreateUSym(ctx_, value, get_probe_id(), identifier.loc);
       return ScopedExpr(value,
                         [this, value]() { b_.CreateLifetimeEnd(value); });
     }
     return ScopedExpr(value);
-  } else if (builtin.is_argx() || builtin.ident == "retval") {
+  } else if (identifier.is_argx() || identifier.ident == "retval") {
     auto probe_type = probetype(current_attach_point_->provider);
 
-    if (builtin.type.is_funcarg) {
-      return ScopedExpr(b_.CreateKFuncArg(ctx_, builtin.type, builtin.ident));
+    if (identifier.type.is_funcarg) {
+      return ScopedExpr(
+          b_.CreateKFuncArg(ctx_, identifier.type, identifier.ident));
     }
 
-    if (builtin.ident.find("arg") != std::string::npos &&
+    if (identifier.ident.find("arg") != std::string::npos &&
         probe_type == ProbeType::usdt) {
       return ScopedExpr(
           b_.CreateUSDTReadArgument(ctx_,
                                     current_attach_point_,
                                     current_usdt_location_index_,
-                                    atoi(builtin.ident.substr(3).c_str()),
-                                    builtin,
+                                    atoi(identifier.ident.substr(3).c_str()),
+                                    identifier,
                                     bpftrace_.pid(),
                                     AddrSpace::user,
-                                    builtin.loc));
+                                    identifier.loc));
     }
 
     Value *value = nullptr;
-    if (builtin.is_argx() && probe_type == ProbeType::rawtracepoint)
-      value = b_.CreateRawTracepointArg(ctx_, builtin.ident);
+    if (identifier.is_argx() && probe_type == ProbeType::rawtracepoint)
+      value = b_.CreateRawTracepointArg(ctx_, identifier.ident);
     else
-      value = b_.CreateRegisterRead(ctx_, builtin.ident);
+      value = b_.CreateRegisterRead(ctx_, identifier.ident);
 
-    if (builtin.type.IsUsymTy()) {
-      value = b_.CreateUSym(ctx_, value, get_probe_id(), builtin.loc);
+    if (identifier.type.IsUsymTy()) {
+      value = b_.CreateUSym(ctx_, value, get_probe_id(), identifier.loc);
       return ScopedExpr(value,
                         [this, value]() { b_.CreateLifetimeEnd(value); });
     }
     return ScopedExpr(value);
 
-  } else if (!builtin.ident.compare(0, 4, "sarg") &&
-             builtin.ident.size() == 5 && builtin.ident.at(4) >= '0' &&
-             builtin.ident.at(4) <= '9') {
+  } else if (!identifier.ident.compare(0, 4, "sarg") &&
+             identifier.ident.size() == 5 && identifier.ident.at(4) >= '0' &&
+             identifier.ident.at(4) <= '9') {
     int sp_offset = arch::sp_offset();
     if (sp_offset == -1) {
       LOG(BUG) << "negative offset for stack pointer";
     }
 
-    int arg_num = atoi(builtin.ident.substr(4).c_str());
+    int arg_num = atoi(identifier.ident.substr(4).c_str());
     Value *sp = b_.CreateRegisterRead(ctx_, sp_offset, "reg_sp");
-    AllocaInst *dst = b_.CreateAllocaBPF(builtin.type, builtin.ident);
+    AllocaInst *dst = b_.CreateAllocaBPF(identifier.type, identifier.ident);
 
     // Pointer width is used when calculating the SP offset and the number of
     // bytes to read from stack for each argument. We pass a pointer SizedType
     // to CreateProbeRead to make sure it uses the correct read size while
-    // keeping builtin.type an int64.
+    // keeping identifier.type an int64.
     size_t arg_width =
-        b_.getPointerStorageTy(builtin.type.GetAS())->getIntegerBitWidth() / 8;
-    SizedType arg_type = CreatePointer(CreateInt8(), builtin.type.GetAS());
-    assert(builtin.type.GetSize() == arg_type.GetSize());
+        b_.getPointerStorageTy(identifier.type.GetAS())->getIntegerBitWidth() /
+        8;
+    SizedType arg_type = CreatePointer(CreateInt8(), identifier.type.GetAS());
+    assert(identifier.type.GetSize() == arg_type.GetSize());
 
     Value *src = b_.CreateAdd(
         sp, b_.getInt64((arg_num + arch::arg_stack_offset()) * arg_width));
-    b_.CreateProbeRead(ctx_, dst, arg_type, src, builtin.loc);
-    Value *expr = b_.CreateLoad(b_.GetType(builtin.type), dst);
+    b_.CreateProbeRead(ctx_, dst, arg_type, src, identifier.loc);
+    Value *expr = b_.CreateLoad(b_.GetType(identifier.type), dst);
     b_.CreateLifetimeEnd(dst);
     return ScopedExpr(expr);
-  } else if (builtin.ident == "probe") {
+  } else if (identifier.ident == "probe") {
     auto probe_str = probefull_;
-    probe_str.resize(builtin.type.GetSize() - 1);
+    probe_str.resize(identifier.type.GetSize() - 1);
     auto probe_var = llvm::dyn_cast<GlobalVariable>(module_->getOrInsertGlobal(
-        probe_str, ArrayType::get(b_.getInt8Ty(), builtin.type.GetSize())));
+        probe_str, ArrayType::get(b_.getInt8Ty(), identifier.type.GetSize())));
     probe_var->setInitializer(
         ConstantDataArray::getString(module_->getContext(), probe_str));
     return ScopedExpr(probe_var);
-  } else if (builtin.ident == "args" &&
+  } else if (identifier.ident == "args" &&
              probetype(current_attach_point_->provider) == ProbeType::uprobe) {
     // uprobe args record is built on stack
-    return ScopedExpr(b_.CreateUprobeArgsRecord(ctx_, builtin.type));
-  } else if (builtin.ident == "args" || builtin.ident == "ctx") {
+    return ScopedExpr(b_.CreateUprobeArgsRecord(ctx_, identifier.type));
+  } else if (identifier.ident == "args" || identifier.ident == "ctx") {
     // ctx is undocumented builtin: for debugging.
     return ScopedExpr(ctx_);
-  } else if (builtin.ident == "cpid") {
+  } else if (identifier.ident == "cpid") {
     pid_t cpid = bpftrace_.child_->pid();
     if (cpid < 1) {
       LOG(BUG) << "Invalid cpid: " << cpid;
     }
     return ScopedExpr(b_.getInt64(cpid));
-  } else if (builtin.ident == "jiffies") {
-    return ScopedExpr(b_.CreateJiffies64(builtin.loc));
+  } else if (identifier.ident == "jiffies") {
+    return ScopedExpr(b_.CreateJiffies64(identifier.loc));
+  } else if (bpftrace_.enums_.count(identifier.ident) != 0) {
+    return ScopedExpr(
+        b_.getInt64(std::get<0>(bpftrace_.enums_[identifier.ident])));
   } else {
-    LOG(BUG) << "unknown builtin \"" << builtin.ident << "\"";
+    LOG(BUG) << "unknown identifier \"" << identifier.ident << "\"";
     __builtin_unreachable();
   }
 }
@@ -3054,7 +3048,7 @@ void CodegenLLVM::generateProbe(Probe &probe,
                                 bool dummy)
 {
   // tracepoint wildcard expansion, part 3 of 3. Set tracepoint_struct_ for use
-  // by args builtin.
+  // by args identifier.
   auto probe_type = probetype(current_attach_point_->provider);
   if (probe_type == ProbeType::tracepoint)
     tracepoint_struct_ = TracepointFormatParser::get_struct_name(full_func_id);
