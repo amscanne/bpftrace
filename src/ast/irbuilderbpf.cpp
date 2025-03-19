@@ -2145,6 +2145,7 @@ void IRBuilderBPF::CreateRingbufOutput(Value *data,
                                        const Location &loc)
 {
   Value *map_ptr = GetMapVar(to_string(MapType::Ringbuf));
+  assert(map_ptr != nullptr);
 
   // long bpf_ringbuf_output(void *ringbuf, void *data, u64 size, u64 flags)
   FunctionType *ringbuf_output_func_type = FunctionType::get(
@@ -2277,6 +2278,7 @@ void IRBuilderBPF::CreatePerfEventOutput(Value *ctx,
                                          const Location &loc)
 {
   Value *map_ptr = GetMapVar(to_string(MapType::PerfEvent));
+  assert(map_ptr != nullptr);
 
   Value *flags_val = getInt64(BPF_F_CURRENT_CPU);
   Value *size_val = getInt64(size);
@@ -2373,6 +2375,7 @@ CallInst *IRBuilderBPF::CreateSkbOutput(Value *skb,
   Value *flags, *map_ptr, *size_val;
 
   map_ptr = GetMapVar(to_string(MapType::PerfEvent));
+  assert(map_ptr != nullptr);
 
   flags = len;
   flags = CreateShl(flags, 32);

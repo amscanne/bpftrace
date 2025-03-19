@@ -147,11 +147,17 @@ void Printer::visit(MapDeclStatement &decl)
 void Printer::visit(Map &map)
 {
   std::string indent(depth_, ' ');
-  out_ << indent << "map: " << map.ident << type(map.type) << std::endl;
-
-  ++depth_;
-  visit(map.key_expr);
-  --depth_;
+  out_ << indent << "map: " << map.ident;
+  if (!map.key_type.IsNoneTy() || !map.type.IsNoneTy()) {
+    out_ << " :: ";
+  }
+  if (!map.key_type.IsNoneTy()) {
+    out_ << "[" << map.key_type << "]";
+  }
+  if (!map.type.IsNoneTy()) {
+    out_ << type(map.type);
+  }
+  out_ << std::endl;
 }
 
 void Printer::visit(Variable &var)
@@ -228,6 +234,17 @@ void Printer::visit(TupleAccess &acc)
   out_ << indent << " " << acc.index << std::endl;
 }
 
+void Printer::visit(MapAccess &acc)
+{
+  ++depth_;
+  visit(acc.map);
+  --depth_;
+
+  ++depth_;
+  visit(acc.key);
+  --depth_;
+}
+
 void Printer::visit(Cast &cast)
 {
   std::string indent(depth_, ' ');
@@ -253,6 +270,17 @@ void Printer::visit(ExprStatement &expr)
   visit(expr.expr);
 }
 
+void Printer::visit(AssignScalarMapStatement &assignment)
+{
+  std::string indent(depth_, ' ');
+  out_ << indent << "=" << std::endl;
+
+  ++depth_;
+  visit(assignment.map);
+  visit(assignment.expr);
+  --depth_;
+}
+
 void Printer::visit(AssignMapStatement &assignment)
 {
   std::string indent(depth_, ' ');
@@ -260,6 +288,9 @@ void Printer::visit(AssignMapStatement &assignment)
 
   ++depth_;
   visit(assignment.map);
+  ++depth_;
+  visit(assignment.key);
+  --depth_;
   visit(assignment.expr);
   --depth_;
 }
@@ -374,9 +405,9 @@ void Printer::visit(For &for_loop)
   visit(for_loop.decl);
   --depth_;
 
-  out_ << indent << " expr\n";
+  out_ << indent << " map\n";
   ++depth_;
-  visit(for_loop.expr);
+  visit(for_loop.map);
   --depth_;
 
   out_ << indent << " stmts\n";

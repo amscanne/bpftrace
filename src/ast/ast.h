@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "diagnostic.h"
@@ -109,12 +110,8 @@ public:
   ~Expression() override = default;
 
   SizedType type;
-  Map *key_for_map = nullptr;
-  Map *map = nullptr;      // Only set when this expression is assigned to a map
-  Variable *var = nullptr; // Set when this expression is assigned to a variable
   bool is_literal = false;
   bool is_variable = false;
-  bool is_map = false;
 };
 using ExpressionList = std::vector<Expression *>;
 
@@ -188,6 +185,13 @@ public:
 
   std::string func;
   ExpressionList vargs;
+
+  // Some passes may inject new arguments to the call, which is always
+  // done at the beginning (in order to support variadic arguments) for
+  // later passes. This is a result of "desugaring" some syntax. When this
+  // happens, this number is increased so that later error reporting can
+  // correctly account for this.
+  size_t injected_args = 0;
 };
 
 class Sizeof : public Expression {
@@ -233,7 +237,6 @@ public:
   Map(Diagnostics &d, std::string ident, Expression &expr, Location &&loc);
 
   std::string ident;
-  Expression *key_expr = nullptr;
   SizedType key_type;
   bool skip_key_validation = false;
   // This is for a feature check on reading per-cpu maps
@@ -288,7 +291,6 @@ public:
 
 class ArrayAccess : public Expression {
 public:
-  ArrayAccess(Diagnostics &d, Expression *expr, Expression *indexpr);
   ArrayAccess(Diagnostics &d,
               Expression *expr,
               Expression *indexpr,
@@ -304,6 +306,14 @@ public:
 
   Expression *expr = nullptr;
   ssize_t index;
+};
+
+class MapAccess : public Expression {
+public:
+  MapAccess(Diagnostics &d, Map *map, Expression *key, Location &&loc);
+
+  Map *map = nullptr;
+  Expression *key = nullptr;
 };
 
 class Cast : public Expression {
@@ -348,14 +358,27 @@ public:
   bool set_type = false;
 };
 
+class AssignScalarMapStatement : public Statement {
+public:
+  AssignScalarMapStatement(Diagnostics &d,
+                           Map *map,
+                           Expression *expr,
+                           Location &&loc);
+
+  Map *map = nullptr;
+  Expression *expr = nullptr;
+};
+
 class AssignMapStatement : public Statement {
 public:
   AssignMapStatement(Diagnostics &d,
                      Map *map,
+                     Expression *key,
                      Expression *expr,
                      Location &&loc);
 
   Map *map = nullptr;
+  Expression *key = nullptr;
   Expression *expr = nullptr;
 };
 
@@ -472,18 +495,18 @@ class For : public Statement {
 public:
   For(Diagnostics &d,
       Variable *decl,
-      Expression *expr,
+      Map *map,
       StatementList &&stmts,
       Location &&loc)
       : Statement(d, std::move(loc)),
         decl(decl),
-        expr(expr),
+        map(map),
         stmts(std::move(stmts))
   {
   }
 
   Variable *decl = nullptr;
-  Expression *expr = nullptr;
+  Map *map = nullptr;
   StatementList stmts;
   SizedType ctx_type;
 };

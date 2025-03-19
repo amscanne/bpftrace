@@ -109,14 +109,6 @@ MapDeclStatement::MapDeclStatement(Diagnostics &d,
 Map::Map(Diagnostics &d, std::string ident, Location &&loc)
     : Expression(d, std::move(loc)), ident(std::move(ident))
 {
-  is_map = true;
-}
-
-Map::Map(Diagnostics &d, std::string ident, Expression &expr, Location &&loc)
-    : Expression(d, std::move(loc)), ident(std::move(ident)), key_expr(&expr)
-{
-  is_map = true;
-  key_expr->key_for_map = this;
 }
 
 Variable::Variable(Diagnostics &d, std::string ident, Location &&loc)
@@ -176,6 +168,14 @@ TupleAccess::TupleAccess(Diagnostics &d,
 {
 }
 
+MapAccess::MapAccess(Diagnostics &d,
+                     Map *map,
+                     Expression *key,
+                     Location &&loc)
+    : Expression(d, std::move(loc)), map(map), key(key)
+{
+}
+
 Cast::Cast(Diagnostics &d,
            SizedType cast_type,
            Expression *expr,
@@ -195,26 +195,20 @@ ExprStatement::ExprStatement(Diagnostics &d, Expression *expr, Location &&loc)
 {
 }
 
+AssignScalarMapStatement::AssignScalarMapStatement(Diagnostics &d,
+                                                   Map *map,
+                                                   Expression *expr,
+                                                   Location &&loc)
+    : Statement(d, std::move(loc)), map(map), expr(expr) {};
+
 AssignMapStatement::AssignMapStatement(Diagnostics &d,
                                        Map *map,
+                                       Expression *key,
                                        Expression *expr,
                                        Location &&loc)
-    : Statement(d, std::move(loc)), map(map), expr(expr)
+    : Statement(d, std::move(loc)), map(map), key(key), expr(expr)
 {
-  // If this is a block expression, then we skip through that and actually set
-  // the map on the underlying expression. This is done recursively. It is only
-  // done to support functions that need to know the type of the map to which
-  // they are being assigned.
-  Expression *value = expr;
-  while (true) {
-    auto *block = dynamic_cast<Block *>(value);
-    if (block == nullptr) {
-      break;
-    }
-    value = block->expr; // Must be non-null if expression.
-  };
-  value->map = map;
-};
+}
 
 AssignVarStatement::AssignVarStatement(Diagnostics &d,
                                        Variable *var,
@@ -222,7 +216,6 @@ AssignVarStatement::AssignVarStatement(Diagnostics &d,
                                        Location &&loc)
     : Statement(d, std::move(loc)), var(var), expr(expr)
 {
-  expr->var = var;
 }
 
 AssignVarStatement::AssignVarStatement(Diagnostics &d,
@@ -234,7 +227,6 @@ AssignVarStatement::AssignVarStatement(Diagnostics &d,
       var(var_decl_stmt->var),
       expr(expr)
 {
-  expr->var = var;
 }
 
 AssignConfigVarStatement::AssignConfigVarStatement(Diagnostics &d,

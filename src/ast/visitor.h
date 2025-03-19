@@ -92,9 +92,9 @@ public:
   {
     return default_value();
   }
-  R visit(Map &map)
+  R visit(Map &map __attribute__((__unused__)))
   {
-    return visitAndReplace(&map.key_expr);
+    return default_value();
   }
   R visit(Binop &binop)
   {
@@ -127,6 +127,12 @@ public:
   {
     return visitAndReplace(&acc.expr);
   }
+  R visit(MapAccess &acc)
+  {
+    visitAndReplace(&acc.map);
+    visitAndReplace(&acc.key);
+    return default_value();
+  }
   R visit(Cast &cast)
   {
     return visitAndReplace(&cast.expr);
@@ -139,9 +145,16 @@ public:
   {
     return visitAndReplace(&expr.expr);
   }
+  R visit(AssignScalarMapStatement &assignment)
+  {
+    visitAndReplace(&assignment.map);
+    visitAndReplace(&assignment.expr);
+    return default_value();
+  }
   R visit(AssignMapStatement &assignment)
   {
     visitAndReplace(&assignment.map);
+    visitAndReplace(&assignment.key);
     visitAndReplace(&assignment.expr);
     return default_value();
   }
@@ -185,7 +198,7 @@ public:
   R visit(For &for_loop)
   {
     visitAndReplace(&for_loop.decl);
-    visitAndReplace(&for_loop.expr);
+    visitAndReplace(&for_loop.map);
     visitImpl(for_loop.stmts);
     return default_value();
   }
@@ -330,43 +343,68 @@ public:
   }
   R visitAndReplace(Expression **expr)
   {
-    return tryVisitAndReplace<Expression,
-                              Integer *,
-                              PositionalParameter *,
-                              PositionalParameterCount *,
-                              String *,
-                              StackMode *,
-                              Identifier *,
-                              Builtin *,
-                              Call *,
-                              Sizeof *,
-                              Offsetof *,
-                              Map *,
-                              Variable *,
-                              Binop *,
-                              Unop *,
-                              FieldAccess *,
-                              ArrayAccess *,
-                              TupleAccess *,
-                              Cast *,
-                              Tuple *,
-                              Ternary *,
-                              Block *>(expr);
+    auto fn = [this, expr]() -> R {
+      return tryVisitAndReplace<Expression,
+                                Integer *,
+                                PositionalParameter *,
+                                PositionalParameterCount *,
+                                String *,
+                                StackMode *,
+                                Identifier *,
+                                Builtin *,
+                                Call *,
+                                Sizeof *,
+                                Offsetof *,
+                                Map *,
+                                Variable *,
+                                Binop *,
+                                Unop *,
+                                FieldAccess *,
+                                ArrayAccess *,
+                                MapAccess *,
+                                Cast *,
+                                Tuple *,
+                                Ternary *,
+                                Block *>(expr);
+    };
+    Impl *impl = static_cast<Impl *>(this);
+    if constexpr (!std::is_void_v<R>) {
+      auto rval = fn();
+      *expr = impl->replace(*expr, &rval);
+      return rval;
+    } else {
+      fn();
+      *expr = impl->replace(*expr, nullptr);
+      return default_value();
+    }
   }
   R visitAndReplace(Statement **stmt)
   {
-    return tryVisitAndReplace<Statement,
-                              ExprStatement *,
-                              VarDeclStatement *,
-                              AssignMapStatement *,
-                              AssignVarStatement *,
-                              AssignConfigVarStatement *,
-                              If *,
-                              Unroll *,
-                              Jump *,
-                              While *,
-                              For *,
-                              Config *>(stmt);
+    auto fn = [this, stmt]() -> R {
+      return tryVisitAndReplace<Statement,
+                                ExprStatement *,
+                                VarDeclStatement *,
+                                AssignMapStatement *,
+                                AssignScalarMapStatement *,
+                                AssignVarStatement *,
+                                AssignConfigVarStatement *,
+                                If *,
+                                Unroll *,
+                                Jump *,
+                                While *,
+                                For *,
+                                Config *>(stmt);
+    };
+    Impl *impl = static_cast<Impl *>(this);
+    if constexpr (!std::is_void_v<R>) {
+      auto rval = fn();
+      *stmt = impl->replace(*stmt, &rval);
+      return rval;
+    } else {
+      fn();
+      *stmt = impl->replace(*stmt, nullptr);
+      return default_value();
+    }
   }
 
 private:
