@@ -8,6 +8,7 @@
 
 #include "ast/ast.h"
 #include "ast/location.h"
+#include "ast/pass_manager.h"
 #include "types.h"
 
 namespace bpftrace {
@@ -87,7 +88,7 @@ private:
 //
 // Non-builtin functions are not allowed to share the same name. When a builtin
 // and a non-builtin function share a name, the non-builtin is preferred.
-class FunctionRegistry {
+class FunctionRegistry : public ast::State<"function-registry"> {
 public:
   const Function *add(Function::Origin origin,
                       std::string_view name,
