@@ -20,6 +20,13 @@
 
 namespace bpftrace {
 
+char ChildError::ID;
+
+void ChildError::log(llvm::raw_ostream& OS) const override;
+{
+  OS << "Child error: " << msg_;
+}
+
 constexpr unsigned int maxargs = 256;
 constexpr uint64_t CHILD_GO = 'g';
 constexpr uint64_t CHILD_PTRACE = 'p';
@@ -30,7 +37,7 @@ std::system_error SYS_ERROR(std::string msg)
   return { errno, std::generic_category(), msg };
 }
 
-static void report_status(int wstatus)
+static Error report_status(int wstatus)
 {
   std::stringstream msg;
   if (WIFSTOPPED(wstatus))
@@ -43,7 +50,7 @@ static void report_status(int wstatus)
     else
       msg << "Child aborted by signal: " << WTERMSIG(wstatus);
   }
-  throw std::runtime_error(msg.str());
+  return make_error<ChildError>(msg.str());
 }
 
 static int childfn(void* arg)
@@ -164,8 +171,10 @@ ChildProc::~ChildProc()
     close(child_event_fd_);
   }
 
-  if (is_alive())
+  if (is_alive()) {
+    ptrace(PTRACE_DETACH, child_pid_, nullptr, 0);
     terminate(true);
+  }
 }
 
 bool ChildProc::is_alive()
@@ -213,7 +222,7 @@ void ChildProc::run(bool pause)
   if (write(child_event_fd_, data, sizeof(*data)) < 0) {
     close(child_event_fd_);
     terminate(true);
-    throw SYS_ERROR("Failed to write 'go' event fd");
+    return make_error<ChildError>("Failed to write 'go' event fd");
   }
 
   close(child_event_fd_);
@@ -232,32 +241,30 @@ void ChildProc::run(bool pause)
   int wstatus;
   if (waitpid(child_pid_, &wstatus, 0) < 0) {
     if (errno == ECHILD)
-      throw std::runtime_error("Child died unexpectedly");
+      return make_error<ChildError>("Child died unexpectedly");
   }
 
   if (!WIFSTOPPED(wstatus) || WSTOPSIG(wstatus) != SIGSTOP)
-    report_status(wstatus);
+    return report_status(wstatus);
 
-  try {
-    if (ptrace(PTRACE_SETOPTIONS, child_pid_, nullptr, PTRACE_O_TRACEEXEC) < 0)
-      throw SYS_ERROR("Failed to PTRACE_SETOPTIONS child");
-
-    if (ptrace(PTRACE_CONT, child_pid_, nullptr, 0) < 0)
-      throw SYS_ERROR("Failed to PTRACE_CONT child");
-
-    if (waitpid(child_pid_, &wstatus, 0) < 0)
-      throw SYS_ERROR("Error while waiting for child");
-
-    if (WIFSTOPPED(wstatus) &&
-        wstatus >> 8 == (SIGTRAP | (PTRACE_EVENT_EXEC << 8)))
-      return;
-
-    report_status(wstatus);
-  } catch (const std::runtime_error& e) {
-    ptrace(PTRACE_DETACH, child_pid_, nullptr, 0);
-    terminate(true);
-    throw SYS_ERROR("Failed to write 'go' event fd");
+  if (ptrace(PTRACE_SETOPTIONS, child_pid_, nullptr, PTRACE_O_TRACEEXEC) < 0) {
+    return make_error<ChildError>("Failed to PTRACE_SETOPTIONS child");
   }
+
+  if (ptrace(PTRACE_CONT, child_pid_, nullptr, 0) < 0) {
+    return make_error<ChildError>("Failed to PTRACE_CONT child");
+  }
+
+  if (waitpid(child_pid_, &wstatus, 0) < 0) {
+    return make_error<ChildError>("Error while waiting for child");
+  }
+
+  if (WIFSTOPPED(wstatus) &&
+      wstatus >> 8 == (SIGTRAP | (PTRACE_EVENT_EXEC << 8))) {
+    return OK();
+  }
+
+  return report_status(wstatus);
 }
 
 // private

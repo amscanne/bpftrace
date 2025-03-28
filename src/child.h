@@ -4,7 +4,18 @@
 #include <string>
 #include <vector>
 
+#include "util/result.h"
+
 namespace bpftrace {
+
+class ChildError : public ErrorInfo<ChildError> {
+public:
+  static char ID;
+  void log(llvm::raw_ostream& OS) const override;
+
+private:
+  std::string msg_;
+};
 
 struct child_args {
   std::vector<std::string> cmd;
@@ -90,7 +101,7 @@ public:
   ChildProc(ChildProc&&) = delete;
   ChildProc& operator=(ChildProc&&) = delete;
 
-  void run(bool pause = false) override;
+  Result<OK> run(bool pause = false) override;
   void terminate(bool force = false) override;
   bool is_alive() override;
   void resume() override;
