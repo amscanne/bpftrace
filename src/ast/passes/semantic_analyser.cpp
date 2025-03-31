@@ -99,7 +99,7 @@ public:
   void visit(Call &call);
   void visit(Sizeof &szof);
   void visit(Offsetof &offof);
-  void visit(Map &map);
+  void visit(Map &map, bool check_key = true, bool is_read = true);
   void visit(MapDeclStatement &decl);
   void visit(Variable &var);
   void visit(Binop &binop);
@@ -794,14 +794,6 @@ void SemanticAnalyser::visit(Builtin &builtin)
   }
 }
 
-namespace {
-bool skip_key_validation(const Call &call)
-{
-  return call.func == "print" || call.func == "clear" || call.func == "zero" ||
-         call.func == "len";
-}
-} // namespace
-
 void SemanticAnalyser::visit(Call &call)
 {
   // Check for unsafe-ness first. It is likely the most pertinent issue
@@ -830,30 +822,6 @@ void SemanticAnalyser::visit(Call &call)
   };
 
   func_setter scope_bound_func_setter{ *this, call.func };
-
-  for (size_t i = 0; i < call.vargs.size(); ++i) {
-    auto &expr = *call.vargs[i];
-    func_arg_idx_ = i;
-
-    if (expr.is_map) {
-      Map &map = static_cast<Map &>(expr);
-
-      // If the map is indexed, don't skip key validation
-      if (map.key_expr == nullptr) {
-        // These calls expect just a map reference for the first argument
-        if ((call.func == "delete" || call.func == "has_key") && i == 0) {
-          map.skip_key_validation = true;
-          map.is_read = false;
-        } else if (skip_key_validation(call)) {
-          map.skip_key_validation = true;
-          map.is_read = false;
-        }
-      }
-    }
-
-    visit(expr);
-  }
-
   if (auto *probe = dynamic_cast<Probe *>(top_level_node_)) {
     for (auto *ap : probe->attach_points) {
       if (!check_available(call, *ap)) {
@@ -864,6 +832,7 @@ void SemanticAnalyser::visit(Call &call)
   }
 
   if (call.func == "hist") {
+    visit(call.vargs);
     check_assignment(call, true, false, false);
     if (!check_varargs(call, 1, 2))
       return;
@@ -886,6 +855,7 @@ void SemanticAnalyser::visit(Call &call)
 
     call.type = CreateHist();
   } else if (call.func == "lhist") {
+    visit(call.vargs);
     check_assignment(call, true, false, false);
     if (check_nargs(call, 4)) {
       check_arg(call, Type::integer, 0, false);
@@ -942,12 +912,14 @@ void SemanticAnalyser::visit(Call &call)
     }
     call.type = CreateLhist();
   } else if (call.func == "count") {
+    visit(call.vargs);
     check_assignment(call, true, false, false);
     (void)check_nargs(call, 0);
 
     call.type = CreateCount(true);
   } else if (call.func == "sum") {
     bool sign = false;
+    visit(call.vargs);
     check_assignment(call, true, false, false);
     if (check_nargs(call, 1)) {
       check_arg(call, Type::integer, 0);
@@ -956,6 +928,7 @@ void SemanticAnalyser::visit(Call &call)
     call.type = CreateSum(sign);
   } else if (call.func == "min") {
     bool sign = false;
+    visit(call.vargs);
     check_assignment(call, true, false, false);
     if (check_nargs(call, 1)) {
       check_arg(call, Type::integer, 0);
@@ -964,6 +937,7 @@ void SemanticAnalyser::visit(Call &call)
     call.type = CreateMin(sign);
   } else if (call.func == "max") {
     bool sign = false;
+    visit(call.vargs);
     check_assignment(call, true, false, false);
     if (check_nargs(call, 1)) {
       check_arg(call, Type::integer, 0);
@@ -971,12 +945,14 @@ void SemanticAnalyser::visit(Call &call)
     }
     call.type = CreateMax(sign);
   } else if (call.func == "avg") {
+    visit(call.vargs);
     check_assignment(call, true, false, false);
     if (check_nargs(call, 1)) {
       check_arg(call, Type::integer, 0);
     }
     call.type = CreateAvg(true);
   } else if (call.func == "stats") {
+    visit(call.vargs);
     check_assignment(call, true, false, false);
     if (check_nargs(call, 1)) {
       check_arg(call, Type::integer, 0);
@@ -1001,24 +977,32 @@ void SemanticAnalyser::visit(Call &call)
               call.vargs.at(0)->addError() << DELETE_ERROR;
             }
           }
-        } else {
+          visit(map, false, false);
+        }
+        // May be modified from above.
+        if (call.vargs.size() == 2) {
           if (map.key_expr) {
             call.vargs.at(0)->addError()
                 << "delete() expects a map with no keys for the first argument";
-          }
-          auto *map_key_type = get_map_key_type(map);
-          if (map_key_type) {
-            auto &arg1 = *call.vargs.at(1);
-            SizedType new_key_type = create_key_type(arg1.type, arg1);
-            update_current_key(*map_key_type, new_key_type);
-            validate_new_key(*map_key_type, new_key_type, map.ident, arg1);
+          } else {
+            visit(map, false, false);
+            auto *map_key_type = get_map_key_type(map);
+            if (map_key_type) {
+              auto &arg1 = *call.vargs.at(1);
+              visit(arg1);
+              SizedType new_key_type = create_key_type(arg1.type, arg1);
+              update_current_key(*map_key_type, new_key_type);
+              validate_new_key(*map_key_type, new_key_type, map.ident, arg1);
+            }
           }
         }
       }
     }
     call.type = CreateNone();
   } else if (call.func == "has_key") {
+    // N.B. arguments are visited below.
     if (check_varargs(call, 2, 2)) {
+      visit(call.vargs.at(1));
       auto &arg0 = *call.vargs.at(0);
       if (!arg0.is_map) {
         arg0.addError() << "has_key() expects the first argument to be a map";
@@ -1029,6 +1013,7 @@ void SemanticAnalyser::visit(Call &call)
               << "has_key() expects the first argument to be a map. Not a map "
                  "value expression.";
         }
+        visit(map, false, false);
         auto *mapkey = get_map_key_type(map);
         if (mapkey) {
           if (mapkey->IsNoneTy()) {
@@ -1052,6 +1037,7 @@ void SemanticAnalyser::visit(Call &call)
     // https://github.com/bpftrace/bpftrace/issues/3502
     call.type = CreateUInt8();
   } else if (call.func == "str") {
+    visit(call.vargs);
     if (check_varargs(call, 1, 2)) {
       auto *arg = call.vargs.at(0);
       auto &t = arg->type;
@@ -1105,6 +1091,7 @@ void SemanticAnalyser::visit(Call &call)
     }
     has_pos_param_ = false;
   } else if (call.func == "buf") {
+    visit(call.vargs);
     const uint64_t max_strlen = bpftrace_.config_->get(
         ConfigKeyInt::max_strlen);
     if (max_strlen >
@@ -1171,6 +1158,7 @@ void SemanticAnalyser::visit(Call &call)
     // The result of buf is copied to bpf stack. Hence kernel probe read
     call.type.SetAS(AddrSpace::kernel);
   } else if (call.func == "ksym" || call.func == "usym") {
+    visit(call.vargs);
     if (check_nargs(call, 1)) {
       // allow symbol lookups on casts (eg, function pointers)
       auto &arg = *call.vargs.at(0);
@@ -1185,6 +1173,7 @@ void SemanticAnalyser::visit(Call &call)
     else if (call.func == "usym")
       call.type = CreateUSym();
   } else if (call.func == "ntop") {
+    visit(call.vargs);
     if (!check_varargs(call, 1, 2))
       return;
 
@@ -1219,6 +1208,7 @@ void SemanticAnalyser::visit(Call &call)
 
     call.type = CreateInet(buffer_size);
   } else if (call.func == "pton") {
+    visit(call.vargs);
     if (!check_nargs(call, 1))
       return;
     std::string addr = bpftrace_.get_string_literal(call.vargs.at(0));
@@ -1251,6 +1241,7 @@ void SemanticAnalyser::visit(Call &call)
     call.type.SetAS(AddrSpace::kernel);
     call.type.is_internal = true;
   } else if (call.func == "join") {
+    visit(call.vargs);
     check_assignment(call, false, false, false);
     call.type = CreateNone();
 
@@ -1269,6 +1260,7 @@ void SemanticAnalyser::visit(Call &call)
     if (call.vargs.size() > 1)
       check_arg(call, Type::string, 1, true);
   } else if (call.func == "reg") {
+    visit(call.vargs);
     if (check_nargs(call, 1)) {
       if (check_arg(call, Type::string, 0, true)) {
         auto reg_name = bpftrace_.get_string_literal(call.vargs.at(0));
@@ -1291,12 +1283,14 @@ void SemanticAnalyser::visit(Call &call)
       call.type.SetAS(AddrSpace::kernel);
     }
   } else if (call.func == "kaddr") {
+    visit(call.vargs);
     if (check_nargs(call, 1)) {
       check_arg(call, Type::string, 0, true);
     }
     call.type = CreateUInt64();
     call.type.SetAS(AddrSpace::kernel);
   } else if (call.func == "percpu_kaddr") {
+    visit(call.vargs);
     if (check_varargs(call, 1, 2)) {
       check_arg(call, Type::string, 0, true);
       if (call.vargs.size() == 2)
@@ -1311,6 +1305,7 @@ void SemanticAnalyser::visit(Call &call)
     call.type = CreateUInt64();
     call.type.SetAS(AddrSpace::kernel);
   } else if (call.func == "uaddr") {
+    visit(call.vargs);
     auto *probe = get_probe(call, call.func);
     if (probe == nullptr)
       return;
@@ -1353,12 +1348,14 @@ void SemanticAnalyser::visit(Call &call)
     }
     call.type = CreatePointer(CreateInt(pointee_size), AddrSpace::user);
   } else if (call.func == "cgroupid") {
+    visit(call.vargs);
     if (check_nargs(call, 1)) {
       check_arg(call, Type::string, 0, true);
     }
     call.type = CreateUInt64();
   } else if (call.func == "printf" || call.func == "system" ||
              call.func == "cat" || call.func == "debugf") {
+    visit(call.vargs);
     check_assignment(call, false, false, false);
     if (check_varargs(call, 1, 128)) {
       check_arg(call, Type::string, 0, true);
@@ -1396,6 +1393,7 @@ void SemanticAnalyser::visit(Call &call)
 
     call.type = CreateNone();
   } else if (call.func == "exit") {
+    visit(call.vargs);
     check_assignment(call, false, false, false);
 
     if (!check_varargs(call, 0, 1))
@@ -1404,6 +1402,7 @@ void SemanticAnalyser::visit(Call &call)
     if (call.vargs.size() == 1)
       check_arg(call, Type::integer, 0);
   } else if (call.func == "print") {
+    // N.B. arguments are visited below.
     check_assignment(call, false, false, false);
     if (in_loop() && is_final_pass() && call.vargs.at(0)->is_map) {
       call.addWarning()
@@ -1411,11 +1410,18 @@ void SemanticAnalyser::visit(Call &call)
              "lead to unexpected behavior. The map will likely be updated "
              "before the runtime can 'print' it.";
     }
+    if (call.vargs.size() > 1) {
+      visit(call.vargs.at(1));
+    }
+    if (call.vargs.size() > 2) {
+      visit(call.vargs.at(2));
+    }
     if (check_varargs(call, 1, 3)) {
       auto &arg = *call.vargs.at(0);
       if (arg.is_map) {
         Map &map = static_cast<Map &>(arg);
         if (map.key_expr) {
+          visit(map); // Evaluate the expression.
           if (call.vargs.size() > 1) {
             call.addError() << "Single-value (i.e. indexed) map "
                                "print cannot take additional "
@@ -1426,6 +1432,10 @@ void SemanticAnalyser::visit(Call &call)
                 << " cannot print the value of individual keys. You must print "
                    "the whole map.";
           }
+        } else {
+          // Evaluate the type only. This doesn't count as a read either, since
+          // it will be dispatched via the asynchronous mechanism.
+          visit(map, false, false);
         }
 
         if (is_final_pass()) {
@@ -1439,32 +1449,36 @@ void SemanticAnalyser::visit(Call &call)
                    "stats() maps.";
           }
         }
-      }
-      // Note that IsPrintableTy() is somewhat disingenuous here. Printing a
-      // non-map value requires being able to serialize the entire value, so
-      // map-backed types like count(), min(), max(), etc. cannot be printed
-      // through the non-map printing mechanism.
-      //
-      // We rely on the fact that semantic analysis enforces types like count(),
-      // min(), max(), etc. to be assigned directly to a map. This ensures that
-      // the previous `arg.is_map` arm is hit first.
-      else if (arg.type.IsPrintableTy()) {
-        if (call.vargs.size() != 1)
-          call.addError() << "Non-map print() only takes 1 argument, "
-                          << call.vargs.size() << " found";
       } else {
-        if (is_final_pass())
-          call.addError() << arg.type << " type passed to " << call.func
-                          << "() is not printable";
+        visit(arg);
+        // Note that IsPrintableTy() is somewhat disingenuous here. Printing a
+        // non-map value requires being able to serialize the entire value, so
+        // map-backed types like count(), min(), max(), etc. cannot be printed
+        // through the non-map printing mechanism.
+        //
+        // We rely on the fact that semantic analysis enforces types like
+        // count(), min(), max(), etc. to be assigned directly to a map. This
+        // ensures that the previous `arg.is_map` arm is hit first.
+        if (arg.type.IsPrintableTy()) {
+          if (call.vargs.size() != 1)
+            call.addError() << "Non-map print() only takes 1 argument, "
+                            << call.vargs.size() << " found";
+        } else {
+          if (is_final_pass())
+            call.addError() << arg.type << " type passed to " << call.func
+                            << "() is not printable";
+        }
       }
     }
   } else if (call.func == "cgroup_path") {
+    visit(call.vargs);
     call.type = CreateCgroupPath();
     if (check_varargs(call, 1, 2)) {
       check_arg(call, Type::integer, 0, false);
       call.vargs.size() > 1 && check_arg(call, Type::string, 1, false);
     }
   } else if (call.func == "clear") {
+    // N.B. we don't visit the passed map.
     check_assignment(call, false, false, false);
     if (check_nargs(call, 1)) {
       auto &arg = *call.vargs.at(0);
@@ -1476,9 +1490,11 @@ void SemanticAnalyser::visit(Call &call)
           call.addError() << "The map passed to " << call.func
                           << "() should not be " << "indexed by a key";
         }
+        visit(map, false, false);
       }
     }
   } else if (call.func == "zero") {
+    // N.B. we don't visit the passed map.
     check_assignment(call, false, false, false);
     if (check_nargs(call, 1)) {
       auto &arg = *call.vargs.at(0);
@@ -1490,9 +1506,11 @@ void SemanticAnalyser::visit(Call &call)
           call.addError() << "The map passed to " << call.func
                           << "() should not be " << "indexed by a key";
         }
+        visit(map, false, false);
       }
     }
   } else if (call.func == "len") {
+    // N.B. we don't visit the passed map.
     if (check_nargs(call, 1)) {
       auto &arg = *call.vargs.at(0);
       if (arg.is_map) {
@@ -1501,11 +1519,17 @@ void SemanticAnalyser::visit(Call &call)
           call.addError() << "The map passed to " << call.func
                           << "() should not be " << "indexed by a key";
         }
-      } else if (!arg.type.IsStack())
-        call.addError() << "len() expects a map or stack to be provided";
+        visit(map, false, false);
+      } else {
+        visit(arg);
+        if (!arg.type.IsStack()) {
+          call.addError() << "len() expects a map or stack to be provided";
+        }
+      }
       call.type = CreateInt64();
     }
   } else if (call.func == "time") {
+    visit(call.vargs);
     check_assignment(call, false, false, false);
     if (check_varargs(call, 0, 1)) {
       if (is_final_pass()) {
@@ -1514,6 +1538,7 @@ void SemanticAnalyser::visit(Call &call)
       }
     }
   } else if (call.func == "strftime") {
+    visit(call.vargs);
     call.type = CreateTimestamp();
     if (check_varargs(call, 2, 2) && is_final_pass() &&
         check_arg(call, Type::string, 0, true) &&
@@ -1525,10 +1550,13 @@ void SemanticAnalyser::visit(Call &call)
       }
     }
   } else if (call.func == "kstack") {
+    visit(call.vargs);
     check_stack_call(call, true);
   } else if (call.func == "ustack") {
+    visit(call.vargs);
     check_stack_call(call, false);
   } else if (call.func == "signal") {
+    visit(call.vargs);
     if (!bpftrace_.feature_->has_helper_send_signal()) {
       call.addError()
           << "BPF_FUNC_send_signal not available for your kernel version";
@@ -1558,6 +1586,7 @@ void SemanticAnalyser::visit(Call &call)
       call.addError() << "signal only accepts string literals or integers";
     }
   } else if (call.func == "path") {
+    visit(call.vargs);
     auto *probe = get_probe(call, call.func);
     if (probe == nullptr)
       return;
@@ -1606,10 +1635,12 @@ void SemanticAnalyser::visit(Call &call)
                         << "'fentry', 'fexit', 'iter' probes";
     }
   } else if (call.func == "strerror") {
+    visit(call.vargs);
     call.type = CreateStrerror();
     if (check_nargs(call, 1))
       check_arg(call, Type::integer, 0, false);
   } else if (call.func == "strncmp") {
+    visit(call.vargs);
     if (check_nargs(call, 3)) {
       check_arg(call, Type::string, 0);
       check_arg(call, Type::string, 1);
@@ -1624,6 +1655,7 @@ void SemanticAnalyser::visit(Call &call)
     }
     call.type = CreateUInt64();
   } else if (call.func == "strcontains") {
+    visit(call.vargs);
     static constexpr auto warning = R"(
 strcontains() is known to have verifier complexity issues when the product of both string sizes is larger than ~2000 bytes.
 
@@ -1646,6 +1678,7 @@ If you're seeing errors, try clamping the string sizes. For example:
     }
     call.type = CreateUInt64();
   } else if (call.func == "override") {
+    visit(call.vargs);
     auto *probe = get_probe(call, call.func);
     if (probe == nullptr)
       return;
@@ -1666,6 +1699,7 @@ If you're seeing errors, try clamping the string sizes. For example:
       }
     }
   } else if (call.func == "kptr" || call.func == "uptr") {
+    visit(call.vargs);
     if (!check_nargs(call, 1))
       return;
 
@@ -1682,6 +1716,7 @@ If you're seeing errors, try clamping the string sizes. For example:
     call.type = call.vargs.front()->type;
     call.type.SetAS(as);
   } else if (call.func == "macaddr") {
+    visit(call.vargs);
     if (!check_nargs(call, 1))
       return;
 
@@ -1703,12 +1738,14 @@ If you're seeing errors, try clamping the string sizes. For example:
 
     call.type = CreateMacAddress();
   } else if (call.func == "unwatch") {
+    visit(call.vargs);
     if (check_nargs(call, 1))
       check_arg(call, Type::integer, 0);
 
     // Return type cannot be used
     call.type = SizedType(Type::none, 0);
   } else if (call.func == "bswap") {
+    visit(call.vargs);
     if (!check_nargs(call, 1))
       return;
 
@@ -1721,6 +1758,7 @@ If you're seeing errors, try clamping the string sizes. For example:
 
     call.type = CreateUInt(arg->type.GetIntBitWidth());
   } else if (call.func == "skboutput") {
+    visit(call.vargs);
     if (!bpftrace_.feature_->has_skb_output()) {
       call.addError() << "BPF_FUNC_skb_output is not available for your kernel "
                          "version";
@@ -1743,6 +1781,7 @@ If you're seeing errors, try clamping the string sizes. For example:
     }
     call.type = CreateUInt32();
   } else if (call.func == "nsecs") {
+    visit(call.vargs);
     if (check_varargs(call, 0, 1)) {
       call.type = CreateUInt64();
       call.type.ts_mode = TimestampMode::boot;
@@ -1762,6 +1801,7 @@ If you're seeing errors, try clamping the string sizes. For example:
       }
     }
   } else {
+    visit(call.vargs);
     call.addError() << "Unknown function: '" << call.func << "'";
     call.type = CreateNone();
   }
@@ -1926,22 +1966,17 @@ void SemanticAnalyser::visit(MapDeclStatement &decl)
   }
 }
 
-void SemanticAnalyser::visit(Map &map)
+void SemanticAnalyser::visit(Map &map, bool check_key, bool is_read)
 {
-  SizedType new_key_type = CreateNone();
-  bool key_is_map = false;
-  if (map.key_expr) {
-    visit(map.key_expr);
-    key_is_map = map.key_expr->is_map;
-    new_key_type = create_key_type(map.key_expr->type, *map.key_expr);
-  }
+  visit(map.key_expr);
 
-  if (!map.skip_key_validation) {
+  if (check_key) {
+    if (map.key_type.IsNoneTy() && map.key_expr != nullptr) {
+      map.key_type = create_key_type(map.key_expr->type, *map.key_expr);
+    }
+
     if (const auto &key = map_key_.find(map.ident); key != map_key_.end()) {
-      if (map.key_expr) {
-        update_current_key(key->second, new_key_type);
-        validate_new_key(key->second, new_key_type, map.ident, map);
-      } else {
+      if (map.key_expr == nullptr) {
         if (!key->second.IsNoneTy()) {
           map.addError()
               << "Argument mismatch for " << map.ident << ": "
@@ -1950,13 +1985,27 @@ void SemanticAnalyser::visit(Map &map)
                  "'"
               << key->second << "'";
         }
+      } else if (!map.key_type.IsNoneTy()) {
+        update_current_key(key->second, map.key_type);
+        validate_new_key(key->second, map.key_type, map.ident, map);
+      } else {
+        // We have a non-null key_expr, but a None key_type. This means that
+        // the expression likely can't be evaluated yet.
       }
-    } else {
+      // On the final pass, grab the converged/larger type.
+      if (is_final_pass()) {
+        map.key_type = key->second;
+      }
+    } else if (map.key_expr == nullptr || !map.key_type.IsNoneTy()) {
       // If the key used is a map, we might not have the type of it yet
       // e.g. `BEGIN { @mymap[@i] = "hello"; @i = 1; }`
-      if (!key_is_map || !new_key_type.IsNoneTy()) {
-        map_key_.insert({ map.ident, new_key_type });
-      }
+      map_key_.insert({ map.ident, map.key_type });
+    }
+  } else {
+    // Passively update the type.
+    auto map_key_search_val = map_key_.find(map.ident);
+    if (map_key_search_val != map_key_.end()) {
+      map.key_type = map_key_search_val->second;
     }
   }
 
@@ -1964,7 +2013,7 @@ void SemanticAnalyser::visit(Map &map)
   if (search_val != map_val_.end()) {
     map.type = search_val->second;
 
-    if (map.is_read && map.type.IsCastableMapTy() &&
+    if (is_read && map.type.IsCastableMapTy() &&
         !bpftrace_.feature_->has_helper_map_lookup_percpu_elem()) {
       map.addError()
           << "Missing required kernel feature: map_lookup_percpu_elem";
@@ -1977,13 +2026,6 @@ void SemanticAnalyser::visit(Map &map)
     }
     pass_tracker_.inc_num_unresolved();
     map.type = CreateNone();
-  }
-
-  auto map_key_search_val = map_key_.find(map.ident);
-  if (map_key_search_val != map_key_.end()) {
-    map.key_type = map_key_search_val->second;
-  } else {
-    map.key_type = CreateNone();
   }
 
   if (is_final_pass()) {
@@ -2701,6 +2743,13 @@ void SemanticAnalyser::visit(For &f)
     return;
   }
   Map &map = static_cast<Map &>(*f.expr);
+  if (map.key_expr != nullptr) {
+    map.addError() << "Loop expression must be a map without a key";
+    return;
+  }
+
+  // Evaluate type without keys.
+  visit(map, false);
 
   if (!map.type.IsMapIterableTy()) {
     f.expr->addError() << "Loop expression does not support type: " << map.type;
@@ -2715,9 +2764,6 @@ void SemanticAnalyser::visit(For &f)
     n.addError() << "'" << opstr(n)
                  << "' statement is not allowed in a for-loop";
   }
-
-  map.skip_key_validation = true;
-  visit(map);
 
   if (!ctx_.diagnostics().ok())
     return;
@@ -3076,9 +3122,8 @@ static const std::unordered_map<Type, std::string_view> AGGREGATE_HINTS{
 
 void SemanticAnalyser::visit(AssignMapStatement &assignment)
 {
-  assignment.map->is_read = false;
-  visit(assignment.map);
   visit(assignment.expr);
+  visit(*assignment.map, true, false);
 
   const auto *map_type_before = get_map_type(*assignment.map);
   if (!is_valid_assignment(assignment.map, assignment.expr)) {

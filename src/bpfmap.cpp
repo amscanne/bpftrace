@@ -164,7 +164,8 @@ bool bpf_map_types_compatible(const SizedType &val_type,
   }
 
   // This doesn't work the opposite way
-  if (kind == libbpf::BPF_MAP_TYPE_PERCPU_HASH &&
+  if ((kind == libbpf::BPF_MAP_TYPE_PERCPU_HASH ||
+       kind == libbpf::BPF_MAP_TYPE_LRU_PERCPU_HASH) &&
       kind_from_stype == libbpf::BPF_MAP_TYPE_PERCPU_ARRAY) {
     return true;
   }
