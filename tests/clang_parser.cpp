@@ -37,7 +37,7 @@ TEST(clang_parser, integers)
   parse("struct Foo { int x; int y, z; }", bpftrace);
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo"));
-  auto foo = bpftrace.structs.Lookup("struct Foo").lock();
+  auto foo = bpftrace.structs.Lookup("struct Foo");
 
   EXPECT_EQ(foo->size, 12);
   ASSERT_EQ(foo->fields.size(), 3U);
@@ -64,7 +64,7 @@ TEST(clang_parser, c_union)
   parse("union Foo { char c; short s; int i; long l; }", bpftrace);
 
   ASSERT_TRUE(bpftrace.structs.Has("union Foo"));
-  auto foo = bpftrace.structs.Lookup("union Foo").lock();
+  auto foo = bpftrace.structs.Lookup("union Foo");
 
   EXPECT_EQ(foo->size, 8);
   ASSERT_EQ(foo->fields.size(), 4U);
@@ -96,7 +96,7 @@ TEST(clang_parser, c_enum)
   parse("enum E { NONE, SOME = 99, }; struct Foo { enum E e; }", bpftrace);
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo"));
-  auto foo = bpftrace.structs.Lookup("struct Foo").lock();
+  auto foo = bpftrace.structs.Lookup("struct Foo");
 
   EXPECT_EQ(foo->size, 4);
   ASSERT_EQ(foo->fields.size(), 1U);
@@ -199,7 +199,7 @@ TEST(clang_parser, integer_ptr)
   parse("struct Foo { int *x; }", bpftrace);
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo"));
-  auto foo = bpftrace.structs.Lookup("struct Foo").lock();
+  auto foo = bpftrace.structs.Lookup("struct Foo");
 
   EXPECT_EQ(foo->size, 8);
   ASSERT_EQ(foo->fields.size(), 1U);
@@ -217,7 +217,7 @@ TEST(clang_parser, string_ptr)
   parse("struct Foo { char *str; }", bpftrace);
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo"));
-  auto foo = bpftrace.structs.Lookup("struct Foo").lock();
+  auto foo = bpftrace.structs.Lookup("struct Foo");
 
   EXPECT_EQ(foo->size, 8);
   ASSERT_EQ(foo->fields.size(), 1U);
@@ -236,7 +236,7 @@ TEST(clang_parser, string_array)
   parse("struct Foo { char str[32]; }", bpftrace);
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo"));
-  auto foo = bpftrace.structs.Lookup("struct Foo").lock();
+  auto foo = bpftrace.structs.Lookup("struct Foo");
 
   EXPECT_EQ(foo->size, 32);
   ASSERT_EQ(foo->fields.size(), 1U);
@@ -254,7 +254,7 @@ TEST(clang_parser, nested_struct_named)
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo"));
   ASSERT_TRUE(bpftrace.structs.Has("struct Bar"));
-  auto foo = bpftrace.structs.Lookup("struct Foo").lock();
+  auto foo = bpftrace.structs.Lookup("struct Foo");
 
   EXPECT_EQ(foo->size, 4);
   ASSERT_EQ(foo->fields.size(), 1U);
@@ -274,7 +274,7 @@ TEST(clang_parser, nested_struct_ptr_named)
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo"));
   ASSERT_TRUE(bpftrace.structs.Has("struct Bar"));
-  auto foo = bpftrace.structs.Lookup("struct Foo").lock();
+  auto foo = bpftrace.structs.Lookup("struct Foo");
 
   EXPECT_EQ(foo->size, 8);
   ASSERT_EQ(foo->fields.size(), 1U);
@@ -302,9 +302,9 @@ TEST(clang_parser, nested_struct_no_type)
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo"));
   ASSERT_TRUE(bpftrace.structs.Has(bar_name));
   ASSERT_TRUE(bpftrace.structs.Has(baz_name));
-  auto foo = bpftrace.structs.Lookup("struct Foo").lock();
-  auto bar = bpftrace.structs.Lookup(bar_name).lock();
-  auto baz = bpftrace.structs.Lookup(baz_name).lock();
+  auto foo = bpftrace.structs.Lookup("struct Foo");
+  auto bar = bpftrace.structs.Lookup(bar_name);
+  auto baz = bpftrace.structs.Lookup(baz_name);
 
   EXPECT_EQ(foo->size, 8);
   ASSERT_EQ(foo->fields.size(), 2U);
@@ -353,8 +353,8 @@ TEST(clang_parser, nested_struct_unnamed_fields)
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo"));
   ASSERT_TRUE(bpftrace.structs.Has("struct Bar"));
-  auto foo = bpftrace.structs.Lookup("struct Foo").lock();
-  auto bar = bpftrace.structs.Lookup("struct Bar").lock();
+  auto foo = bpftrace.structs.Lookup("struct Foo");
+  auto bar = bpftrace.structs.Lookup("struct Bar");
 
   EXPECT_EQ(foo->size, 12);
   ASSERT_EQ(foo->fields.size(), 3U);
@@ -397,7 +397,7 @@ TEST(clang_parser, nested_struct_anon_union_struct)
         bpftrace);
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo"));
-  auto foo = bpftrace.structs.Lookup("struct Foo").lock();
+  auto foo = bpftrace.structs.Lookup("struct Foo");
 
   EXPECT_EQ(foo->size, 16);
   ASSERT_EQ(foo->fields.size(), 5U);
@@ -434,7 +434,7 @@ TEST(clang_parser, bitfields)
   parse("struct Foo { int a:8, b:8, c:16; }", bpftrace);
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo"));
-  auto foo = bpftrace.structs.Lookup("struct Foo").lock();
+  auto foo = bpftrace.structs.Lookup("struct Foo");
 
   EXPECT_EQ(foo->size, 4);
   ASSERT_EQ(foo->fields.size(), 3U);
@@ -478,7 +478,7 @@ TEST(clang_parser, bitfields_uneven_fields)
   parse("struct Foo { int a:1, b:1, c:3, d:20, e:7; }", bpftrace);
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo"));
-  auto foo = bpftrace.structs.Lookup("struct Foo").lock();
+  auto foo = bpftrace.structs.Lookup("struct Foo");
 
   EXPECT_EQ(foo->size, 4);
   ASSERT_EQ(foo->fields.size(), 5U);
@@ -540,7 +540,7 @@ TEST(clang_parser, bitfields_with_padding)
   parse("struct Foo { int pad; int a:28, b:4; long int end;}", bpftrace);
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo"));
-  auto foo = bpftrace.structs.Lookup("struct Foo").lock();
+  auto foo = bpftrace.structs.Lookup("struct Foo");
 
   // clang-tidy doesn't seem to acknowledge that ASSERT_*() will
   // return from function so that these are in fact checked accesses.
@@ -578,7 +578,7 @@ TEST(clang_parser, builtin_headers)
   parse("#include <stddef.h>\nstruct Foo { size_t x, y, z; }", bpftrace);
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo"));
-  auto foo = bpftrace.structs.Lookup("struct Foo").lock();
+  auto foo = bpftrace.structs.Lookup("struct Foo");
 
   EXPECT_EQ(foo->size, 24);
   ASSERT_EQ(foo->fields.size(), 3U);
@@ -638,10 +638,10 @@ TEST_F(clang_parser_btf, btf)
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo2"));
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo3"));
   ASSERT_TRUE(bpftrace.structs.Has("struct task_struct"));
-  auto foo1 = bpftrace.structs.Lookup("struct Foo1").lock();
-  auto foo2 = bpftrace.structs.Lookup("struct Foo2").lock();
-  auto foo3 = bpftrace.structs.Lookup("struct Foo3").lock();
-  auto task_struct = bpftrace.structs.Lookup("struct task_struct").lock();
+  auto foo1 = bpftrace.structs.Lookup("struct Foo1");
+  auto foo2 = bpftrace.structs.Lookup("struct Foo2");
+  auto foo3 = bpftrace.structs.Lookup("struct Foo3");
+  auto task_struct = bpftrace.structs.Lookup("struct task_struct");
 
   EXPECT_EQ(foo1->size, 16);
   ASSERT_EQ(foo1->fields.size(), 3U);
@@ -712,7 +712,7 @@ TEST_F(clang_parser_btf, DISABLED_btf_arrays_multi_dim)
   parse("struct Foo { struct Arrays a; };", bpftrace);
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Arrays"));
-  auto arrs = bpftrace.structs.Lookup("struct Arrays").lock();
+  auto arrs = bpftrace.structs.Lookup("struct Arrays");
 
   ASSERT_TRUE(arrs->HasField("multi_dim"));
   EXPECT_TRUE(arrs->GetField("multi_dim").type.IsArrayTy());
@@ -748,7 +748,7 @@ TEST(clang_parser, btf_unresolved_typedef)
   parse("struct Foo { size_t x; };", bpftrace);
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo"));
-  auto foo = bpftrace.structs.Lookup("struct Foo").lock();
+  auto foo = bpftrace.structs.Lookup("struct Foo");
 
   EXPECT_EQ(foo->size, 8);
   ASSERT_EQ(foo->fields.size(), 1U);
@@ -770,7 +770,7 @@ TEST_F(clang_parser_btf, btf_type_override)
         "kprobe:sys_read { @x = ((struct Foo1 *)curtask); }");
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo1"));
-  auto foo1 = bpftrace.structs.Lookup("struct Foo1").lock();
+  auto foo1 = bpftrace.structs.Lookup("struct Foo1");
   ASSERT_EQ(foo1->fields.size(), 1U);
   ASSERT_TRUE(foo1->HasField("a"));
 
@@ -802,8 +802,8 @@ TEST(clang_parser, struct_typedef)
 
   ASSERT_TRUE(bpftrace.structs.Has("struct max_align_t"));
   ASSERT_TRUE(bpftrace.structs.Has("max_align_t"));
-  auto max_align_struct = bpftrace.structs.Lookup("struct max_align_t").lock();
-  auto max_align_typedef = bpftrace.structs.Lookup("max_align_t").lock();
+  auto max_align_struct = bpftrace.structs.Lookup("struct max_align_t");
+  auto max_align_typedef = bpftrace.structs.Lookup("max_align_t");
 
   // Non-typedef'd struct
   EXPECT_EQ(max_align_struct->size, 4);
@@ -844,7 +844,7 @@ TEST(clang_parser, struct_qualifiers)
         bpftrace);
 
   ASSERT_TRUE(bpftrace.structs.Has("struct b"));
-  auto SB = bpftrace.structs.Lookup("struct b").lock();
+  auto SB = bpftrace.structs.Lookup("struct b");
   EXPECT_EQ(SB->size, 16);
   EXPECT_EQ(SB->fields.size(), 2U);
 
@@ -878,8 +878,7 @@ struct _tracepoint_irq_irq_handler_entry
 
   ASSERT_TRUE(bpftrace.structs.Has("struct _tracepoint_irq_irq_handler_entry"));
 
-  auto s = bpftrace.structs.Lookup("struct _tracepoint_irq_irq_handler_entry")
-               .lock();
+  auto s = bpftrace.structs.Lookup("struct _tracepoint_irq_irq_handler_entry");
   EXPECT_EQ(s->size, 16);
   EXPECT_EQ(s->fields.size(), 3U);
 

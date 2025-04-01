@@ -79,11 +79,11 @@ protected:
         CreateNone(),
         {
             Param{ "a",
-                   CreateTuple(structs_.AddTuple(
+                   CreateTuple(Struct::CreateTuple(
                        { CreateInt32(), CreateString(64) })) },
         });
 
-    auto unique_struct_arg = structs_.Add("unique_struct_arg", 8).lock();
+    auto unique_struct_arg = structs_.Add("unique_struct_arg", 8);
     unique_struct_arg->AddField("x", CreateInt64(), 0);
     unique_struct_ = reg_.add(
         Function::Origin::Builtin,
@@ -267,11 +267,11 @@ TEST_F(TestFunctionRegistryPopulated, unique_string)
 TEST_F(TestFunctionRegistryPopulated, unique_tuple)
 {
   auto tuple1 = CreateTuple(
-      structs_.AddTuple({ CreateInt16(), CreateString(64) }));
+      Struct::CreateTuple({ CreateInt16(), CreateString(64) }));
   auto tuple2 = CreateTuple(
-      structs_.AddTuple({ CreateInt32(), CreateString(64) }));
+      Struct::CreateTuple({ CreateInt32(), CreateString(64) }));
   auto tuple3 = CreateTuple(
-      structs_.AddTuple({ CreateInt64(), CreateString(64) }));
+      Struct::CreateTuple({ CreateInt64(), CreateString(64) }));
 
   test("unique_tuple", { tuple1 }, unique_tuple_);
   test("unique_tuple", { tuple2 }, unique_tuple_);
@@ -294,12 +294,11 @@ TEST_F(TestFunctionRegistryPopulated, unique_struct)
 {
   auto exact_struct = structs_.Lookup("unique_struct_arg");
 
-  auto compatible_struct =
-      structs_.Add("same_layout_as_unique_struct_arg", 8).lock();
+  auto compatible_struct = structs_.Add("same_layout_as_unique_struct_arg", 8);
   compatible_struct->AddField("x", CreateInt64(), 0);
 
-  auto different_struct =
-      structs_.Add("different_layout_to_unique_struct_arg", 2).lock();
+  auto different_struct = structs_.Add("different_layout_to_unique_struct_arg",
+                                       2);
   different_struct->AddField("a", CreateInt8(), 0);
   different_struct->AddField("b", CreateInt8(), 0);
 

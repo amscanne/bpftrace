@@ -72,9 +72,9 @@ TEST_F(field_analyser_btf, btf_types)
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo1"));
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo2"));
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo3"));
-  auto foo1 = bpftrace.structs.Lookup("struct Foo1").lock();
-  auto foo2 = bpftrace.structs.Lookup("struct Foo2").lock();
-  auto foo3 = bpftrace.structs.Lookup("struct Foo3").lock();
+  auto foo1 = bpftrace.structs.Lookup("struct Foo1");
+  auto foo2 = bpftrace.structs.Lookup("struct Foo2");
+  auto foo3 = bpftrace.structs.Lookup("struct Foo3");
 
   EXPECT_EQ(foo1->size, 16);
   ASSERT_EQ(foo1->fields.size(), 3U);
@@ -139,7 +139,7 @@ TEST_F(field_analyser_btf, btf_arrays)
        0);
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Arrays"));
-  auto arrs = bpftrace.structs.Lookup("struct Arrays").lock();
+  auto arrs = bpftrace.structs.Lookup("struct Arrays");
 
   EXPECT_EQ(arrs->size, 64);
   ASSERT_EQ(arrs->fields.size(), 6U);
@@ -200,7 +200,7 @@ TEST_F(field_analyser_btf, DISABLED_btf_arrays_multi_dim)
        0);
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Arrays"));
-  auto arrs = bpftrace.structs.Lookup("struct Arrays").lock();
+  auto arrs = bpftrace.structs.Lookup("struct Arrays");
 
   ASSERT_TRUE(arrs->HasField("multi_dim"));
   EXPECT_TRUE(arrs->GetField("multi_dim").type.IsArrayTy());
@@ -227,7 +227,7 @@ TEST_F(field_analyser_btf, DISABLED_btf_arrays_multi_dim)
 void test_arrays_compound_data(BPFtrace &bpftrace)
 {
   ASSERT_TRUE(bpftrace.structs.Has("struct ArrayWithCompoundData"));
-  auto arrs = bpftrace.structs.Lookup("struct ArrayWithCompoundData").lock();
+  auto arrs = bpftrace.structs.Lookup("struct ArrayWithCompoundData");
 
   EXPECT_EQ(arrs->size, 2 * sizeof(uintptr_t));
   ASSERT_EQ(arrs->fields.size(), 1U);
@@ -285,8 +285,8 @@ TEST_F(field_analyser_btf, btf_types_struct_ptr)
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo2"));
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo3"));
-  auto foo2 = bpftrace.structs.Lookup("struct Foo2").lock();
-  auto foo3 = bpftrace.structs.Lookup("struct Foo3").lock();
+  auto foo2 = bpftrace.structs.Lookup("struct Foo2");
+  auto foo3 = bpftrace.structs.Lookup("struct Foo3");
 
   EXPECT_EQ(foo2->size, 24);
   ASSERT_EQ(foo2->fields.size(), 0U); // fields are not resolved
@@ -310,8 +310,8 @@ TEST_F(field_analyser_btf, btf_types_arr_access)
 
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo2"));
   ASSERT_TRUE(bpftrace.structs.Has("struct Foo3"));
-  auto foo2 = bpftrace.structs.Lookup("struct Foo2").lock();
-  auto foo3 = bpftrace.structs.Lookup("struct Foo3").lock();
+  auto foo2 = bpftrace.structs.Lookup("struct Foo2");
+  auto foo3 = bpftrace.structs.Lookup("struct Foo3");
 
   EXPECT_EQ(foo2->size, 24);
   ASSERT_EQ(foo2->fields.size(), 0U); // fields are not resolved
@@ -326,7 +326,7 @@ TEST_F(field_analyser_btf, btf_types_bitfields)
   test(bpftrace, "kprobe:sys_read { @ = curtask->pid; }");
 
   ASSERT_TRUE(bpftrace.structs.Has("struct task_struct"));
-  auto task_struct = bpftrace.structs.Lookup("struct task_struct").lock();
+  auto task_struct = bpftrace.structs.Lookup("struct task_struct");
 
   // clang-tidy doesn't seem to acknowledge that ASSERT_*() will
   // return from function so that these are in fact checked accesses.
@@ -377,8 +377,7 @@ TEST_F(field_analyser_btf, btf_anon_union_first_in_struct)
   test(bpftrace, "BEGIN { @ = (struct FirstFieldsAreAnonUnion *)0; }");
 
   ASSERT_TRUE(bpftrace.structs.Has("struct FirstFieldsAreAnonUnion"));
-  auto record =
-      bpftrace.structs.Lookup("struct FirstFieldsAreAnonUnion").lock();
+  auto record = bpftrace.structs.Lookup("struct FirstFieldsAreAnonUnion");
 
   ASSERT_TRUE(record->HasField("a"));
   EXPECT_TRUE(record->GetField("a").type.IsIntTy());

@@ -527,7 +527,7 @@ bool ClangParser::visit_children(CXCursor &cursor, BPFtrace &bpftrace)
           if (!structs.Has(ptypestr))
             structs.Add(ptypestr, ptypesize, false);
 
-          auto str = structs.Lookup(ptypestr).lock();
+          auto str = structs.Lookup(ptypestr);
           if (str->allow_override) {
             str->ClearFields();
             str->allow_override = false;
@@ -536,7 +536,7 @@ bool ClangParser::visit_children(CXCursor &cursor, BPFtrace &bpftrace)
           // No need to worry about redefined types b/c we should have already
           // checked clang diagnostics. The diagnostics will tell us if we have
           // duplicated types.
-          structs.Lookup(ptypestr).lock()->AddField(
+          structs.Lookup(ptypestr)->AddField(
               ident, sized_type, offset, bitfield, is_data_loc);
         }
 

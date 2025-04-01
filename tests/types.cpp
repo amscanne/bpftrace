@@ -34,7 +34,7 @@ TEST(types, to_str)
 
   EXPECT_EQ(to_str(CreateArray(2, CreateInt8())), "int8[2]");
 
-  auto record = std::weak_ptr<Struct>();
+  auto record = std::shared_ptr<Struct>();
   EXPECT_EQ(to_str(CreateRecord("hello", record)), "hello");
 
   std::shared_ptr<Struct> tuple = Struct::CreateTuple(

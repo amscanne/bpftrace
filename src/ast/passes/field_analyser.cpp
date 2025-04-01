@@ -295,7 +295,7 @@ void FieldAnalyser::resolve_args(Probe &probe)
     }
 
     // check if we already stored arguments for this probe
-    auto args = bpftrace_.structs.Lookup(probe.args_typename()).lock();
+    auto args = bpftrace_.structs.Lookup(probe.args_typename());
     if (args && *args != probe_args) {
       // we did, and it's different...trigger the error
       ap->addError() << "Probe has attach points with mixed arguments";

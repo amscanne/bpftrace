@@ -812,7 +812,7 @@ void BTF::resolve_fields(SizedType &type)
   if (!type.IsRecordTy())
     return;
 
-  auto record = bpftrace_->structs.Lookup(type.GetName()).lock();
+  auto record = bpftrace_->structs.Lookup(type.GetName());
   if (record->HasFields())
     return;
 

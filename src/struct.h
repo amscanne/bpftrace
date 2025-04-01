@@ -97,10 +97,10 @@ struct Struct {
   bool HasFields() const;
   void ClearFields();
 
-  static std::unique_ptr<Struct> CreateRecord(
+  static std::shared_ptr<Struct> CreateRecord(
       const std::vector<SizedType> &fields,
       const std::vector<std::string_view> &field_names);
-  static std::unique_ptr<Struct> CreateTuple(
+  static std::shared_ptr<Struct> CreateTuple(
       const std::vector<SizedType> &fields);
   void Dump(std::ostream &os);
 
@@ -162,21 +162,15 @@ namespace bpftrace {
 class StructManager {
 public:
   // struct map manipulation
-  std::weak_ptr<Struct> Add(const std::string &name,
-                            size_t size,
-                            bool allow_override = true);
+  std::shared_ptr<Struct> Add(const std::string &name,
+                              size_t size,
+                              bool allow_override = true);
   void Add(const std::string &name, Struct &&record);
-  std::weak_ptr<Struct> Lookup(const std::string &name) const;
-  std::weak_ptr<Struct> LookupOrAdd(const std::string &name,
-                                    size_t size,
-                                    bool allow_override = true);
+  std::shared_ptr<Struct> Lookup(const std::string &name) const;
+  std::shared_ptr<Struct> LookupOrAdd(const std::string &name,
+                                      size_t size,
+                                      bool allow_override = true);
   bool Has(const std::string &name) const;
-
-  std::weak_ptr<Struct> AddAnonymousStruct(
-      const std::vector<SizedType> &fields,
-      const std::vector<std::string_view> &field_names);
-  std::weak_ptr<Struct> AddTuple(const std::vector<SizedType> &fields);
-  size_t GetTuplesCnt() const;
 
   // probe args lookup
   const Field *GetProbeArg(const ast::Probe &probe,
@@ -184,7 +178,6 @@ public:
 
 private:
   std::map<std::string, std::shared_ptr<Struct>> struct_map_;
-  std::unordered_set<std::shared_ptr<Struct>> anonymous_types_;
 };
 
 } // namespace bpftrace
