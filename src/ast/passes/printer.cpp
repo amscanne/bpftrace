@@ -5,7 +5,7 @@
 #include <sstream>
 
 #include "ast/ast.h"
-#include "struct.h"
+#include "types/struct.h"
 
 namespace bpftrace::ast {
 

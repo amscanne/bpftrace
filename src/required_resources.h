@@ -15,8 +15,8 @@
 #include "ast/location.h"
 #include "format_string.h"
 #include "globalvars.h"
-#include "struct.h"
-#include "types.h"
+#include "types/struct.h"
+#include "types/sized.h"
 
 namespace libbpf {
 #include "libbpf/bpf.h"

@@ -7,7 +7,12 @@
 #include <vector>
 
 #include "ast/ast.h"
+<<<<<<< HEAD
 #include "types.h"
+=======
+#include "ast/location.h"
+#include "types/sized.h"
+>>>>>>> 4bd09971 (types: create dedicated library)
 #include "util/hash.h"
 
 namespace bpftrace {

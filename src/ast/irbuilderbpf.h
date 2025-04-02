@@ -8,7 +8,7 @@
 #include "ast/ast.h"
 #include "ast/async_ids.h"
 #include "bpftrace.h"
-#include "types.h"
+#include "types/types.h"
 
 #define CREATE_ATOMIC_RMW(op, ptr, val, align, order)                          \
   CreateAtomicRMW((op), (ptr), (val), MaybeAlign((align)), (order))

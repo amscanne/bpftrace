@@ -3,8 +3,7 @@
 #include <limits>
 
 #include "log.h"
-#include "struct.h"
-#include "types.h"
+#include "types/struct.h"
 #include "util/exceptions.h"
 
 namespace bpftrace {

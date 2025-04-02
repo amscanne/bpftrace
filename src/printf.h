@@ -5,7 +5,7 @@
 #include <utility>
 
 #include "printf_format_types.h"
-#include "types.h"
+#include "types/sized.h"
 
 namespace bpftrace {
 

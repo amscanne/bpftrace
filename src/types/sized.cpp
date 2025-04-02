@@ -2,9 +2,9 @@
 #include <iostream>
 #include <sstream>
 
-#include "ast/async_event_types.h"
-#include "struct.h"
-#include "types.h"
+#include "types/async.h"
+#include "types/sized.h"
+#include "types/struct.h"
 #include "util/exceptions.h"
 
 namespace bpftrace {

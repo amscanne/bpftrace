@@ -17,7 +17,7 @@
 #include "clang_parser.h"
 #include "log.h"
 #include "resources/headers.h"
-#include "types.h"
+#include "types/sized.h"
 #include "util/format.h"
 #include "util/io.h"
 #include "util/system.h"

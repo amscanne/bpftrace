@@ -3,7 +3,7 @@
 #include "ast/ast.h"
 #include "ast/context.h"
 #include "functions.h"
-#include "struct.h"
+#include "types/struct.h"
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
 

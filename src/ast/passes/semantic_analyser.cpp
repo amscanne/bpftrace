@@ -19,7 +19,7 @@
 #include "printf.h"
 #include "probe_matcher.h"
 #include "tracepoint_format_parser.h"
-#include "types.h"
+#include "types/sized.h"
 #include "usdt.h"
 #include "util/format.h"
 #include "util/paths.h"
@@ -884,11 +884,18 @@ void SemanticAnalyser::visit(Builtin &builtin)
     if (type == ProbeType::kretprobe || type == ProbeType::uretprobe) {
       builtin.builtin_type = CreateUInt64();
     } else if (type == ProbeType::fentry || type == ProbeType::fexit) {
+<<<<<<< HEAD
       const auto *arg = bpftrace_.structs.GetProbeArg(*probe,
                                                       RETVAL_FIELD_NAME);
       if (arg) {
         builtin.builtin_type = arg->type;
         builtin.builtin_type.is_btftype = true;
+=======
+      auto args = bpftrace_.Lookup(probe->args_typename()).lock();
+      if (args && args->HasField(RETVAL_FIELD_NAME)) {
+        builtin.type = args->GetField(RETVAL_FIELD_NAME)->type;
+        builtin.type.is_btftype = true;
+>>>>>>> 4bd09971 (types: create dedicated library)
       } else
         builtin.addError() << "Can't find a field " << RETVAL_FIELD_NAME;
     } else {
@@ -2662,10 +2669,17 @@ void SemanticAnalyser::visit(FieldAccess &acc)
     auto *probe = get_probe(acc);
     if (probe == nullptr)
       return;
+<<<<<<< HEAD
     const auto *arg = bpftrace_.structs.GetProbeArg(*probe, acc.field);
     if (arg) {
       acc.field_type = arg->type;
       acc.field_type.SetAS(acc.expr.type().GetAS());
+=======
+    auto args = bpftrace_.Lookup(probe->args_typename()).lock();
+    if (args && args->HasField(acc.field))
+      acc.type = args->GetField(acc.field)->type;
+      acc.type.SetAS(acc.expr->type.GetAS());
+>>>>>>> 4bd09971 (types: create dedicated library)
 
       if (is_final_pass()) {
         if (acc.field_type.IsNoneTy())

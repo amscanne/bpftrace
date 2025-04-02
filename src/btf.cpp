@@ -30,7 +30,7 @@
 #include "log.h"
 #include "probe_matcher.h"
 #include "tracefs/tracefs.h"
-#include "types.h"
+#include "types/sized.h"
 
 namespace bpftrace {
 

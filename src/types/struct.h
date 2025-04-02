@@ -5,9 +5,7 @@
 #include <memory>
 #include <optional>
 
-#include "ast/ast.h"
-#include "types.h"
-#include "util/hash.h"
+#include "types/sized.h"
 
 namespace bpftrace {
 
@@ -142,10 +140,6 @@ public:
                                     size_t size,
                                     bool allow_override = true);
   bool Has(const std::string &name) const;
-
-  // probe args lookup
-  const Field *GetProbeArg(const ast::Probe &probe,
-                           const std::string &arg_name);
 
 private:
   std::map<std::string, std::shared_ptr<Struct>> struct_map_;

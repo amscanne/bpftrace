@@ -3,8 +3,12 @@
 #include <cstdint>
 #include <utility>
 
+<<<<<<< HEAD
 #include "types.h"
 #include "util/result.h"
+=======
+#include "types/sized.h"
+>>>>>>> 4bd09971 (types: create dedicated library)
 
 namespace bpftrace {
 

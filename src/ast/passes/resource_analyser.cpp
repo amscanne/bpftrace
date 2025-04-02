@@ -9,7 +9,7 @@
 #include "bpftrace.h"
 #include "log.h"
 #include "required_resources.h"
-#include "struct.h"
+#include "types/struct.h"
 
 namespace libbpf {
 #include "libbpf/bpf.h"

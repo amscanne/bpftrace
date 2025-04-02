@@ -3,7 +3,7 @@
 #include <unordered_set>
 
 #include "format_string.h"
-#include "struct.h"
+#include "types/struct.h"
 #include "util/exceptions.h"
 #include "util/format.h"
 

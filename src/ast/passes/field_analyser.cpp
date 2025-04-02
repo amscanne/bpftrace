@@ -96,9 +96,9 @@ void FieldAnalyser::visit(Builtin &builtin)
       return;
     resolve_args(*probe_);
 
-    const auto *arg = bpftrace_.structs.GetProbeArg(*probe_, RETVAL_FIELD_NAME);
-    if (arg)
-      sized_type_ = arg->type;
+    auto args = bpftrace_.Lookup(probe.args_typename()).lock();
+    if (args && args->HasField(RETVAL_FIELD_NAME))
+      sized_type_ = arg->GetField(RETVAL_FIELD_NAME)->type;
     return;
   }
 
@@ -127,9 +127,9 @@ void FieldAnalyser::visit(FieldAccess &acc)
   visit(acc.expr);
 
   if (has_builtin_args_) {
-    const auto *arg = bpftrace_.structs.GetProbeArg(*probe_, acc.field);
-    if (arg)
-      sized_type_ = arg->type;
+    auto args = bpftrace_.Lookup(probe_->args_typename()).lock();
+    if (args && args->HasField(acc.field))
+      sized_type_ = arg->GetField(acc.field)->type;
 
     has_builtin_args_ = false;
   } else if (sized_type_.IsRecordTy()) {

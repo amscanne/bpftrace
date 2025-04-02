@@ -5,8 +5,11 @@
 
 #include "config.h"
 #include "log.h"
+<<<<<<< HEAD
 #include "types.h"
 #include "util/int_parser.h"
+=======
+>>>>>>> 4bd09971 (types: create dedicated library)
 
 namespace bpftrace {
 

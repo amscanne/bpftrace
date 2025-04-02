@@ -5,6 +5,7 @@ endif()
 add_library(required_resources required_resources.cpp)
 add_dependencies(required_resources parser)
 
+<<<<<<< HEAD
 add_library(compiler_core STATIC
   functions.cpp
   struct.cpp
@@ -12,6 +13,8 @@ add_library(compiler_core STATIC
 )
 add_dependencies(compiler_core parser)
 
+=======
+>>>>>>> 4bd09971 (types: create dedicated library)
 add_library(runtime STATIC
   async_action.cpp
   attached_probe.cpp
@@ -26,11 +29,11 @@ add_library(runtime STATIC
   disasm.cpp
   dwarf_parser.cpp
   format_string.cpp
+  functions.cpp
   globalvars.cpp
   log.cpp
   output.cpp
   probe_matcher.cpp
-  probe_types.cpp
   procmon.cpp
   printf.cpp
   run_bpftrace.cpp
@@ -100,9 +103,9 @@ if(STATIC_LINKING)
 endif(STATIC_LINKING)
 
 
-target_link_libraries(runtime debugfs tracefs util)
+target_link_libraries(runtime debugfs tracefs types util)
 target_link_libraries(runtime ${LIBBPF_LIBRARIES} ${ZLIB_LIBRARIES})
-target_link_libraries(libbpftrace parser resources runtime aot ast arch util cxxdemangler_llvm)
+target_link_libraries(libbpftrace parser resources runtime aot ast arch types util cxxdemangler_llvm)
 
 if(LIBPCAP_FOUND)
   target_link_libraries(libbpftrace ${LIBPCAP_LIBRARIES})
@@ -228,4 +231,5 @@ add_subdirectory(debugfs)
 add_subdirectory(resources)
 add_subdirectory(stdlib)
 add_subdirectory(tracefs)
+add_subdirectory(types)
 add_subdirectory(util)

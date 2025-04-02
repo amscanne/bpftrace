@@ -2,7 +2,7 @@
 #include <cassert>
 #include <iostream>
 
-#include "probe_types.h"
+#include "types/probes.h"
 
 namespace bpftrace {
 

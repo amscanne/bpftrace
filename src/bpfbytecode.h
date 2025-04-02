@@ -11,7 +11,7 @@
 #include "bpfmap.h"
 #include "bpfprogram.h"
 #include "config.h"
-#include "probe_types.h"
+#include "types/probes.h"
 #include "required_resources.h"
 
 namespace bpftrace {

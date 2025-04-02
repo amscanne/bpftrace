@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "printf.h"
-#include "types.h"
+#include "types/sized.h"
 
 namespace bpftrace {
 

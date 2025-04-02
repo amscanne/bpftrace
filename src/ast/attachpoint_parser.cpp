@@ -10,7 +10,7 @@
 #include "ast/attachpoint_parser.h"
 #include "ast/context.h"
 #include "ast/helpers.h"
-#include "types.h"
+#include "types/sized.h"
 #include "util/format.h"
 #include "util/int_parser.h"
 #include "util/paths.h"

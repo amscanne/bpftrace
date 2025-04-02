@@ -5,7 +5,7 @@
 #include "bpffeature.h"
 #include "btf.h"
 #include "config.h"
-#include "probe_types.h"
+#include "types/probes.h"
 
 namespace bpftrace {
 

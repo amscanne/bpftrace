@@ -3,7 +3,7 @@
 #include <linux/bpf.h>
 #include <llvm/IR/DIBuilder.h>
 
-#include "types.h"
+#include "types/sized.h"
 
 namespace libbpf {
 #include "libbpf/bpf.h"

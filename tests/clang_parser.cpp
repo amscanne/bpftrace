@@ -5,8 +5,12 @@
 #include "bpftrace.h"
 #include "clang_parser.h"
 #include "driver.h"
+<<<<<<< HEAD
 #include "mocks.h"
 #include "struct.h"
+=======
+#include "types/struct.h"
+>>>>>>> 4bd09971 (types: create dedicated library)
 #include "gtest/gtest.h"
 
 namespace bpftrace::test::clang_parser {

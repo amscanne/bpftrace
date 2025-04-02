@@ -6,8 +6,8 @@
 
 #include "libbpf/bpf.h"
 #include "log.h"
-#include "struct.h"
-#include "types.h"
+#include "types/struct.h"
+#include "types/sized.h"
 #include "util/bpf_names.h"
 
 namespace bpftrace::ast {

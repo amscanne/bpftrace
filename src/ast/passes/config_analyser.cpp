@@ -6,6 +6,10 @@
 #include "ast/visitor.h"
 #include "bpftrace.h"
 #include "config.h"
+<<<<<<< HEAD
+=======
+#include "types/sized.h"
+>>>>>>> 4bd09971 (types: create dedicated library)
 
 namespace bpftrace::ast {
 

@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "types.h"
+#include "types/sized.h"
 
 namespace bpftrace {
 

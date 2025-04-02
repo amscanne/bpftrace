@@ -3,8 +3,8 @@
 
 #include "format_string.h"
 #include "required_resources.h"
-#include "struct.h"
-#include "types.h"
+#include "types/struct.h"
+#include "types/sized.h"
 #include "gtest/gtest.h"
 
 namespace bpftrace::test {

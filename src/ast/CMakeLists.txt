@@ -5,10 +5,10 @@ add_library(ast_defs STATIC
   location.cpp
 )
 add_dependencies(ast_defs parser)
-target_link_libraries(ast_defs util)
+target_link_libraries(ast_defs PRIVATE util)
+target_link_libraries(ast_defs PUBLIC types)
 
 add_library(ast STATIC
-  async_event_types.cpp
   attachpoint_parser.cpp
   codegen_helper.cpp
   diagnostic.cpp
@@ -40,7 +40,7 @@ add_library(ast STATIC
 add_dependencies(ast parser)
 target_compile_definitions(ast PRIVATE ${BPFTRACE_FLAGS})
 target_link_libraries(ast PRIVATE debugfs tracefs util)
-target_link_libraries(ast PUBLIC ast_defs arch compiler_core parser)
+target_link_libraries(ast PUBLIC ast_defs arch parser types)
 
 if(STATIC_LINKING)
   include(Util)

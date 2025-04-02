@@ -6,7 +6,7 @@
 
 #include "bpfmap.h"
 #include "required_resources.h"
-#include "types.h"
+#include "types/sized.h"
 
 namespace bpftrace {
 

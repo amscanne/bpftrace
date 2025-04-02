@@ -1,7 +1,7 @@
 #pragma once
 #include <unordered_map>
 
-#include "types.h"
+#include "types/sized.h"
 
 namespace bpftrace {
 

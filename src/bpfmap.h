@@ -7,7 +7,7 @@
 #include <bpf/libbpf.h>
 #include <linux/bpf.h>
 
-#include "types.h"
+#include "types/sized.h"
 
 namespace libbpf {
 #include "libbpf/bpf.h"

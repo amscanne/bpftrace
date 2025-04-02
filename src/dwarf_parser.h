@@ -1,12 +1,12 @@
 #pragma once
 
-#include "struct.h"
-#include "types.h"
-
-#include <memory>
 #include <string>
 #include <vector>
 
+#include "types/struct.h"
+#include "types/sized.h"
+
+#include <memory>
 #ifdef HAVE_LIBDW
 #include <elfutils/libdwfl.h>
 #include <optional>

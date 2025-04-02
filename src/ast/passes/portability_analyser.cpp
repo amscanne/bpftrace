@@ -2,7 +2,7 @@
 
 #include "ast/passes/portability_analyser.h"
 #include "ast/visitor.h"
-#include "types.h"
+#include "types/sized.h"
 
 namespace bpftrace::ast {
 

@@ -1,7 +1,5 @@
 #pragma once
 
-#include "types.h"
-
 #include <cstddef>
 #include <linux/btf.h>
 #include <linux/types.h>
@@ -13,6 +11,7 @@
 #include <unordered_set>
 
 #include "ast/pass_manager.h"
+#include "types/sized.h"
 
 // Taken from libbpf
 #define BTF_INFO_ENC(kind, kind_flag, vlen)                                    \

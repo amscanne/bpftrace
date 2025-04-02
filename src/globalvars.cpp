@@ -7,7 +7,6 @@
 #include "globalvars.h"
 #include "log.h"
 #include "required_resources.h"
-#include "types.h"
 #include "util/exceptions.h"
 
 namespace bpftrace::globalvars {

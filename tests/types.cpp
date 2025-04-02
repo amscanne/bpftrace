@@ -1,5 +1,5 @@
-#include "types.h"
-#include "struct.h"
+#include "types/sized.h"
+#include "types/struct.h"
 #include "gtest/gtest.h"
 
 namespace bpftrace::test::types {
