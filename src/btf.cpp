@@ -399,8 +399,16 @@ SizedType BTF::get_stype(const BTFId &btf_id, bool resolve_structs)
     const BTFId pointee_btf_id = { .btf = btf_id.btf, .id = t->type };
     std::unordered_set<std::string> tags;
     auto id = get_type_tags(tags, pointee_btf_id);
-    stype = CreatePointer(
-        get_stype(BTFId{ .btf = btf_id.btf, .id = id }, false));
+    SizedType value_type = get_stype(BTFId{ .btf = btf_id.btf, .id = id }, false);
+    // If we have an explicit btf_type_tag("user"), then we can override the
+    // address space of the element and indicate that it lives in user space.
+    // This also means that when we dereference this object, we will treat
+    // derived values as user pointers, etc.
+    if (tags.contains("user")) {
+      value_type.SetAS(AddrSpace::user);
+    }
+    // Others tags are applied to the pointer.
+    stype = CreatePointer(value_type);
     stype.SetBtfTypeTags(std::move(tags));
   } else if (btf_is_array(t)) {
     auto *array = btf_array(t);
@@ -479,6 +487,7 @@ std::optional<Struct> BTF::resolve_args(const std::string &func,
     SizedType stype = get_stype(BTFId{ .btf = func_id.btf, .id = p->type });
     stype.funcarg_idx = arg_idx;
     stype.is_funcarg = true;
+    stype.SetAS(AddrSpace::bpf);
     args.AddField(str, stype, args.size, std::nullopt, false);
     // fentry args are stored in a u64 array.
     // Note that it's ok to represent them by a struct as we will use GEP with
@@ -492,6 +501,7 @@ std::optional<Struct> BTF::resolve_args(const std::string &func,
     SizedType stype = get_stype(BTFId{ .btf = func_id.btf, .id = t->type });
     stype.funcarg_idx = arg_idx;
     stype.is_funcarg = true;
+    stype.SetAS(AddrSpace::bpf);
     args.AddField(RETVAL_FIELD_NAME, stype, args.size, std::nullopt, false);
     // fentry args (incl. retval) are stored in a u64 array
     args.size += btf__resolve_size(func_id.btf, t->type);

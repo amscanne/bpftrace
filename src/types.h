@@ -54,9 +54,23 @@ enum class Type : uint8_t {
 };
 
 enum class AddrSpace : uint8_t {
+  // none indicates that the address does not yet have a specified address
+  // space. This must be resolved prior to code generation and is considered
+  // invalid at that point.
   none,
+
+  // kernel indicates that the address is a kernel address. This is the default
+  // for kernel-based probes, unless there is another explicit annotation.
   kernel,
+
+  // user indicates that this is a user address, and it must be dispatched via
+  // the appropriate helper functions.
   user,
+
+  // bpf indicates that either a) this value is from the context and can be
+  // reference directly, b) this value is in the BPF stack, or c) this value
+  // can be accessed directly without additional helpers (e.g.
+  // `bpf_current_task`).
   bpf,
 };
 
@@ -137,10 +151,8 @@ public:
 
   StackType stack_type;
   int funcarg_idx = -1;
-  bool is_internal = false;
   bool is_tparg = false;
   bool is_funcarg = false;
-  bool is_btftype = false;
   TimestampMode ts_mode = TimestampMode::boot;
 
 private:
@@ -153,8 +165,8 @@ private:
                                        // the actual Struct object is owned by
                                        // StructManager
   AddrSpace as_ = AddrSpace::none;
+
   bool is_signed_ = false;
-  bool ctx_ = false;                                   // Is bpf program context
   std::unordered_set<std::string> btf_type_tags_;      // Only populated for
                                                        // Type::pointer
   size_t num_elements_ = 0; // Only populated for array types
@@ -165,15 +177,12 @@ private:
   {
     archive(type_,
             stack_type,
-            is_internal,
             is_tparg,
             is_funcarg,
-            is_btftype,
             funcarg_idx,
             is_signed_,
             element_type_,
             name_,
-            ctx_,
             as_,
             size_bits_,
             inner_struct_);
@@ -201,7 +210,11 @@ public:
 
   void SetAS(AddrSpace as)
   {
-    as_ = as;
+    // Don't override the existing address space. This will have originated
+    // from an explicit tag, etc.
+    if (as_ == AddrSpace::none) {
+      as_ = as;
+    }
   }
 
   void SetBtfTypeTags(std::unordered_set<std::string> &&tags)
@@ -215,16 +228,6 @@ public:
     assert(IsPtrTy());
     return btf_type_tags_;
   }
-
-  bool IsCtxAccess() const
-  {
-    return ctx_;
-  };
-
-  void MarkCtxAccess()
-  {
-    ctx_ = true;
-  };
 
   bool IsByteArray() const;
   bool IsAggregate() const;
@@ -242,8 +245,7 @@ public:
   bool IsPrintableTy()
   {
     return type_ != Type::none && type_ != Type::stack_mode &&
-           type_ != Type::timestamp_mode &&
-           (!IsCtxAccess() || is_funcarg); // args builtin is printable
+           type_ != Type::timestamp_mode;
   }
 
   void SetSign(bool is_signed)
@@ -475,7 +477,7 @@ public:
   friend SizedType CreateArray(size_t num_elements,
                                const SizedType &element_type);
 
-  friend SizedType CreatePointer(const SizedType &pointee_type, AddrSpace as);
+  friend SizedType CreatePointer(const SizedType &pointee_type);
   friend SizedType CreateRecord(const std::string &name,
                                 std::weak_ptr<Struct> record);
   friend SizedType CreateInteger(size_t bits, bool is_signed);
@@ -502,8 +504,7 @@ SizedType CreateEnum(size_t bits, const std::string &name);
 // Create a string of `size` bytes, inclusive of NUL terminator.
 SizedType CreateString(size_t size);
 SizedType CreateArray(size_t num_elements, const SizedType &element_type);
-SizedType CreatePointer(const SizedType &pointee_type,
-                        AddrSpace as = AddrSpace::none);
+SizedType CreatePointer(const SizedType &pointee_type);
 
 SizedType CreateRecord(const std::string &name, std::weak_ptr<Struct> record);
 SizedType CreateTuple(std::weak_ptr<Struct> tuple);

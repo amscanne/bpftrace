@@ -287,6 +287,7 @@ int_type:
 pointer_type:
                 type "*" { $$ = CreatePointer($1); }
                 ;
+
 struct_type:
                 STRUCT IDENT { $$ = ast::ident_to_sized_type($2); }
                 ;

@@ -48,10 +48,7 @@ std::string typestr(const SizedType &type)
     case Type::buffer:
       return typestr(type.GetTy()) + "[" + std::to_string(type.GetSize()) + "]";
     case Type::pointer: {
-      std::string prefix;
-      if (type.IsCtxAccess())
-        prefix = "(ctx) ";
-      return prefix + typestr(*type.GetPointeeTy()) + " *";
+      return typestr(*type.GetPointeeTy()) + " *";
     }
     case Type::array:
       return typestr(*type.GetElementTy()) + "[" +
@@ -182,6 +179,9 @@ bool SizedType::IsStack() const
 std::string addrspacestr(AddrSpace as)
 {
   switch (as) {
+    case AddrSpace::none:
+      return "none";
+      break;
     case AddrSpace::kernel:
       return "kernel";
       break;
@@ -190,9 +190,6 @@ std::string addrspacestr(AddrSpace as)
       break;
     case AddrSpace::bpf:
       return "bpf";
-      break;
-    case AddrSpace::none:
-      return "none";
       break;
   }
 
@@ -404,15 +401,16 @@ SizedType CreateArray(size_t num_elements, const SizedType &element_type)
   auto ty = SizedType(Type::array, size);
   ty.element_type_ = std::make_shared<SizedType>(element_type);
   ty.num_elements_ = num_elements;
+  ty.SetAS(element_type.GetAS());
   return ty;
 }
 
-SizedType CreatePointer(const SizedType &pointee_type, AddrSpace as)
+SizedType CreatePointer(const SizedType &pointee_type)
 {
-  // Pointer itself is always an uint64
+  // Pointer itself is always an uint64.
   auto ty = SizedType(Type::pointer, 8);
   ty.element_type_ = std::make_shared<SizedType>(pointee_type);
-  ty.SetAS(as);
+  ty.SetAS(pointee_type.GetAS());
   return ty;
 }
 
@@ -471,9 +469,7 @@ SizedType CreateUsername()
 
 SizedType CreateInet(size_t size)
 {
-  auto st = SizedType(Type::inet, size);
-  st.is_internal = true;
-  return st;
+  return { Type::inet, size };
 }
 
 SizedType CreateLhist()
@@ -516,9 +512,7 @@ SizedType CreateTuple(std::weak_ptr<Struct> tuple)
 
 SizedType CreateMacAddress()
 {
-  auto st = SizedType(Type::mac_address, 6);
-  st.is_internal = true;
-  return st;
+  return { Type::mac_address, 6 };
 }
 
 SizedType CreateCgroupPath()

@@ -13,6 +13,7 @@ public:
   using Visitor<DeprecatedAnalyser>::visit;
   void visit(Builtin &builtin);
   void visit(Call &call);
+  void visit(FieldAccess &acc);
   void visit(AssignConfigVarStatement &assign);
 };
 
@@ -76,6 +77,24 @@ static std::vector<DeprecatedName> DEPRECATED_CALLS = {};
 void DeprecatedAnalyser::visit(Call &call)
 {
   check(DEPRECATED_CALLS, call.func, call);
+}
+
+void DeprecatedAnalyser::visit(FieldAccess &acc)
+{
+  if (auto *unop = dynamic_cast<Unop*>(acc.expr)) {
+    if (unop->op != Operator::MUL) {
+      return;
+    }
+    auto *builtin = dynamic_cast<Builtin*>(unop->expr);
+    if (!builtin) {
+      return;
+    }
+    if (builtin->ident == "args") {
+      // Rewrite to be just `args.X`. We allow `*args` or `args->...` and
+      // silently ignore this.
+      acc.expr = builtin;
+    }
+  }
 }
 
 static std::vector<DeprecatedName> DEPRECATED_CONFIGS = {

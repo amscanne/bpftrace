@@ -166,7 +166,9 @@ SizedType Dwarf::get_stype(Dwarf_Die &type_die, bool resolve_structs) const
     case DW_TAG_pointer_type: {
       if (dwarf_hasattr(&type, DW_AT_type)) {
         Dwarf_Die inner_type = type_of(type);
-        return CreatePointer(get_stype(inner_type, false));
+        SizedType stype = get_stype(inner_type);
+        stype.SetAS(AddrSpace::user);
+        return CreatePointer(stype);
       }
       // void *
       return CreatePointer(CreateNone());

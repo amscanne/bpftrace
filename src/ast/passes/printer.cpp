@@ -14,12 +14,7 @@ std::string Printer::type(const SizedType &ty)
   if (ty.IsNoneTy())
     return "";
   std::stringstream buf;
-  buf << " :: [" << ty;
-  if (ty.IsCtxAccess())
-    buf << ", ctx: 1";
-  if (ty.GetAS() != AddrSpace::none)
-    buf << ", AS(" << ty.GetAS() << ")";
-  buf << "]";
+  buf << " :: [" << ty << ", AS(" << ty.GetAS() << ")" << "]";
   return buf.str();
 }
 

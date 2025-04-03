@@ -2,7 +2,6 @@
 #include <algorithm>
 
 #include "ast/async_event_types.h"
-#include "ast/codegen_helper.h"
 #include "ast/passes/resource_analyser.h"
 #include "ast/visitor.h"
 #include "bpftrace.h"
@@ -376,8 +375,7 @@ void ResourceAnalyser::visit(Call &call)
     auto &map = static_cast<Map &>(arg0);
     // has_key does not work on scalar maps (e.g. @a = 1), so we
     // don't need to check if map.key_expr is set
-    if (needMapKeyAllocation(map, call.vargs.at(1)) &&
-        exceeds_stack_limit(map.key_type.GetSize())) {
+    if (exceeds_stack_limit(map.key_type.GetSize())) {
       resources_.map_key_buffers++;
       resources_.max_map_key_size = std::max(resources_.max_map_key_size,
                                              map.key_type.GetSize());
@@ -385,13 +383,9 @@ void ResourceAnalyser::visit(Call &call)
   } else if (call.func == "delete") {
     auto &arg0 = *call.vargs.at(0);
     auto &map = static_cast<Map &>(arg0);
-    const auto deleteNeedMapKeyAllocation =
-        call.vargs.size() > 1 ? needMapKeyAllocation(map, call.vargs.at(1))
-                              : needMapKeyAllocation(map);
     // delete always expects a map and key, so we don't need to check if
     // map.key_expr is set
-    if (deleteNeedMapKeyAllocation &&
-        exceeds_stack_limit(map.key_type.GetSize())) {
+    if (exceeds_stack_limit(map.key_type.GetSize())) {
       resources_.map_key_buffers++;
       resources_.max_map_key_size = std::max(resources_.max_map_key_size,
                                              map.key_type.GetSize());
@@ -480,11 +474,9 @@ void ResourceAnalyser::visit(AssignMapStatement &assignment)
 
   update_map_info(*assignment.map);
 
-  if (needAssignMapStatementAllocation(assignment)) {
-    if (exceeds_stack_limit(assignment.map->type.GetSize())) {
-      resources_.max_write_map_value_size = std::max(
-          resources_.max_write_map_value_size, assignment.map->type.GetSize());
-    }
+  if (exceeds_stack_limit(assignment.map->type.GetSize())) {
+    resources_.max_write_map_value_size = std::max(
+        resources_.max_write_map_value_size, assignment.map->type.GetSize());
   }
   maybe_allocate_map_key_buffer(*assignment.map);
 }
@@ -573,7 +565,7 @@ void ResourceAnalyser::maybe_allocate_map_key_buffer(const Map &map)
 {
   const auto map_key_size = map.key_expr ? map.key_type.GetSize()
                                          : CreateUInt64().GetSize();
-  if (needMapKeyAllocation(map) && exceeds_stack_limit(map_key_size)) {
+  if (exceeds_stack_limit(map_key_size)) {
     resources_.map_key_buffers++;
     resources_.max_map_key_size = std::max(resources_.max_map_key_size,
                                            map_key_size);

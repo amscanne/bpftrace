@@ -1,5 +1,6 @@
-#include "ast/passes/semantic_analyser.h"
 #include "ast/attachpoint_parser.h"
+#include "ast/passes/deprecated.h"
+#include "ast/passes/semantic_analyser.h"
 #include "ast/passes/field_analyser.h"
 #include "ast/passes/printer.h"
 #include "bpftrace.h"
@@ -36,6 +37,7 @@ ast::ASTContext test_for_warning(BPFtrace &bpftrace,
                 .add(CreateClangPass())
                 .add(CreateParsePass())
                 .add(ast::CreateParseAttachpointsPass())
+                .add(ast::CreateDeprecatedPass())
                 .add(ast::CreateSemanticPass())
                 .run();
   EXPECT_TRUE(bool(ok));
@@ -91,6 +93,7 @@ ast::ASTContext test(BPFtrace &bpftrace,
                 .add(CreateClangPass())
                 .add(CreateParsePass())
                 .add(ast::CreateParseAttachpointsPass())
+                .add(ast::CreateDeprecatedPass())
                 .add(ast::CreateSemanticPass())
                 .run();
 
@@ -2623,7 +2626,7 @@ TEST(semantic_analyser, field_access_sub_struct)
        1);
 }
 
-TEST(semantic_analyser, field_access_is_internal)
+TEST(semantic_analyser, field_access_addr_space)
 {
   BPFtrace bpftrace;
   std::string structs = "struct type1 { int x; }";
@@ -2632,7 +2635,7 @@ TEST(semantic_analyser, field_access_is_internal)
     auto ast = test(structs + "kprobe:f { $x = (*(struct type1*)0).x }");
     auto &stmts = ast.root->probes.at(0)->block->stmts;
     auto *var_assignment1 = static_cast<ast::AssignVarStatement *>(stmts.at(0));
-    EXPECT_FALSE(var_assignment1->var->type.is_internal);
+    EXPECT_EQ(var_assignment1->var->type.GetAS(), AddrSpace::kernel);
   }
 
   {
@@ -2641,8 +2644,8 @@ TEST(semantic_analyser, field_access_is_internal)
     auto &stmts = ast.root->probes.at(0)->block->stmts;
     auto *map_assignment = static_cast<ast::AssignMapStatement *>(stmts.at(0));
     auto *var_assignment2 = static_cast<ast::AssignVarStatement *>(stmts.at(1));
-    EXPECT_TRUE(map_assignment->map->type.is_internal);
-    EXPECT_TRUE(var_assignment2->var->type.is_internal);
+    EXPECT_EQ(map_assignment->map->type.GetAS(), AddrSpace::bpf);
+    EXPECT_EQ(var_assignment2->var->type.GetAS(), AddrSpace::bpf);
   }
 }
 
@@ -3368,7 +3371,6 @@ TEST(semantic_analyser, type_ctx)
   auto *fieldaccess = static_cast<ast::FieldAccess *>(assignment->expr);
   EXPECT_EQ(CreateInt64(), fieldaccess->type);
   auto *unop = static_cast<ast::Unop *>(fieldaccess->expr);
-  EXPECT_TRUE(unop->type.IsCtxAccess());
   auto *var = static_cast<ast::Variable *>(unop->expr);
   EXPECT_TRUE(var->type.IsPtrTy());
 
@@ -3378,9 +3380,7 @@ TEST(semantic_analyser, type_ctx)
   auto *arrayaccess = static_cast<ast::ArrayAccess *>(assignment->expr);
   EXPECT_EQ(CreateInt16(), arrayaccess->type);
   fieldaccess = static_cast<ast::FieldAccess *>(arrayaccess->expr);
-  EXPECT_TRUE(fieldaccess->type.IsCtxAccess());
   unop = static_cast<ast::Unop *>(fieldaccess->expr);
-  EXPECT_TRUE(unop->type.IsCtxAccess());
   var = static_cast<ast::Variable *>(unop->expr);
   EXPECT_TRUE(var->type.IsPtrTy());
 
@@ -3396,9 +3396,7 @@ TEST(semantic_analyser, type_ctx)
   fieldaccess = static_cast<ast::FieldAccess *>(assignment->expr);
   EXPECT_EQ(chartype, fieldaccess->type);
   fieldaccess = static_cast<ast::FieldAccess *>(fieldaccess->expr);
-  EXPECT_TRUE(fieldaccess->type.IsCtxAccess());
   unop = static_cast<ast::Unop *>(fieldaccess->expr);
-  EXPECT_TRUE(unop->type.IsCtxAccess());
   var = static_cast<ast::Variable *>(unop->expr);
   EXPECT_TRUE(var->type.IsPtrTy());
 
@@ -3412,7 +3410,6 @@ TEST(semantic_analyser, type_ctx)
   fieldaccess = static_cast<ast::FieldAccess *>(unop->expr);
   EXPECT_TRUE(fieldaccess->type.IsPtrTy());
   unop = static_cast<ast::Unop *>(fieldaccess->expr);
-  EXPECT_TRUE(unop->type.IsCtxAccess());
   var = static_cast<ast::Variable *>(unop->expr);
   EXPECT_TRUE(var->type.IsPtrTy());
 
