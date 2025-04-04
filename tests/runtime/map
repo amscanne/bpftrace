@@ -1,23 +1,23 @@
 NAME map declaration lruhash
-PROG config = { unstable_map_decl=1 } let @a = lruhash(1); BEGIN { @a[1] = 1; @a[2] = 2; exit(); }
+PROG config = { unstable_map_decl=1 } let @a = lruhash(2); BEGIN { @a[0] = 0; @a[1] = 1; @a[2] = 2; exit(); }
 EXPECT_REGEX_NONE .*WARNING: Map full; can't update element.*
 EXPECT @a[2]: 2
 
 NAME map declaration hash
-PROG config = { unstable_map_decl=1 } let @a = hash(1); BEGIN { @a[1] = 1; @a[2] = 2; exit(); }
+PROG config = { unstable_map_decl=1 } let @a = hash(2); BEGIN { @a[0] = 0; @a[1] = 1; @a[2] = 2; exit(); }
 EXPECT_REGEX .*WARNING: Map full; can't update element.*
 EXPECT @a[1]: 1
 
 NAME map declaration percpuhash
-PROG config = { unstable_map_decl=1 } let @a = percpuhash(1); BEGIN { @a[1] = count(); @a[2] = count(); exit(); }
+PROG config = { unstable_map_decl=1 } let @a = percpuhash(2); BEGIN { @a[0] = count(); @a[1] = count(); @a[2] = count(); exit(); }
 EXPECT_REGEX .*WARNING: Map full; can't update element.*
 EXPECT @a[1]: 1
 
 NAME map declaration percpulruhash
-PROG config = { unstable_map_decl=1 } let @a = percpulruhash(1); BEGIN { @a[1] = count(); @a[2] = count(); exit(); }
+PROG config = { unstable_map_decl=1 } let @a = percpulruhash(2); BEGIN { @a[0] = count(); @a[1] = count(); @a[2] = count(); exit(); }
 EXPECT_REGEX_NONE .*WARNING: Map full; can't update element.*
 EXPECT @a[2]: 1
 
 NAME map declaration unused
-PROG config = { unstable_map_decl=1 } let @a = percpuhash(1); BEGIN { exit(); }
+PROG config = { unstable_map_decl=1 } let @a = percpuhash(2); BEGIN { exit(); }
 EXPECT_REGEX .*WARNING: Unused map: @a.*
