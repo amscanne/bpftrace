@@ -106,15 +106,15 @@ MapDeclStatement::MapDeclStatement(Diagnostics &d,
 {
 }
 
-Map::Map(Diagnostics &d, std::string ident, Location &&loc)
-    : Expression(d, std::move(loc)), ident(std::move(ident))
+Map::Map(Diagnostics &d,
+         std::string ident,
+         Expression *key_expr,
+         Location &&loc)
+    : Expression(d, std::move(loc)), ident(std::move(ident)), key_expr(key_expr)
 {
-}
-
-Map::Map(Diagnostics &d, std::string ident, Expression &expr, Location &&loc)
-    : Expression(d, std::move(loc)), ident(std::move(ident)), key_expr(&expr)
-{
-  key_expr->key_for_map = this;
+  if (key_expr) {
+    key_expr->key_for_map = this;
+  }
 }
 
 Variable::Variable(Diagnostics &d, std::string ident, Location &&loc)
