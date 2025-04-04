@@ -455,7 +455,8 @@ public:
   bool IsCastableMapTy() const
   {
     return type_ == Type::count_t || type_ == Type::sum_t ||
-           type_ == Type::max_t || type_ == Type::min_t || type_ == Type::avg_t;
+           type_ == Type::max_t || type_ == Type::min_t ||
+           type_ == Type::avg_t || type_ == Type::stats_t;
   }
   bool IsMapIterableTy() const
   {
@@ -463,11 +464,11 @@ public:
   }
 
   // These are special map value types that can't be reduced to a single value
-  // and output multiple lines when printed
+  // and output multiple lines when printed. In essence, once conceptual value
+  // written is actually multiple map keys.
   bool IsMultiOutputMapTy() const
   {
-    return type_ == Type::hist_t || type_ == Type::lhist_t ||
-           type_ == Type::stats_t;
+    return type_ == Type::hist_t || type_ == Type::lhist_t;
   }
 
   bool NeedsPercpuMap() const;
