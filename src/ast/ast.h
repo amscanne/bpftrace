@@ -286,7 +286,6 @@ public:
 
 class ArrayAccess : public Expression {
 public:
-  ArrayAccess(Diagnostics &d, Expression *expr, Expression *indexpr);
   ArrayAccess(Diagnostics &d,
               Expression *expr,
               Expression *indexpr,
