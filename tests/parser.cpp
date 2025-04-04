@@ -2887,7 +2887,6 @@ Program
   for
    decl
     variable: $kv
-   expr
     map: @map
    stmts
     call: print

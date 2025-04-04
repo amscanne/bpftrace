@@ -4167,7 +4167,6 @@ Program
   for
    decl
     variable: $kv :: [(int64,int64)]
-   expr
     map: @map :: [int64]
    stmts
     call: print
@@ -4189,7 +4188,6 @@ Program
   for
    decl
     variable: $kv :: [((int64,int64),int64)]
-   expr
     map: @map :: [int64]
    stmts
     call: print
@@ -4385,17 +4383,17 @@ TEST(semantic_analyser, for_loop_invalid_expr)
 {
   // Error location is incorrect: #3063
   test_error("BEGIN { for ($x : $var) { } }", R"(
-stdin:1:19-24: ERROR: Loop expression must be a map
+stdin:1:19-24: ERROR: syntax error, unexpected variable, expecting map
 BEGIN { for ($x : $var) { } }
                   ~~~~~
 )");
   test_error("BEGIN { for ($x : 1+2) { } }", R"(
-stdin:1:19-22: ERROR: Loop expression must be a map
+stdin:1:19-21: ERROR: syntax error, unexpected integer, expecting map
 BEGIN { for ($x : 1+2) { } }
-                  ~~~
+                  ~~
 )");
   test_error("BEGIN { for ($x : \"abc\") { } }", R"(
-stdin:1:19-25: ERROR: Loop expression must be a map
+stdin:1:19-25: ERROR: syntax error, unexpected string, expecting map
 BEGIN { for ($x : "abc") { } }
                   ~~~~~~
 )");
@@ -4408,15 +4406,12 @@ TEST(semantic_analyser, for_loop_multiple_errors)
     BEGIN {
       $kv = 1;
       @map[0] = 1;
-      for ($kv : 1) { }
+      for ($kv : @map) { }
     })",
              R"(
 stdin:4:11-15: ERROR: Loop declaration shadows existing variable: $kv
-      for ($kv : 1) { }
+      for ($kv : @map) { }
           ~~~~
-stdin:4:18-20: ERROR: Loop expression must be a map
-      for ($kv : 1) { }
-                 ~~
 )");
 }
 
