@@ -2384,6 +2384,12 @@ TEST(semantic_analyser, map_aggregations_implicit_cast)
    (int64)
     map: @y :: [avg_t]
 *)");
+  test("kprobe:f { @x = 1; @y = stats(5); @x = @y; }", R"(*
+  =
+   map: @x :: [int64]
+   (int64)
+    map: @y :: [stats_t]
+*)");
 
   // Assigning to a newly declared map requires an explicit cast
   // to get the value of the aggregation.
@@ -2423,6 +2429,12 @@ HINT: Add a cast to integer if you want the value of the aggregate, e.g. `@x = (
 stdin:1:25-32: ERROR: Map value 'avg_t' cannot be assigned from one map to another. The function that returns this type must be called directly e.g. `@x = avg(retval);`.
 kprobe:f { @y = avg(5); @x = @y; }
                         ~~~~~~~
+HINT: Add a cast to integer if you want the value of the aggregate, e.g. `@x = (int64)@y;`.
+)");
+  test_error("kprobe:f { @y = stats(5); @x = @y; }", R"(
+stdin:1:27-34: ERROR: Map value 'stats_t' cannot be assigned from one map to another. The function that returns this type must be called directly e.g. `@x = stats(arg2);`.
+kprobe:f { @y = stats(5); @x = @y; }
+                          ~~~~~~~
 HINT: Add a cast to integer if you want the value of the aggregate, e.g. `@x = (int64)@y;`.
 )");
 
@@ -4244,11 +4256,6 @@ stdin:1:51-56: ERROR: Loop expression does not support type: lhist_t
 BEGIN { @map[0] = lhist(10, 0, 10, 1); for ($kv : @map) { } }
                                                   ~~~~~
 )");
-  test_error("BEGIN { @map[0] = stats(10); for ($kv : @map) { } }", R"(
-stdin:1:41-46: ERROR: Loop expression does not support type: stats_t
-BEGIN { @map[0] = stats(10); for ($kv : @map) { } }
-                                        ~~~~~
-)");
 }
 
 TEST(semantic_analyser, for_loop_shadowed_decl)
@@ -4801,12 +4808,6 @@ BEGIN { @a = lhist(123, 0, 123, 1); let $b = @a; }
                                     ~~~~~~~~~~~
 )");
 
-  test_error("BEGIN { @a = stats(10); let $b = @a; }", R"(
-stdin:1:25-36: ERROR: Map value 'stats_t' cannot be assigned to a scratch variable.
-BEGIN { @a = stats(10); let $b = @a; }
-                        ~~~~~~~~~~~
-)");
-
   test_error("BEGIN { @a = hist(10); @b = @a; }", R"(
 stdin:1:24-31: ERROR: Map value 'hist_t' cannot be assigned from one map to another. The function that returns this type must be called directly e.g. `@b = hist(retval);`.
 BEGIN { @a = hist(10); @b = @a; }
@@ -4817,12 +4818,6 @@ BEGIN { @a = hist(10); @b = @a; }
 stdin:1:37-44: ERROR: Map value 'lhist_t' cannot be assigned from one map to another. The function that returns this type must be called directly e.g. `@b = lhist(rand %10, 0, 10, 1);`.
 BEGIN { @a = lhist(123, 0, 123, 1); @b = @a; }
                                     ~~~~~~~
-)");
-
-  test_error("BEGIN { @a = stats(10); @b = @a; }", R"(
-stdin:1:25-32: ERROR: Map value 'stats_t' cannot be assigned from one map to another. The function that returns this type must be called directly e.g. `@b = stats(arg2);`.
-BEGIN { @a = stats(10); @b = @a; }
-                        ~~~~~~~
 )");
 }
 
