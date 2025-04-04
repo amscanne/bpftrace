@@ -227,8 +227,10 @@ public:
 
 class Map : public Expression {
 public:
-  explicit Map(Diagnostics &d, std::string ident, Location &&loc);
-  Map(Diagnostics &d, std::string ident, Expression &expr, Location &&loc);
+  explicit Map(Diagnostics &d,
+               std::string ident,
+               Expression *expr,
+               Location &&loc);
 
   std::string ident;
   Expression *key_expr = nullptr;
