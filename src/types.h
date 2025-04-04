@@ -455,7 +455,8 @@ public:
   bool IsCastableMapTy() const
   {
     return type_ == Type::count_t || type_ == Type::sum_t ||
-           type_ == Type::max_t || type_ == Type::min_t || type_ == Type::avg_t;
+           type_ == Type::max_t || type_ == Type::min_t ||
+           type_ == Type::avg_t || type_ == Type::stats_t;
   }
   bool IsMapIterableTy() const
   {

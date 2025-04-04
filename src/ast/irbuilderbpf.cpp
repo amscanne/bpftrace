@@ -870,7 +870,7 @@ Value *IRBuilderBPF::CreatePerCpuMapAggElems(Value *ctx,
 
   if (type.IsMinTy() || type.IsMaxTy()) {
     createPerCpuMinMax(val_1, val_2, call, type);
-  } else if (type.IsAvgTy()) {
+  } else if (type.IsAvgTy() || type.IsStatsTy()) {
     createPerCpuAvg(val_1, val_2, call, type);
   } else if (type.IsSumTy() || type.IsCountTy()) {
     createPerCpuSum(val_1, call, type);
