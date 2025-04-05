@@ -1,6 +1,7 @@
 #include "ast/passes/config_analyser.h"
 #include "driver.h"
 #include "mocks.h"
+#include "types.h"
 #include "gtest/gtest.h"
 
 namespace bpftrace::test::config_analyser {
@@ -141,25 +142,25 @@ TEST(config_analyser, config_setting)
 {
   auto bpftrace = get_mock_bpftrace();
 
-  EXPECT_NE(bpftrace->config_->get(ConfigKeyInt::max_map_keys), 9);
+  EXPECT_NE(bpftrace->config_->must_get<ConfigKey::max_map_keys>(), 9);
   test(*bpftrace, "config = { BPFTRACE_MAX_MAP_KEYS=9 } BEGIN { }");
-  EXPECT_EQ(bpftrace->config_->get(ConfigKeyInt::max_map_keys), 9);
+  EXPECT_EQ(bpftrace->config_->must_get<ConfigKey::max_map_keys>(), 9);
 
-  EXPECT_NE(bpftrace->config_->get(ConfigKeyStackMode::default_),
+  EXPECT_NE(bpftrace->config_->must_get<ConfigKey::stack_mode>(),
             StackMode::perf);
   test(*bpftrace, "config = { stack_mode=perf } BEGIN { }");
-  EXPECT_EQ(bpftrace->config_->get(ConfigKeyStackMode::default_),
+  EXPECT_EQ(bpftrace->config_->must_get<ConfigKey::stack_mode>(),
             StackMode::perf);
 
-  EXPECT_NE(bpftrace->config_->get(ConfigKeyUserSymbolCacheType::default_),
+  EXPECT_NE(bpftrace->config_->must_get<ConfigKey::user_symbol_cache_type>(),
             UserSymbolCacheType::per_program);
-  EXPECT_NE(bpftrace->config_->get(ConfigKeyInt::log_size), 150);
+  EXPECT_NE(bpftrace->config_->must_get<ConfigKey::log_size>(), 150);
   test(*bpftrace,
        "config = { BPFTRACE_CACHE_USER_SYMBOLS=\"PER_PROGRAM\"; log_size=150 "
        "} BEGIN { }");
-  EXPECT_EQ(bpftrace->config_->get(ConfigKeyUserSymbolCacheType::default_),
+  EXPECT_EQ(bpftrace->config_->must_get<ConfigKey::user_symbol_cache_type>(),
             UserSymbolCacheType::per_program);
-  EXPECT_EQ(bpftrace->config_->get(ConfigKeyInt::log_size), 150);
+  EXPECT_EQ(bpftrace->config_->must_get<ConfigKey::log_size>(), 150);
 }
 
 TEST(config_analyser, config_unstable)

@@ -3229,8 +3229,8 @@ TEST(semantic_analyser, strcontains_large_warnings)
       /* invert= */ true);
 
   auto bpftrace = get_mock_bpftrace();
-  ConfigSetter configs{ *bpftrace->config_, ConfigSource::script };
-  configs.set(ConfigKeyInt::max_strlen, 16);
+  EXPECT_TRUE(bool(bpftrace->config_->set<ConfigKey::max_strlen>(
+      static_cast<uint64_t>(16))));
   test_for_warning(
       *bpftrace,
       "k:f { $s1 = str(arg0); $s2 = str(arg1); strcontains($s1, $s2) }",
@@ -4541,8 +4541,8 @@ TEST_F(semantic_analyser_btf, binop_late_ptr_resolution)
 TEST(semantic_analyser, buf_strlen_too_large)
 {
   auto bpftrace = get_mock_bpftrace();
-  ConfigSetter configs{ *bpftrace->config_, ConfigSource::script };
-  configs.set(ConfigKeyInt::max_strlen, 9999999999);
+  EXPECT_TRUE(bool(bpftrace->config_->set<ConfigKey::max_strlen>(
+      static_cast<uint64_t>(9999999999))));
 
   test_error(*bpftrace, "uprobe:/bin/sh:f { buf(arg0, 4) }", R"(
 stdin:1:20-32: ERROR: BPFTRACE_MAX_STRLEN too large to use on buffer (9999999999 > 4294967295)
@@ -4850,8 +4850,7 @@ Program
 TEST(semantic_analyser, map_declarations)
 {
   auto bpftrace = get_mock_bpftrace();
-  ConfigSetter configs{ *bpftrace->config_, ConfigSource::script };
-  configs.set(ConfigKeyBool::unstable_map_decl, true);
+  EXPECT_TRUE(bool(bpftrace->config_->set<ConfigKey::unstable_map_decl>(true)));
 
   test(*bpftrace, "let @a = hash(2); BEGIN { @a = 1; }");
   test(*bpftrace, "let @a = lruhash(2); BEGIN { @a = 1; }");

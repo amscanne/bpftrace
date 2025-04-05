@@ -22,7 +22,7 @@ void CodegenResourceAnalyser::visit(Builtin &builtin)
     resources_.needs_elapsed_map = true;
   } else if (builtin.ident == "kstack" || builtin.ident == "ustack") {
     resources_.stackid_maps.insert(
-        StackType{ .mode = config_.get(ConfigKeyStackMode::default_) });
+        StackType{ .mode = config_.must_get<ConfigKey::stack_mode>() });
   }
 }
 

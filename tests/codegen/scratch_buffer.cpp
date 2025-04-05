@@ -13,9 +13,9 @@ static void test_stack_or_scratch_buffer(const std::string &input,
                                          uint64_t on_stack_limit)
 {
   auto bpftrace = get_mock_bpftrace();
-  auto configs = ConfigSetter(*bpftrace->config_, ConfigSource::script);
-  configs.set(ConfigKeyInt::on_stack_limit, on_stack_limit);
-  configs.set(ConfigKeyInt::max_strlen, MAX_STRLEN);
+  ASSERT_TRUE(
+      bool(bpftrace->config_->set<ConfigKey::on_stack_limit>(on_stack_limit)));
+  ASSERT_TRUE(bool(bpftrace->config_->set<ConfigKey::max_strlen>(MAX_STRLEN)));
 
   bpftrace->safe_mode_ = true;
 

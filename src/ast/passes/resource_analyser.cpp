@@ -339,7 +339,8 @@ void ResourceAnalyser::visit(Call &call)
   }
 
   if (call.func == "str" || call.func == "buf" || call.func == "path") {
-    const auto max_strlen = bpftrace_.config_->get(ConfigKeyInt::max_strlen);
+    const auto max_strlen =
+        bpftrace_.config_->must_get<ConfigKey::max_strlen>();
     if (exceeds_stack_limit(max_strlen))
       resources_.str_buffers++;
   }
@@ -499,7 +500,8 @@ void ResourceAnalyser::visit(Ternary &ternary)
   // blow it up. So we need a scratch buffer for it.
 
   if (ternary.type.IsStringTy()) {
-    const auto max_strlen = bpftrace_.config_->get(ConfigKeyInt::max_strlen);
+    const auto max_strlen =
+        bpftrace_.config_->must_get<ConfigKey::max_strlen>();
     if (exceeds_stack_limit(max_strlen))
       resources_.str_buffers++;
   }
@@ -535,7 +537,7 @@ void ResourceAnalyser::visit(VarDeclStatement &decl)
 
 bool ResourceAnalyser::exceeds_stack_limit(size_t size)
 {
-  return size > bpftrace_.config_->get(ConfigKeyInt::on_stack_limit);
+  return size > bpftrace_.config_->must_get<ConfigKey::on_stack_limit>();
 }
 
 bool ResourceAnalyser::uses_usym_table(const std::string &fun)
@@ -565,7 +567,8 @@ void ResourceAnalyser::update_map_info(Map &map)
   } else {
     map_info.bpf_type = get_bpf_map_type(map_info.value_type,
                                          map_info.key_type);
-    map_info.max_entries = bpftrace_.config_->get(ConfigKeyInt::max_map_keys);
+    map_info.max_entries =
+        bpftrace_.config_->must_get<ConfigKey::max_map_keys>();
   }
 }
 
