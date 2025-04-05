@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "diagnostic.h"
@@ -145,13 +146,6 @@ public:
   explicit String(Diagnostics &d, std::string str, Location &&loc);
 
   std::string str;
-};
-
-class StackMode : public Expression {
-public:
-  explicit StackMode(Diagnostics &d, std::string mode, Location &&loc);
-
-  std::string mode;
 };
 
 class Identifier : public Expression {
@@ -374,16 +368,23 @@ public:
   Expression *expr = nullptr;
 };
 
-class AssignConfigVarStatement : public Statement {
+class AssignConfigVarStatement : public Node {
 public:
+  using value_t = std::variant<uint64_t, std::string>;
+
   AssignConfigVarStatement(Diagnostics &d,
-                           Identifier *config_var,
-                           Expression *expr,
+                           std::string var,
+                           uint64_t value,
+                           Location &&loc);
+  AssignConfigVarStatement(Diagnostics &d,
+                           std::string var,
+                           std::string value,
                            Location &&loc);
 
-  Identifier *config_var = nullptr;
-  Expression *expr = nullptr;
+  std::string var;
+  value_t value;
 };
+using ConfigStatementList = std::vector<AssignConfigVarStatement *>;
 
 class Block : public Expression {
 public:
@@ -487,14 +488,14 @@ public:
   SizedType ctx_type;
 };
 
-class Config : public Statement {
+class Config : public Node {
 public:
-  Config(Diagnostics &d, StatementList &&stmts, Location &&loc)
-      : Statement(d, std::move(loc)), stmts(std::move(stmts))
+  Config(Diagnostics &d, ConfigStatementList &&stmts, Location &&loc)
+      : Node(d, std::move(loc)), stmts(std::move(stmts))
   {
   }
 
-  StatementList stmts;
+  ConfigStatementList stmts;
 };
 
 class Probe;
