@@ -4,7 +4,6 @@
 #include <utility>
 
 #include "ast/context.h"
-#include "ast/helpers.h"
 #include "log.h"
 #include "util/format.h"
 
@@ -20,12 +19,6 @@ Integer::Integer(Diagnostics &d, int64_t n, Location &&loc, bool is_negative)
 
 String::String(Diagnostics &d, std::string str, Location &&loc)
     : Expression(d, std::move(loc)), str(std::move(str))
-{
-  is_literal = true;
-}
-
-StackMode::StackMode(Diagnostics &d, std::string mode, Location &&loc)
-    : Expression(d, std::move(loc)), mode(std::move(mode))
 {
   is_literal = true;
 }
@@ -235,10 +228,18 @@ AssignVarStatement::AssignVarStatement(Diagnostics &d,
 }
 
 AssignConfigVarStatement::AssignConfigVarStatement(Diagnostics &d,
-                                                   Identifier *config_var,
-                                                   Expression *expr,
+                                                   std::string var,
+                                                   uint64_t value,
                                                    Location &&loc)
-    : Statement(d, std::move(loc)), config_var(config_var), expr(expr)
+    : Node(d, std::move(loc)), var(std::move(var)), value(std::move(value))
+{
+}
+
+AssignConfigVarStatement::AssignConfigVarStatement(Diagnostics &d,
+                                                   std::string var,
+                                                   std::string value,
+                                                   Location &&loc)
+    : Node(d, std::move(loc)), var(std::move(var)), value(std::move(value))
 {
 }
 
