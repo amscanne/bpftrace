@@ -1,6 +1,7 @@
 #include "ast/passes/semantic_analyser.h"
 #include "ast/attachpoint_parser.h"
 #include "ast/passes/field_analyser.h"
+#include "ast/passes/map_sugar.h"
 #include "ast/passes/printer.h"
 #include "bpftrace.h"
 #include "clang_parser.h"
@@ -36,6 +37,7 @@ ast::ASTContext test_for_warning(BPFtrace &bpftrace,
                 .add(CreateClangPass())
                 .add(CreateParsePass())
                 .add(ast::CreateParseAttachpointsPass())
+                .add(ast::CreateMapSugarPass())
                 .add(ast::CreateSemanticPass())
                 .run();
   EXPECT_TRUE(bool(ok));
@@ -91,6 +93,7 @@ ast::ASTContext test(BPFtrace &bpftrace,
                 .add(CreateClangPass())
                 .add(CreateParsePass())
                 .add(ast::CreateParseAttachpointsPass())
+                .add(ast::CreateMapSugarPass())
                 .add(ast::CreateSemanticPass())
                 .run();
 
@@ -3855,8 +3858,8 @@ TEST(semantic_analyser, string_size)
       bpftrace, true, R"_(k:f1 {@["hi"] = 0;} k:f2 {@["hello"] = 1;})_", 0);
   stmt = ast.root->probes.at(0)->block->stmts.at(0);
   map_assign = dynamic_cast<ast::AssignMapStatement *>(stmt);
-  ASSERT_TRUE(map_assign->map->key_expr->type.IsStringTy());
-  ASSERT_EQ(map_assign->map->key_expr->type.GetSize(), 3UL);
+  ASSERT_TRUE(map_assign->key->type.IsStringTy());
+  ASSERT_EQ(map_assign->key->type.GetSize(), 3UL);
   ASSERT_EQ(map_assign->map->key_type.GetSize(), 6UL);
 
   ast = test(bpftrace,
@@ -3865,11 +3868,11 @@ TEST(semantic_analyser, string_size)
              0);
   stmt = ast.root->probes.at(0)->block->stmts.at(0);
   map_assign = dynamic_cast<ast::AssignMapStatement *>(stmt);
-  ASSERT_TRUE(map_assign->map->key_expr->type.IsTupleTy());
-  ASSERT_TRUE(map_assign->map->key_expr->type.GetField(0).type.IsStringTy());
-  ASSERT_EQ(map_assign->map->key_expr->type.GetField(0).type.GetSize(), 3UL);
+  ASSERT_TRUE(map_assign->key->type.IsTupleTy());
+  ASSERT_TRUE(map_assign->key->type.GetField(0).type.IsStringTy());
+  ASSERT_EQ(map_assign->key->type.GetField(0).type.GetSize(), 3UL);
   ASSERT_EQ(map_assign->map->key_type.GetField(0).type.GetSize(), 6UL);
-  ASSERT_EQ(map_assign->map->key_expr->type.GetSize(), 16UL);
+  ASSERT_EQ(map_assign->key->type.GetSize(), 16UL);
   ASSERT_EQ(map_assign->map->key_type.GetSize(), 16UL);
 
   ast = test(bpftrace,
