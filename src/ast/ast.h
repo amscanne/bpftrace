@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -102,62 +104,206 @@ public:
   Location loc;
 };
 
+template <typename... Ts>
+class VariantNode {
+public:
+  template <typename T>
+  VariantNode(T *value)
+    requires(std::is_same_v<T, Ts> || ...)
+      : value(value){};
+
+  template <typename T>
+  bool is() const
+  {
+    return std::holds_alternative<T *>(value);
+  }
+
+  template <typename T>
+  T *as() const
+  {
+    if (is<T>()) {
+      return std::get<T *>(value);
+    }
+    return nullptr;
+  }
+
+  std::variant<Ts *...> value;
+};
+
+class Integer;
+class NegativeInteger;
+class PositionalParameter;
+class PositionalParameterCount;
+class String;
+class Identifier;
+class Builtin;
+class Call;
+class Sizeof;
+class Offsetof;
 class Map;
 class Variable;
-class Expression : public Node {
-public:
-  Expression(Diagnostics &d, Location &&loc) : Node(d, std::move(loc)) {};
-  ~Expression() override = default;
+class Binop;
+class Unop;
+class FieldAccess;
+class ArrayAccess;
+class TupleAccess;
+class MapAccess;
+class Cast;
+class Tuple;
+class Ternary;
+class Block;
 
-  SizedType type;
-  Map *key_for_map = nullptr;
-  Map *map = nullptr;      // Only set when this expression is assigned to a map
-  Variable *var = nullptr; // Set when this expression is assigned to a variable
+class Expression : public VariantNode<Integer,
+                                      NegativeInteger,
+                                      PositionalParameter,
+                                      PositionalParameterCount,
+                                      String,
+                                      Identifier,
+                                      Builtin,
+                                      Call,
+                                      Sizeof,
+                                      Offsetof,
+                                      Map,
+                                      Variable,
+                                      Binop,
+                                      Unop,
+                                      FieldAccess,
+                                      ArrayAccess,
+                                      TupleAccess,
+                                      MapAccess,
+                                      Cast,
+                                      Tuple,
+                                      Ternary,
+                                      Block> {
+public:
+  using VariantNode::VariantNode;
+  Expression() : Expression(static_cast<Block *>(nullptr)) {};
+
+  // The `type` method is the only common thing required by all expression
+  // types. This will on the variant types.
+  const SizedType &type() const;
 };
-using ExpressionList = std::vector<Expression *>;
+using ExpressionList = std::vector<Expression>;
 
-class Integer : public Expression {
+class ExprStatement;
+class VarDeclStatement;
+class AssignScalarMapStatement;
+class AssignMapStatement;
+class AssignVarStatement;
+class If;
+class Unroll;
+class Jump;
+class While;
+class For;
+
+class Statement : public VariantNode<ExprStatement,
+                                     VarDeclStatement,
+                                     AssignScalarMapStatement,
+                                     AssignMapStatement,
+                                     AssignVarStatement,
+                                     If,
+                                     Unroll,
+                                     Jump,
+                                     While,
+                                     For> {
 public:
-  explicit Integer(Diagnostics &d, int64_t n, Location &&loc);
+  using VariantNode::VariantNode;
+  Statement() : Statement(static_cast<ExprStatement *>(nullptr)) {};
+};
+using StatementList = std::vector<Statement>;
+
+class Integer : public Node {
+public:
+  explicit Integer(Diagnostics &d, int64_t n, Location &&loc)
+      : Node(d, std::move(loc)), value(n) {};
+
+  const SizedType &type() const
+  {
+    static SizedType uint64 = CreateUInt64();
+    return uint64;
+  }
+
   const uint64_t value;
 };
 
-class NegativeInteger : public Expression {
+class NegativeInteger : public Node {
 public:
-  explicit NegativeInteger(Diagnostics &d, int64_t n, Location &&loc);
+  explicit NegativeInteger(Diagnostics &d, int64_t n, Location &&loc)
+      : Node(d, std::move(loc)), value(n) {};
+
+  const SizedType &type() const
+  {
+    static SizedType int64 = CreateInt64();
+    return int64;
+  }
+
   const int64_t value;
 };
 
-class PositionalParameter : public Expression {
+class PositionalParameter : public Node {
 public:
-  explicit PositionalParameter(Diagnostics &d, long n, Location &&loc);
+  explicit PositionalParameter(Diagnostics &d, long n, Location &&loc)
+      : Node(d, std::move(loc)), n(n) {};
   const long n;
+
+  const SizedType &type() const
+  {
+    static SizedType none = CreateNone();
+    return none;
+  }
 };
 
-class PositionalParameterCount : public Expression {
+class PositionalParameterCount : public Node {
 public:
-  explicit PositionalParameterCount(Diagnostics &d, Location &&loc);
+  explicit PositionalParameterCount(Diagnostics &d, Location &&loc)
+      : Node(d, std::move(loc)) {};
+
+  const SizedType &type() const
+  {
+    static SizedType none = CreateNone();
+    return none;
+  }
 };
 
-class String : public Expression {
+class String : public Node {
 public:
-  explicit String(Diagnostics &d, std::string str, Location &&loc);
+  explicit String(Diagnostics &d, std::string str, Location &&loc)
+      : Node(d, std::move(loc)),
+        value(std::move(str)),
+        string_type(CreateString(str.size() + 1)) {};
+
+  const SizedType &type() const
+  {
+    return string_type;
+  }
+
   const std::string value;
+  SizedType string_type;
 };
 
-class Identifier : public Expression {
+class Identifier : public Node {
 public:
-  explicit Identifier(Diagnostics &d, std::string ident, Location &&loc);
+  explicit Identifier(Diagnostics &d, std::string ident, Location &&loc)
+      : Node(d, std::move(loc)), ident(std::move(ident)) {};
+
+  const SizedType &type() const
+  {
+    return ident_type;
+  }
 
   std::string ident;
+  SizedType ident_type;
 };
 
-class Builtin : public Expression {
+class Builtin : public Node {
 public:
-  explicit Builtin(Diagnostics &d, std::string ident, Location &&loc);
+  explicit Builtin(Diagnostics &d, std::string ident, Location &&loc)
+      : Node(d, std::move(loc)), ident(std::move(ident)) {};
 
-  std::string ident;
-  int probe_id;
+  const SizedType &type() const
+  {
+    return builtin_type;
+  }
 
   // Check if the builtin is 'arg0' - 'arg9'
   bool is_argx() const
@@ -165,42 +311,83 @@ public:
     return !ident.compare(0, 3, "arg") && ident.size() == 4 &&
            ident.at(3) >= '0' && ident.at(3) <= '9';
   }
+
+  std::string ident;
+  int probe_id;
+  SizedType builtin_type;
 };
 
-class Call : public Expression {
+class Call : public Node {
 public:
-  explicit Call(Diagnostics &d, std::string func, Location &&loc);
-  Call(Diagnostics &d,
-       std::string func,
-       ExpressionList &&vargs,
-       Location &&loc);
+  explicit Call(Diagnostics &d, std::string func, Location &&loc)
+      : Node(d, std::move(loc)), func(std::move(func)) {};
+  explicit Call(Diagnostics &d,
+                std::string func,
+                ExpressionList &&vargs,
+                Location &&loc)
+      : Node(d, std::move(loc)),
+        func(std::move(func)),
+        vargs(std::move(vargs)) {};
+
+  const SizedType &type() const
+  {
+    return return_type;
+  }
 
   std::string func;
   ExpressionList vargs;
+  SizedType return_type;
+
+  // Some passes may inject new arguments to the call, which is always
+  // done at the beginning (in order to support variadic arguments) for
+  // later passes. This is a result of "desugaring" some syntax. When this
+  // happens, this number is increased so that later error reporting can
+  // correctly account for this.
+  size_t injected_args = 0;
 };
 
-class Sizeof : public Expression {
+class Sizeof : public Node {
 public:
-  Sizeof(Diagnostics &d, SizedType type, Location &&loc);
-  Sizeof(Diagnostics &d, Expression *expr, Location &&loc);
+  explicit Sizeof(Diagnostics &d, SizedType type, Location &&loc)
+      : Node(d, std::move(loc)), record(type) {};
+  explicit Sizeof(Diagnostics &d, Expression expr, Location &&loc)
+      : Node(d, std::move(loc)), record(expr) {};
 
-  Expression *expr = nullptr;
-  SizedType argtype;
+  const SizedType &type() const
+  {
+    if (std::holds_alternative<Expression>(record)) {
+      return std::get<Expression>(record).type();
+    } else {
+      return std::get<SizedType>(record);
+    }
+  }
+
+  std::variant<Expression, SizedType> record;
 };
 
-class Offsetof : public Expression {
+class Offsetof : public Node {
 public:
-  Offsetof(Diagnostics &d,
-           SizedType record,
-           std::vector<std::string> &field,
-           Location &&loc);
-  Offsetof(Diagnostics &d,
-           Expression *expr,
-           std::vector<std::string> &field,
-           Location &&loc);
+  explicit Offsetof(Diagnostics &d,
+                    SizedType record,
+                    std::vector<std::string> &field,
+                    Location &&loc)
+      : Node(d, std::move(loc)), record(record), field(field) {};
+  explicit Offsetof(Diagnostics &d,
+                    Expression expr,
+                    std::vector<std::string> &field,
+                    Location &&loc)
+      : Node(d, std::move(loc)), record(expr), field(field) {};
 
-  SizedType record;
-  Expression *expr = nullptr;
+  const SizedType &type() const
+  {
+    if (std::holds_alternative<Expression>(record)) {
+      return std::get<Expression>(record).type();
+    } else {
+      return std::get<SizedType>(record);
+    }
+  }
+
+  std::variant<Expression, SizedType> record;
   std::vector<std::string> field;
 };
 
@@ -210,273 +397,415 @@ public:
                             std::string ident,
                             std::string bpf_type,
                             int max_entries,
-                            Location &&loc);
-  std::string ident;
-  std::string bpf_type;
-  int max_entries;
+                            Location &&loc)
+      : Node(d, std::move(loc)),
+        ident(std::move(ident)),
+        bpf_type(std::move(bpf_type)),
+        max_entries(max_entries) {};
+
+  const std::string ident;
+  const std::string bpf_type;
+  const int max_entries;
 };
-
-class Map : public Expression {
-public:
-  explicit Map(Diagnostics &d,
-               std::string ident,
-               Expression *expr,
-               Location &&loc);
-
-  std::string ident;
-  Expression *key_expr = nullptr;
-  SizedType key_type;
-  bool skip_key_validation = false;
-  // This is for a feature check on reading per-cpu maps
-  // which involve calling map_lookup_percpu_elem
-  // https://github.com/bpftrace/bpftrace/issues/3755
-  bool is_read = true;
-};
-
-class Variable : public Expression {
-public:
-  explicit Variable(Diagnostics &d, std::string ident, Location &&loc);
-
-  std::string ident;
-};
-
-class Binop : public Expression {
-public:
-  Binop(Diagnostics &d,
-        Expression *left,
-        Operator op,
-        Expression *right,
-        Location &&loc);
-
-  Expression *left = nullptr;
-  Expression *right = nullptr;
-  Operator op;
-};
-
-class Unop : public Expression {
-public:
-  Unop(Diagnostics &d,
-       Operator op,
-       Expression *expr,
-       bool is_post_op,
-       Location &&loc);
-
-  Expression *expr = nullptr;
-  Operator op;
-  bool is_post_op;
-};
-
-class FieldAccess : public Expression {
-public:
-  FieldAccess(Diagnostics &d,
-              Expression *expr,
-              std::string field,
-              Location &&loc);
-
-  Expression *expr = nullptr;
-  std::string field;
-};
-
-class ArrayAccess : public Expression {
-public:
-  ArrayAccess(Diagnostics &d,
-              Expression *expr,
-              Expression *indexpr,
-              Location &&loc);
-
-  Expression *expr = nullptr;
-  Expression *indexpr = nullptr;
-};
-
-class TupleAccess : public Expression {
-public:
-  TupleAccess(Diagnostics &d, Expression *expr, ssize_t index, Location &&loc);
-
-  Expression *expr = nullptr;
-  ssize_t index;
-};
-
-class Cast : public Expression {
-public:
-  Cast(Diagnostics &d, SizedType type, Expression *expr, Location &&loc);
-
-  Expression *expr = nullptr;
-};
-
-class Tuple : public Expression {
-public:
-  Tuple(Diagnostics &d, ExpressionList &&elems, Location &&loc);
-
-  ExpressionList elems;
-};
-
-class Statement : public Node {
-public:
-  Statement(Diagnostics &d, Location &&loc) : Node(d, std::move(loc)) {};
-};
-
-using StatementList = std::vector<Statement *>;
-
-class ExprStatement : public Statement {
-public:
-  explicit ExprStatement(Diagnostics &d, Expression *expr, Location &&loc);
-
-  Expression *expr = nullptr;
-};
-
 using MapDeclList = std::vector<MapDeclStatement *>;
 
-class VarDeclStatement : public Statement {
+class Map : public Node {
 public:
-  VarDeclStatement(Diagnostics &d,
-                   Variable *var,
-                   SizedType type,
-                   Location &&loc);
-  VarDeclStatement(Diagnostics &d, Variable *var, Location &&loc);
+  explicit Map(Diagnostics &d, std::string ident, Location &&loc)
+      : Node(d, std::move(loc)), ident(std::move(ident)) {};
 
-  Variable *var = nullptr;
-  bool set_type = false;
+  const SizedType &type() const
+  {
+    return value_type;
+  }
+
+  std::string ident;
+  SizedType key_type;
+  SizedType value_type;
 };
 
-class AssignMapStatement : public Statement {
+class Variable : public Node {
+public:
+  explicit Variable(Diagnostics &d, std::string ident, Location &&loc)
+      : Node(d, std::move(loc)), ident(std::move(ident)) {};
+
+  const SizedType &type() const
+  {
+    return var_type;
+  }
+
+  std::string ident;
+  SizedType var_type;
+};
+
+class Binop : public Node {
+public:
+  explicit Binop(Diagnostics &d,
+                 Expression left,
+                 Operator op,
+                 Expression right,
+                 Location &&loc)
+      : Node(d, std::move(loc)),
+        left(std::move(left)),
+        right(std::move(right)),
+        op(op) {};
+
+  const SizedType &type() const
+  {
+    return result_type;
+  }
+
+  Expression left;
+  Expression right;
+  Operator op;
+  SizedType result_type;
+};
+
+class Unop : public Node {
+public:
+  explicit Unop(Diagnostics &d,
+                Expression expr,
+                Operator op,
+                bool is_post_op,
+                Location &&loc)
+      : Node(d, std::move(loc)),
+        expr(std::move(expr)),
+        op(op),
+        is_post_op(is_post_op) {};
+
+  const SizedType &type() const
+  {
+    return result_type;
+  }
+
+  Expression expr;
+  Operator op;
+  bool is_post_op;
+  SizedType result_type;
+};
+
+class FieldAccess : public Node {
+public:
+  explicit FieldAccess(Diagnostics &d,
+                       Expression expr,
+                       std::string field,
+                       Location &&loc)
+      : Node(d, std::move(loc)),
+        expr(std::move(expr)),
+        field(std::move(field)) {};
+
+  const SizedType &type() const
+  {
+    return field_type;
+  }
+
+  Expression expr;
+  std::string field;
+  SizedType field_type;
+};
+
+class ArrayAccess : public Node {
+public:
+  explicit ArrayAccess(Diagnostics &d,
+                       Expression expr,
+                       Expression indexpr,
+                       Location &&loc)
+      : Node(d, std::move(loc)),
+        expr(std::move(expr)),
+        indexpr(std::move(indexpr)) {};
+
+  const SizedType &type() const
+  {
+    return element_type;
+  }
+
+  Expression expr;
+  Expression indexpr;
+  SizedType element_type;
+};
+
+class TupleAccess : public Node {
+public:
+  explicit TupleAccess(Diagnostics &d,
+                       Expression expr,
+                       ssize_t index,
+                       Location &&loc)
+      : Node(d, std::move(loc)), expr(std::move(expr)), index(index) {};
+
+  const SizedType &type() const
+  {
+    return element_type;
+  }
+
+  Expression expr;
+  ssize_t index;
+  SizedType element_type;
+};
+
+class MapAccess : public Node {
+public:
+  explicit MapAccess(Diagnostics &d, Map *map, Expression key, Location &&loc)
+      : Node(d, std::move(loc)), map(map), key(std::move(key)) {};
+
+  const SizedType &type() const
+  {
+    return map->type();
+  }
+
+  Map *map = nullptr;
+  Expression key;
+};
+
+class Cast : public Node {
+public:
+  explicit Cast(Diagnostics &d, SizedType type, Expression expr, Location &&loc)
+      : Node(d, std::move(loc)),
+        cast_type(std::move(type)),
+        expr(std::move(expr)) {};
+
+  const SizedType &type() const
+  {
+    return cast_type;
+  }
+
+  SizedType cast_type;
+  Expression expr;
+};
+
+class Tuple : public Node {
+public:
+  explicit Tuple(Diagnostics &d, ExpressionList &&elems, Location &&loc)
+      : Node(d, std::move(loc)), elems(std::move(elems)) {};
+
+  const SizedType &type() const
+  {
+    return tuple_type;
+  }
+
+  ExpressionList elems;
+  SizedType tuple_type;
+};
+
+class ExprStatement : public Node {
+public:
+  explicit ExprStatement(Diagnostics &d, Expression expr, Location &&loc)
+      : Node(d, std::move(loc)), expr(expr) {};
+
+  Expression expr;
+};
+
+class VarDeclStatement : public Node {
+public:
+  explicit VarDeclStatement(Diagnostics &d,
+                            Variable *var,
+                            SizedType type,
+                            Location &&loc)
+      : Node(d, std::move(loc)), var(var), type(type) {};
+  explicit VarDeclStatement(Diagnostics &d, Variable *var, Location &&loc)
+      : Node(d, std::move(loc)), var(var) {};
+
+  Variable *var = nullptr;
+  std::optional<SizedType> type;
+};
+
+// Scalar map assignment is purely a syntax sugar that is removed by the pass
+// returned by`CreateMapSugarPass`. This is replaced by the expansion of
+// default keys, so that later steps (semantic analysis, code generation),
+// don't need to worry about this. Maps whose accesses are bound to a single
+// key will be automatically collapsed into scalar values on the output side.
+class AssignScalarMapStatement : public Node {
+public:
+  explicit AssignScalarMapStatement(Diagnostics &d,
+                                    Map *map,
+                                    Expression expr,
+                                    Location &&loc)
+      : Node(d, std::move(loc)), map(map), expr(std::move(expr)) {};
+
+  Map *map = nullptr;
+  Expression expr;
+};
+
+class AssignMapStatement : public Node {
 public:
   AssignMapStatement(Diagnostics &d,
                      Map *map,
-                     Expression *expr,
-                     Location &&loc);
+                     Expression key,
+                     Expression expr,
+                     Location &&loc)
+      : Node(d, std::move(loc)),
+        map(map),
+        key(std::move(key)),
+        expr(std::move(expr)) {};
 
   Map *map = nullptr;
-  Expression *expr = nullptr;
+  Expression key;
+  Expression expr;
 };
 
-class AssignVarStatement : public Statement {
+class AssignVarStatement : public Node {
 public:
-  AssignVarStatement(Diagnostics &d,
-                     Variable *var,
-                     Expression *expr,
-                     Location &&loc);
-  AssignVarStatement(Diagnostics &d,
-                     VarDeclStatement *var_decl_stmt,
-                     Expression *expr,
-                     Location &&loc);
+  explicit AssignVarStatement(Diagnostics &d,
+                              Variable *var,
+                              Expression expr,
+                              Location &&loc)
+      : Node(d, std::move(loc)), var_decl(var), expr(std::move(expr)) {};
+  explicit AssignVarStatement(Diagnostics &d,
+                              VarDeclStatement *var_decl_stmt,
+                              Expression expr,
+                              Location &&loc)
+      : Node(d, std::move(loc)),
+        var_decl(var_decl_stmt),
+        expr(std::move(expr)) {};
 
-  VarDeclStatement *var_decl_stmt = nullptr;
-  Variable *var = nullptr;
-  Expression *expr = nullptr;
+  Variable *var()
+  {
+    if (std::holds_alternative<VarDeclStatement *>(var_decl)) {
+      return std::get<VarDeclStatement *>(var_decl)->var;
+    } else {
+      return std::get<Variable *>(var_decl);
+    }
+  }
+
+  std::variant<VarDeclStatement *, Variable *> var_decl;
+  Expression expr;
 };
 
 class AssignConfigVarStatement : public Node {
 public:
-  using value_t = std::variant<uint64_t, std::string>;
-
-  AssignConfigVarStatement(Diagnostics &d,
-                           std::string var,
-                           uint64_t value,
-                           Location &&loc);
-  AssignConfigVarStatement(Diagnostics &d,
-                           std::string var,
-                           std::string value,
-                           Location &&loc);
+  explicit AssignConfigVarStatement(Diagnostics &d,
+                                    std::string var,
+                                    uint64_t value,
+                                    Location &&loc)
+      : Node(d, std::move(loc)), var(std::move(var)), value(value) {};
+  explicit AssignConfigVarStatement(Diagnostics &d,
+                                    std::string var,
+                                    std::string value,
+                                    Location &&loc)
+      : Node(d, std::move(loc)),
+        var(std::move(var)),
+        value(std::move(value)) {};
 
   std::string var;
-  value_t value;
+  std::variant<uint64_t, std::string> value;
 };
 using ConfigStatementList = std::vector<AssignConfigVarStatement *>;
 
-class Block : public Expression {
+class Block : public Node {
 public:
-  Block(Diagnostics &d, StatementList &&stmts, Location &&loc);
-  Block(Diagnostics &d,
-        StatementList &&stmts,
-        Expression *expr,
-        Location &&loc);
+  explicit Block(Diagnostics &d, StatementList &&stmts, Location &&loc)
+      : Node(d, std::move(loc)), stmts(std::move(stmts)) {};
+  explicit Block(Diagnostics &d,
+                 StatementList &&stmts,
+                 Expression expr,
+                 Location &&loc)
+      : Node(d, std::move(loc)),
+        stmts(std::move(stmts)),
+        expr(std::move(expr)) {};
+
+  static const SizedType &none_type()
+  {
+    static SizedType none = CreateNone();
+    return none;
+  }
+  const SizedType &type() const
+  {
+    return expr.has_value() ? expr->type() : none_type();
+  }
 
   StatementList stmts;
   // Depending on how it is parsed, a block can also be evaluated as an
   // expression. This follows all other statements in the block.
-  Expression *expr = nullptr;
+  std::optional<Expression> expr;
 };
 
-class If : public Statement {
+class If : public Node {
 public:
-  If(Diagnostics &d,
-     Expression *cond,
-     Block *if_block,
-     Block *else_block,
-     Location &&loc);
+  explicit If(Diagnostics &d,
+              Expression cond,
+              Block *if_block,
+              Block *else_block,
+              Location &&loc)
+      : Node(d, std::move(loc)),
+        cond(std::move(cond)),
+        if_block(if_block),
+        else_block(else_block) {};
 
-  Expression *cond = nullptr;
+  Expression cond;
   Block *if_block = nullptr;
   Block *else_block = nullptr;
 };
 
-class Unroll : public Statement {
+class Unroll : public Node {
 public:
-  Unroll(Diagnostics &d, Expression *expr, Block *block, Location &&loc);
+  explicit Unroll(Diagnostics &d, Expression expr, Block *block, Location &&loc)
+      : Node(d, std::move(loc)), expr(std::move(expr)), block(block) {};
 
-  Expression *expr = nullptr;
+  Expression expr;
   Block *block = nullptr;
 };
 
-class Jump : public Statement {
+class Jump : public Node {
 public:
-  Jump(Diagnostics &d, JumpType ident, Expression *return_value, Location &&loc)
-      : Statement(d, std::move(loc)), ident(ident), return_value(return_value)
-  {
-  }
+  Jump(Diagnostics &d, JumpType ident, Expression return_value, Location &&loc)
+      : Node(d, std::move(loc)),
+        ident(ident),
+        return_value(std::move(return_value)) {};
   Jump(Diagnostics &d, JumpType ident, Location &&loc)
-      : Statement(d, std::move(loc)), ident(ident), return_value(nullptr)
-  {
-  }
+      : Node(d, std::move(loc)), ident(ident) {};
 
   JumpType ident = JumpType::INVALID;
-  Expression *return_value;
+  std::optional<Expression> return_value;
 };
 
 class Predicate : public Node {
 public:
-  explicit Predicate(Diagnostics &d, Expression *expr, Location &&loc);
+  explicit Predicate(Diagnostics &d, Expression expr, Location &&loc)
+      : Node(d, std::move(loc)), expr(std::move(expr)) {};
 
-  Expression *expr = nullptr;
+  Expression expr;
 };
 
-class Ternary : public Expression {
+class Ternary : public Node {
 public:
-  Ternary(Diagnostics &d,
-          Expression *cond,
-          Expression *left,
-          Expression *right,
-          Location &&loc);
+  explicit Ternary(Diagnostics &d,
+                   Expression cond,
+                   Expression left,
+                   Expression right,
+                   Location &&loc)
+      : Node(d, std::move(loc)),
+        cond(std::move(cond)),
+        left(std::move(left)),
+        right(std::move(right)) {};
 
-  Expression *cond = nullptr;
-  Expression *left = nullptr;
-  Expression *right = nullptr;
-};
-
-class While : public Statement {
-public:
-  While(Diagnostics &d, Expression *cond, Block *block, Location &&loc)
-      : Statement(d, std::move(loc)), cond(cond), block(block)
+  const SizedType &type() const
   {
+    return result_type;
   }
 
-  Expression *cond = nullptr;
+  Expression cond;
+  Expression left;
+  Expression right;
+  SizedType result_type;
+};
+
+class While : public Node {
+public:
+  explicit While(Diagnostics &d, Expression cond, Block *block, Location &&loc)
+      : Node(d, std::move(loc)), cond(cond), block(block) {};
+
+  Expression cond;
   Block *block = nullptr;
 };
 
-class For : public Statement {
+class For : public Node {
 public:
-  For(Diagnostics &d,
-      Variable *decl,
-      Map *map,
-      StatementList &&stmts,
-      Location &&loc)
-      : Statement(d, std::move(loc)),
-        decl(decl),
-        map(map),
-        stmts(std::move(stmts))
-  {
-  }
+  explicit For(Diagnostics &d,
+               Variable *decl,
+               Map *map,
+               StatementList &&stmts,
+               Location &&loc)
+      : Node(d, std::move(loc)), decl(decl), map(map), stmts(std::move(stmts)) {
+        };
 
   Variable *decl = nullptr;
   Map *map = nullptr;
@@ -486,10 +815,8 @@ public:
 
 class Config : public Node {
 public:
-  Config(Diagnostics &d, ConfigStatementList &&stmts, Location &&loc)
-      : Node(d, std::move(loc)), stmts(std::move(stmts))
-  {
-  }
+  explicit Config(Diagnostics &d, ConfigStatementList &&stmts, Location &&loc)
+      : Node(d, std::move(loc)), stmts(std::move(stmts)) {};
 
   ConfigStatementList stmts;
 };
@@ -497,10 +824,13 @@ public:
 class Probe;
 class AttachPoint : public Node {
 public:
-  AttachPoint(Diagnostics &d,
-              std::string raw_input,
-              bool ignore_invalid,
-              Location &&loc);
+  explicit AttachPoint(Diagnostics &d,
+                       std::string raw_input,
+                       bool ignore_invalid,
+                       Location &&loc)
+      : Node(d, std::move(loc)),
+        raw_input(std::move(raw_input)),
+        ignore_invalid(ignore_invalid) {};
 
   // Currently, the AST node itself is used to store metadata related to probe
   // expansion and attachment. This is done through `create_expansion_copy`
@@ -547,11 +877,15 @@ using AttachPointList = std::vector<AttachPoint *>;
 
 class Probe : public Node {
 public:
-  Probe(Diagnostics &d,
-        AttachPointList &&attach_points,
-        Predicate *pred,
-        Block *block,
-        Location &&loc);
+  explicit Probe(Diagnostics &d,
+                 AttachPointList &&attach_points,
+                 Predicate *pred,
+                 Block *block,
+                 Location &&loc)
+      : Node(d, std::move(loc)),
+        attach_points(std::move(attach_points)),
+        pred(pred),
+        block(block) {};
 
   AttachPointList attach_points;
   Predicate *pred = nullptr;
@@ -575,67 +909,73 @@ using ProbeList = std::vector<Probe *>;
 
 class SubprogArg : public Node {
 public:
-  SubprogArg(Diagnostics &d, std::string name, SizedType type, Location &&loc);
+  explicit SubprogArg(Diagnostics &d,
+                      std::string name,
+                      SizedType type,
+                      Location &&loc)
+      : Node(d, std::move(loc)),
+        name(std::move(name)),
+        type(std::move(type)) {};
 
-  std::string name() const;
+  const std::string name;
   SizedType type;
-
-private:
-  std::string name_;
 };
 using SubprogArgList = std::vector<SubprogArg *>;
 
 class Subprog : public Node {
 public:
-  Subprog(Diagnostics &d,
-          std::string name,
-          SizedType return_type,
-          SubprogArgList &&args,
-          StatementList &&stmts,
-          Location &&loc);
+  explicit Subprog(Diagnostics &d,
+                   std::string name,
+                   SizedType return_type,
+                   SubprogArgList &&args,
+                   StatementList &&stmts,
+                   Location &&loc)
+      : Node(d, std::move(loc)),
+        name(std::move(name)),
+        return_type(std::move(return_type)),
+        args(std::move(args)),
+        stmts(std::move(stmts)) {};
 
-  SubprogArgList args;
+  const std::string name;
   SizedType return_type;
+  SubprogArgList args;
   StatementList stmts;
-
-  std::string name() const;
-
-private:
-  std::string name_;
 };
 using SubprogList = std::vector<Subprog *>;
 
 class Import : public Node {
 public:
-  Import(Diagnostics &d, std::string name, Location &&loc);
+  explicit Import(Diagnostics &d, std::string name, Location &&loc)
+      : Node(d, std::move(loc)), name(std::move(name)) {};
 
-  const std::string &name() const
-  {
-    return name_;
-  }
-
-private:
-  std::string name_;
+  const std::string name;
 };
 using ImportList = std::vector<Import *>;
 
 class Program : public Node {
 public:
-  Program(Diagnostics &d,
-          std::string c_definitions,
-          Config *config,
-          ImportList &&imports,
-          MapDeclList &&map_decls,
-          SubprogList &&functions,
-          ProbeList &&probes,
-          Location &&loc);
+  explicit Program(Diagnostics &d,
+                   std::string c_definitions,
+                   Config *config,
+                   ImportList &&imports,
+                   MapDeclList &&map_decls,
+                   SubprogList &&functions,
+                   ProbeList &&probes,
+                   Location &&loc)
+      : Node(d, std::move(loc)),
+        c_definitions(std::move(c_definitions)),
+        config(config),
+        imports(std::move(imports)),
+        map_decls(std::move(map_decls)),
+        functions(std::move(functions)),
+        probes(std::move(probes)) {};
 
   std::string c_definitions;
   Config *config = nullptr;
   ImportList imports;
+  MapDeclList map_decls;
   SubprogList functions;
   ProbeList probes;
-  MapDeclList map_decls;
 };
 
 std::string opstr(const Binop &binop);

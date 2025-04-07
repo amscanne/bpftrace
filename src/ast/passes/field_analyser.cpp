@@ -29,19 +29,18 @@ public:
   void visit(Variable &var);
   void visit(FieldAccess &acc);
   void visit(ArrayAccess &arr);
-  void visit(Cast &cast);
-  void visit(Sizeof &szof);
-  void visit(Offsetof &offof);
   void visit(AssignMapStatement &assignment);
   void visit(AssignVarStatement &assignment);
   void visit(Unop &unop);
   void visit(Probe &probe);
   void visit(Subprog &subprog);
+  void visit(Expression &expr);
+  void visit(const SizedType &type);
 
 private:
   void resolve_args(Probe &probe);
-  void resolve_fields(SizedType &type);
-  void resolve_type(SizedType &type);
+  void resolve_fields(const SizedType &type);
+  void resolve_type(const SizedType &type);
 
   ProbeType probe_type_;
   std::string attach_func_;
@@ -107,8 +106,6 @@ void FieldAnalyser::visit(Builtin &builtin)
 
 void FieldAnalyser::visit(Map &map)
 {
-  visit(map.key_expr);
-
   auto it = var_types_.find(map.ident);
   if (it != var_types_.end())
     sized_type_ = it->second;
@@ -164,28 +161,10 @@ void FieldAnalyser::visit(ArrayAccess &arr)
   }
 }
 
-void FieldAnalyser::visit(Cast &cast)
-{
-  visit(cast.expr);
-  resolve_type(cast.type);
-}
-
-void FieldAnalyser::visit(Sizeof &szof)
-{
-  visit(szof.expr);
-  resolve_type(szof.argtype);
-}
-
-void FieldAnalyser::visit(Offsetof &offof)
-{
-  if (offof.expr)
-    visit(*offof.expr);
-  resolve_type(offof.record);
-}
-
 void FieldAnalyser::visit(AssignMapStatement &assignment)
 {
   visit(assignment.map);
+  visit(assignment.key);
   visit(assignment.expr);
   var_types_.emplace(assignment.map->ident, sized_type_);
 }
@@ -193,7 +172,7 @@ void FieldAnalyser::visit(AssignMapStatement &assignment)
 void FieldAnalyser::visit(AssignVarStatement &assignment)
 {
   visit(assignment.expr);
-  var_types_.emplace(assignment.var->ident, sized_type_);
+  var_types_.emplace(assignment.var()->ident, assignment.expr.type());
 }
 
 void FieldAnalyser::visit(Unop &unop)
@@ -311,7 +290,7 @@ void FieldAnalyser::resolve_args(Probe &probe)
   }
 }
 
-void FieldAnalyser::resolve_fields(SizedType &type)
+void FieldAnalyser::resolve_fields(const SizedType &type)
 {
   if (!type.IsRecordTy())
     return;
@@ -326,7 +305,7 @@ void FieldAnalyser::resolve_fields(SizedType &type)
     bpftrace_.btf_->resolve_fields(type);
 }
 
-void FieldAnalyser::resolve_type(SizedType &type)
+void FieldAnalyser::resolve_type(const SizedType &type)
 {
   sized_type_ = CreateNone();
 
@@ -349,6 +328,17 @@ void FieldAnalyser::resolve_type(SizedType &type)
   // Could not resolve destination type - let ClangParser do it
   if (sized_type_.IsNoneTy())
     bpftrace_.btf_set_.insert(name);
+}
+
+void FieldAnalyser::visit(Expression &expr)
+{
+  visit(expr.value);
+  visit(expr.type());
+}
+
+void FieldAnalyser::visit(const SizedType &type)
+{
+  resolve_type(type);
 }
 
 void FieldAnalyser::visit(Probe &probe)
