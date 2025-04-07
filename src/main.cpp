@@ -20,6 +20,7 @@
 #include "ast/pass_manager.h"
 #include "ast/passes/codegen_llvm.h"
 #include "ast/passes/config_analyser.h"
+#include "ast/passes/fold_literals.h"
 #include "ast/passes/parser.h"
 #include "ast/passes/pid_filter_pass.h"
 #include "ast/passes/portability_analyser.h"
@@ -287,6 +288,7 @@ std::vector<std::string> extra_flags(
 
 void CreateDynamicPasses(std::function<void(ast::Pass&& pass)> add)
 {
+  add(ast::CreateFoldLiteralsPass());
   add(ast::CreateConfigPass());
   add(ast::CreateResolveImportsPass({}));
   add(ast::CreatePidFilterPass());
@@ -299,9 +301,10 @@ void CreateDynamicPasses(std::function<void(ast::Pass&& pass)> add)
 
 void CreateAotPasses(std::function<void(ast::Pass&& pass)> add)
 {
+  add(ast::CreatePortabilityPass());
+  add(ast::CreateFoldLiteralsPass());
   add(ast::CreateConfigPass());
   add(ast::CreateSemanticPass());
-  add(ast::CreatePortabilityPass());
   add(ast::CreateResourcePass());
   add(ast::CreateRecursionCheckPass());
   add(ast::CreateReturnPathPass());

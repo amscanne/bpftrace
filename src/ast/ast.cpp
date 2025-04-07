@@ -11,16 +11,19 @@ namespace bpftrace::ast {
 
 static constexpr std::string_view ENUM = "enum ";
 
-Integer::Integer(Diagnostics &d, int64_t n, Location &&loc, bool is_negative)
-    : Expression(d, std::move(loc)), n(n), is_negative(is_negative)
+Integer::Integer(Diagnostics &d, int64_t n, Location &&loc)
+    : Expression(d, std::move(loc)), value(n)
 {
-  is_literal = true;
+}
+
+NegativeInteger::NegativeInteger(Diagnostics &d, int64_t n, Location &&loc)
+    : Expression(d, std::move(loc)), value(n)
+{
 }
 
 String::String(Diagnostics &d, std::string str, Location &&loc)
-    : Expression(d, std::move(loc)), str(std::move(str))
+    : Expression(d, std::move(loc)), value(std::move(str))
 {
-  is_literal = true;
 }
 
 Builtin::Builtin(Diagnostics &d, std::string ident, Location &&loc)
@@ -36,14 +39,12 @@ Identifier::Identifier(Diagnostics &d, std::string ident, Location &&loc)
 PositionalParameter::PositionalParameter(Diagnostics &d, long n, Location &&loc)
     : Expression(d, std::move(loc)), n(n)
 {
-  is_literal = true;
 }
 
 PositionalParameterCount::PositionalParameterCount(Diagnostics &d,
                                                    Location &&loc)
     : Expression(d, std::move(loc))
 {
-  is_literal = true;
 }
 
 Call::Call(Diagnostics &d, std::string func, Location &&loc)
