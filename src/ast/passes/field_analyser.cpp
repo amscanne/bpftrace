@@ -29,15 +29,12 @@ public:
   void visit(Variable &var);
   void visit(FieldAccess &acc);
   void visit(ArrayAccess &arr);
-  void visit(MapAccess &acc);
-  void visit(Cast &cast);
-  void visit(Sizeof &szof);
-  void visit(Offsetof &offof);
   void visit(AssignMapStatement &assignment);
   void visit(AssignVarStatement &assignment);
   void visit(Unop &unop);
   void visit(Probe &probe);
   void visit(Subprog &subprog);
+  void visit(SizedType type);
 
 private:
   void resolve_args(Probe &probe);
@@ -163,31 +160,6 @@ void FieldAnalyser::visit(ArrayAccess &arr)
   }
 }
 
-void FieldAnalyser::visit(MapAccess &acc)
-{
-  visit(acc.key);
-  visit(acc.map); // Leaves sized_type_ as value type.
-}
-
-void FieldAnalyser::visit(Cast &cast)
-{
-  visit(cast.expr);
-  resolve_type(cast.type);
-}
-
-void FieldAnalyser::visit(Sizeof &szof)
-{
-  visit(szof.expr);
-  resolve_type(szof.argtype);
-}
-
-void FieldAnalyser::visit(Offsetof &offof)
-{
-  if (offof.expr)
-    visit(*offof.expr);
-  resolve_type(offof.record);
-}
-
 void FieldAnalyser::visit(AssignMapStatement &assignment)
 {
   visit(assignment.map);
@@ -199,7 +171,7 @@ void FieldAnalyser::visit(AssignMapStatement &assignment)
 void FieldAnalyser::visit(AssignVarStatement &assignment)
 {
   visit(assignment.expr);
-  var_types_.emplace(assignment.var->ident, sized_type_);
+  var_types_.emplace(assignment.var()->ident, assignment.expr.type());
 }
 
 void FieldAnalyser::visit(Unop &unop)
@@ -355,6 +327,11 @@ void FieldAnalyser::resolve_type(SizedType &type)
   // Could not resolve destination type - let ClangParser do it
   if (sized_type_.IsNoneTy())
     bpftrace_.btf_set_.insert(name);
+}
+
+void FieldAnalyser::visit(SizedType type)
+{
+  resolve_type(type);
 }
 
 void FieldAnalyser::visit(Probe &probe)
