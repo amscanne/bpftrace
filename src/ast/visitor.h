@@ -56,10 +56,6 @@ public:
   {
     return default_value();
   }
-  R visit(Identifier &identifier __attribute__((__unused__)))
-  {
-    return default_value();
-  }
   R visit(Variable &var __attribute__((__unused__)))
   {
     return default_value();
@@ -349,7 +345,6 @@ public:
                               PositionalParameter *,
                               PositionalParameterCount *,
                               String *,
-                              Identifier *,
                               Builtin *,
                               Call *,
                               Sizeof *,

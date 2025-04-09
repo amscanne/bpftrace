@@ -189,7 +189,6 @@ public:
   ScopedExpr visit(PositionalParameter &param);
   ScopedExpr visit(PositionalParameterCount &param);
   ScopedExpr visit(String &string);
-  ScopedExpr visit(Identifier &identifier);
   ScopedExpr visit(Builtin &builtin);
   ScopedExpr visit(Call &call);
   ScopedExpr visit(Sizeof &szof);
@@ -500,19 +499,6 @@ ScopedExpr CodegenLLVM::visit(String &string)
   return ScopedExpr(string_var);
 }
 
-// NB: we do not resolve identifiers that are structs. That is because in
-// bpftrace you cannot really instantiate a struct.
-ScopedExpr CodegenLLVM::visit(Identifier &identifier)
-{
-  if (bpftrace_.enums_.contains(identifier.ident)) {
-    return ScopedExpr(
-        b_.getInt64(std::get<0>(bpftrace_.enums_[identifier.ident])));
-  } else {
-    LOG(BUG) << "unknown identifier \"" << identifier.ident << "\"";
-    __builtin_unreachable();
-  }
-}
-
 ScopedExpr CodegenLLVM::kstack_ustack(const std::string &ident,
                                       StackType stack_type,
                                       const Location &loc)
@@ -794,6 +780,11 @@ ScopedExpr CodegenLLVM::visit(Builtin &builtin)
   } else if (builtin.ident == "jiffies") {
     return ScopedExpr(b_.CreateJiffies64(builtin.loc));
   } else {
+    if (bpftrace_.enums_.contains(builtin.ident)) {
+      return ScopedExpr(
+          b_.getInt64(std::get<0>(bpftrace_.enums_[builtin.ident])));
+    }
+    // This should have been caught in semantic analysis.
     LOG(BUG) << "unknown builtin \"" << builtin.ident << "\"";
     __builtin_unreachable();
   }

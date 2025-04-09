@@ -554,7 +554,7 @@ std::vector<std::unique_ptr<IPrintable>> BPFtrace::get_arg_values(
             *reinterpret_cast<int64_t *>(arg_data + arg.offset),
             reinterpret_cast<uint8_t *>(arg_data + arg.offset + 8))));
         break;
-      case Type::username:
+      case Type::username_t:
         arg_values.push_back(std::make_unique<PrintableString>(
             resolve_uid(*reinterpret_cast<uint64_t *>(arg_data + arg.offset))));
         break;

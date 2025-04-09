@@ -10,7 +10,7 @@
 %define define_location_comparison
 %define parse.assert
 %define parse.trace
-%expect 4
+%expect 3
 
 %define parse.error verbose
 
@@ -101,9 +101,6 @@ void yyerror(bpftrace::Driver &driver, const char *s);
   UNION      "union"
 ;
 
-%token <std::string> BUILTIN "builtin"
-%token <std::string> CALL "call"
-%token <std::string> CALL_BUILTIN "call_builtin"
 %token <std::string> INT_TYPE "integer type"
 %token <std::string> BUILTIN_TYPE "builtin type"
 %token <std::string> SUBPROG "subprog"
@@ -135,7 +132,7 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 
 
 %type <ast::Operator> unary_op compound_op
-%type <std::string> attach_point_def c_definitions ident keyword external_name
+%type <std::string> attach_point_def c_definitions keyword external_name
 %type <std::vector<std::string>> struct_field
 
 %type <ast::AttachPoint *> attach_point
@@ -169,7 +166,6 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %type <ast::ConfigStatementList> config_assign_stmt_list config_block
 %type <SizedType> type int_type pointer_type struct_type
 %type <ast::Variable *> var
-%type <ast::Identifier *> raw_ident
 
 
 %left COMMA
@@ -358,7 +354,7 @@ attach_point:
                 ;
 
 attach_point_def:
-                attach_point_def ident    { $$ = $1 + $2; }
+                attach_point_def IDENT    { $$ = $1 + $2; }
                 // Since we're double quoting the STRING for the benefit of the
                 // AttachPointParser, we have to make sure we re-escape any double
                 // quotes.
@@ -500,11 +496,9 @@ var_decl_stmt:
         ;
 
 primary_expr:
-                raw_ident          { $$ = $1; }
-        |       int                { $$ = $1; }
+                int                { $$ = $1; }
         |       STRING             { $$ = driver.ctx.make_node<ast::String>($1, @$); }
-        |       BUILTIN            { $$ = driver.ctx.make_node<ast::Builtin>($1, @$); }
-        |       CALL_BUILTIN       { $$ = driver.ctx.make_node<ast::Builtin>($1, @$); }
+        |       IDENT              { $$ = driver.ctx.make_node<ast::Builtin>($1, @$); }
         |       LPAREN expr RPAREN { $$ = $2; }
         |       param              { $$ = $1; }
         |       param_count        { $$ = $1; }
@@ -532,8 +526,8 @@ postfix_expr:
         |       map_or_var INCREMENT           { $$ = driver.ctx.make_node<ast::Unop>(ast::Operator::INCREMENT, $1, true, @2); }
         |       map_or_var DECREMENT           { $$ = driver.ctx.make_node<ast::Unop>(ast::Operator::DECREMENT, $1, true, @2); }
 /* errors */
-        |       INCREMENT ident                { error(@1, "The ++ operator must be applied to a map or variable"); YYERROR; }
-        |       DECREMENT ident                { error(@1, "The -- operator must be applied to a map or variable"); YYERROR; }
+        |       INCREMENT IDENT                { error(@1, "The ++ operator must be applied to a map or variable"); YYERROR; }
+        |       DECREMENT IDENT                { error(@1, "The -- operator must be applied to a map or variable"); YYERROR; }
                 ;
 
 /* Tuple factored out so we can use it in the tuple field assignment error */
@@ -552,8 +546,8 @@ unary_expr:
         |       DECREMENT map_or_var { $$ = driver.ctx.make_node<ast::Unop>(ast::Operator::DECREMENT, $2, false, @1); }
         |       block_expr           { $$ = $1; }
 /* errors */
-        |       ident DECREMENT      { error(@1, "The -- operator must be applied to a map or variable"); YYERROR; }
-        |       ident INCREMENT      { error(@1, "The ++ operator must be applied to a map or variable"); YYERROR; }
+        |       IDENT DECREMENT      { error(@1, "The -- operator must be applied to a map or variable"); YYERROR; }
+        |       IDENT INCREMENT      { error(@1, "The ++ operator must be applied to a map or variable"); YYERROR; }
                 ;
 
 unary_op:
@@ -631,11 +625,23 @@ addi_expr:
         |       addi_expr MINUS muli_expr  { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::MINUS, $3, @2); }
                 ;
 
+// This previously contained a  a workaroud for typedef types, wherein we parse
+// any identifier here as a possible type [1].
+//
+// LPAREN IDENT RPAREN cast_expr
+//
+// Unfortunately this has a fundamental conflict with our ability to correctly
+// parse things. It is unlikely that this is particularly useful for the user,
+// however, since these value-oriented casts would only apply to things in BPF.
+// This really only makes sense if the given type is a pointer type. We support
+// this through a specal intrinsic `cast(ident, expr)`, which essentially
+// evalutes the given identifier as a type and performs the cast. This is done
+// as an early pass during parsing to convert these things.
+//
+// [1] https://github.com/bpftrace/bpftrace/pull/2560#issuecomment-1521783935
 cast_expr:
                 unary_expr                                  { $$ = $1; }
         |       LPAREN type RPAREN cast_expr                { $$ = driver.ctx.make_node<ast::Cast>($2, $4, @1 + @3); }
-/* workaround for typedef types, see https://github.com/bpftrace/bpftrace/pull/2560#issuecomment-1521783935 */
-        |       LPAREN IDENT RPAREN cast_expr               { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 0), $4, @1 + @3); }
         |       LPAREN IDENT "*" RPAREN cast_expr           { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 1), $5, @1 + @4); }
         |       LPAREN IDENT "*" "*" RPAREN cast_expr       { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 2), $6, @1 + @5); }
                 ;
@@ -672,39 +678,20 @@ keyword:
         |       SUBPROG       { $$ = $1; }
         ;
 
-ident:
-                IDENT         { $$ = $1; }
-        |       BUILTIN       { $$ = $1; }
-        |       BUILTIN_TYPE  { $$ = $1; }
-        |       CALL          { $$ = $1; }
-        |       CALL_BUILTIN  { $$ = $1; }
-                ;
-
-raw_ident:
-                IDENT         { $$ = driver.ctx.make_node<ast::Identifier>($1, @$); }
-                ;
-
 struct_field:
                 external_name                       { $$.push_back($1); }
         |       struct_field DOT external_name      { $$ = std::move($1); $$.push_back($3); }
         ;
 
 external_name:
-                keyword       { $$ = $1; }
-        |       ident         { $$ = $1; }
+                keyword      { $$ = $1; }
+        |       IDENT        { $$ = $1; }
+        |       BUILTIN_TYPE { $$ = $1; }
         ;
 
 call:
-                CALL "(" ")"                 { $$ = driver.ctx.make_node<ast::Call>($1, @$); }
-        |       CALL "(" vargs ")"           { $$ = driver.ctx.make_node<ast::Call>($1, std::move($3), @$); }
-        |       CALL_BUILTIN  "(" ")"        { $$ = driver.ctx.make_node<ast::Call>($1, @$); }
-        |       CALL_BUILTIN "(" vargs ")"   { $$ = driver.ctx.make_node<ast::Call>($1, std::move($3), @$); }
-        |       IDENT "(" ")"                { error(@1, "Unknown function: " + $1); YYERROR;  }
-        |       IDENT "(" vargs ")"          { error(@1, "Unknown function: " + $1); YYERROR;  }
-        |       BUILTIN "(" ")"              { error(@1, "Unknown function: " + $1); YYERROR;  }
-        |       BUILTIN "(" vargs ")"        { error(@1, "Unknown function: " + $1); YYERROR;  }
-        |       STACK_MODE "(" ")"           { error(@1, "Unknown function: " + $1); YYERROR;  }
-        |       STACK_MODE "(" vargs ")"     { error(@1, "Unknown function: " + $1); YYERROR;  }
+                IDENT "(" ")"       { $$ = driver.ctx.make_node<ast::Call>($1, @$); }
+        |       IDENT "(" vargs ")" { $$ = driver.ctx.make_node<ast::Call>($1, std::move($3), @$); }
                 ;
 
 map:

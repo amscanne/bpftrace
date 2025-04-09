@@ -1187,21 +1187,6 @@ TEST(Parser, call)
        "   map: @x\n");
 }
 
-TEST(Parser, call_unknown_function)
-{
-  test_parse_failure("kprobe:sys_open { myfunc() }", R"(
-stdin:1:19-25: ERROR: Unknown function: myfunc
-kprobe:sys_open { myfunc() }
-                  ~~~~~~
-)");
-
-  test_parse_failure("k:f { probe(); }", R"(
-stdin:1:7-12: ERROR: Unknown function: probe
-k:f { probe(); }
-      ~~~~~
-)");
-}
-
 TEST(Parser, call_builtin)
 {
   // Builtins should not be usable as function
@@ -2206,8 +2191,8 @@ TEST(Parser, array_access)
        "Program\n"
        " kprobe:sys_read\n"
        "  []\n"
-       "   identifier: x\n"
-       "   identifier: index\n");
+       "   builtin: x\n"
+       "   builtin: index\n");
 
   test("kprobe:sys_read { $val = x[index]; }",
        "Program\n"
@@ -2215,8 +2200,8 @@ TEST(Parser, array_access)
        "  =\n"
        "   variable: $val\n"
        "   []\n"
-       "    identifier: x\n"
-       "    identifier: index\n");
+       "    builtin: x\n"
+       "    builtin: index\n");
 }
 
 TEST(Parser, cstruct)
@@ -2378,7 +2363,7 @@ i:s:1 { @=5++}
 )");
 
   test_parse_failure("i:s:1 { @=++5}", R"(
-stdin:1:9-14: ERROR: syntax error, unexpected integer
+stdin:1:9-14: ERROR: syntax error, unexpected integer, expecting identifier or map or variable
 i:s:1 { @=++5}
         ~~~~~
 )");
@@ -2390,7 +2375,7 @@ i:s:1 { @=5--}
 )");
 
   test_parse_failure("i:s:1 { @=--5}", R"(
-stdin:1:9-14: ERROR: syntax error, unexpected integer
+stdin:1:9-14: ERROR: syntax error, unexpected integer, expecting identifier or map or variable
 i:s:1 { @=--5}
         ~~~~~
 )");
@@ -2705,9 +2690,9 @@ i:s:1 { exit(); } config = { BPFTRACE_STACK_MODE=perf }
 )");
 
   test_parse_failure("config = { exit(); } i:s:1 { exit(); }", R"(
-stdin:1:12-16: ERROR: syntax error, unexpected call, expecting } or identifier
+stdin:1:12-17: ERROR: syntax error, unexpected (, expecting =
 config = { exit(); } i:s:1 { exit(); }
-           ~~~~
+           ~~~~~
 )");
 
   test_parse_failure("config = { @start = nsecs; } i:s:1 { exit(); }", R"(
@@ -2912,7 +2897,7 @@ Program
   // Error location is incorrect: #3063
   // No body
   test_parse_failure("BEGIN { for ($kv : @map) print($kv); }", R"(
-stdin:1:27-32: ERROR: syntax error, unexpected call, expecting {
+stdin:1:27-32: ERROR: syntax error, unexpected identifier, expecting {
 BEGIN { for ($kv : @map) print($kv); }
                           ~~~~~
 )");
@@ -2990,14 +2975,14 @@ BEGIN { $x = { $a = 1; $b = 2; } exit(); }
 
   // Missing ; after block expression
   test_parse_failure("BEGIN { $x = { $a = 1; $a } exit(); }", R"(
-stdin:1:29-33: ERROR: syntax error, unexpected call, expecting ; or }
+stdin:1:29-33: ERROR: syntax error, unexpected identifier, expecting ; or }
 BEGIN { $x = { $a = 1; $a } exit(); }
                             ~~~~
 )");
 
   // Illegal; no map assignment
   test_parse_failure("BEGIN { $x = { $a = 1; count() } exit(); }", R"(
-stdin:1:34-38: ERROR: syntax error, unexpected call, expecting ; or }
+stdin:1:34-38: ERROR: syntax error, unexpected identifier, expecting ; or }
 BEGIN { $x = { $a = 1; count() } exit(); }
                                  ~~~~
 )");

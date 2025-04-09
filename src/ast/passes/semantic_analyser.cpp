@@ -95,7 +95,6 @@ public:
   void visit(PositionalParameterCount &param);
   void visit(String &string);
   void visit(StackMode &mode);
-  void visit(Identifier &identifier);
   void visit(Builtin &builtin);
   void visit(Call &call);
   void visit(Sizeof &szof);
@@ -300,7 +299,7 @@ static bool IsValidVarDeclType(const SizedType &ty)
     case Type::ksym_t:
     case Type::usym_t:
     case Type::inet:
-    case Type::username:
+    case Type::username_t:
     case Type::string:
     case Type::buffer:
     case Type::pointer:
@@ -409,44 +408,6 @@ void SemanticAnalyser::visit(String &string)
   }
   // @a = buf("hi", 2). String allocated on bpf stack. See codegen
   string.type.SetAS(AddrSpace::kernel);
-}
-
-void SemanticAnalyser::visit(Identifier &identifier)
-{
-  if (bpftrace_.enums_.contains(identifier.ident)) {
-    const auto &enum_name = std::get<1>(bpftrace_.enums_[identifier.ident]);
-    identifier.type = CreateEnum(64, enum_name);
-  } else if (bpftrace_.structs.Has(identifier.ident)) {
-    identifier.type = CreateRecord(identifier.ident,
-                                   bpftrace_.structs.Lookup(identifier.ident));
-  } else if (func_ == "sizeof" && getIntcasts().contains(identifier.ident)) {
-    identifier.type = CreateInt(
-        std::get<0>(getIntcasts().at(identifier.ident)));
-  } else if (func_ == "nsecs") {
-    identifier.type = CreateTimestampMode();
-    if (identifier.ident == "monotonic") {
-      identifier.type.ts_mode = TimestampMode::monotonic;
-    } else if (identifier.ident == "boot") {
-      identifier.type.ts_mode = TimestampMode::boot;
-    } else if (identifier.ident == "tai") {
-      identifier.type.ts_mode = TimestampMode::tai;
-    } else if (identifier.ident == "sw_tai") {
-      identifier.type.ts_mode = TimestampMode::sw_tai;
-    } else {
-      identifier.addError() << "Invalid timestamp mode: " << identifier.ident;
-    }
-  } else {
-    // Final attempt: try to parse as a stack mode.
-    ConfigParser<StackMode> parser;
-    StackMode mode;
-    auto ok = parser.parse(func_, &mode, identifier.ident);
-    if (ok) {
-      identifier.type = CreateStack(true, StackType{ .mode = mode });
-    } else {
-      identifier.type = CreateNone();
-      identifier.addError() << "Unknown identifier: '" + identifier.ident + "'";
-    }
-  }
 }
 
 void SemanticAnalyser::builtin_args_tracepoint(AttachPoint *attach_point,
@@ -779,8 +740,39 @@ void SemanticAnalyser::visit(Builtin &builtin)
                          << type << " used here)";
     }
   } else {
-    builtin.type = CreateNone();
-    builtin.addError() << "Unknown builtin variable: '" << builtin.ident << "'";
+    if (bpftrace_.enums_.contains(builtin.ident)) {
+      const auto &enum_name = std::get<1>(bpftrace_.enums_[builtin.ident]);
+      builtin.type = CreateEnum(64, enum_name);
+    } else if (bpftrace_.structs.Has(builtin.ident)) {
+      builtin.type = CreateRecord(builtin.ident,
+                                  bpftrace_.structs.Lookup(builtin.ident));
+    } else if (func_ == "sizeof" && getIntcasts().contains(builtin.ident)) {
+      builtin.type = CreateInt(std::get<0>(getIntcasts().at(builtin.ident)));
+    } else if (func_ == "nsecs") {
+      builtin.type = CreateTimestampMode();
+      if (builtin.ident == "monotonic") {
+        builtin.type.ts_mode = TimestampMode::monotonic;
+      } else if (builtin.ident == "boot") {
+        builtin.type.ts_mode = TimestampMode::boot;
+      } else if (builtin.ident == "tai") {
+        builtin.type.ts_mode = TimestampMode::tai;
+      } else if (builtin.ident == "sw_tai") {
+        builtin.type.ts_mode = TimestampMode::sw_tai;
+      } else {
+        builtin.addError() << "Invalid timestamp mode: " << builtin.ident;
+      }
+    } else {
+      // Final attempt: try to parse as a stack mode.
+      ConfigParser<StackMode> parser;
+      StackMode mode;
+      auto ok = parser.parse(func_, &mode, builtin.ident);
+      if (ok) {
+        builtin.type = CreateStack(true, StackType{ .mode = mode });
+      } else {
+        builtin.type = CreateNone();
+        builtin.addError() << "Unknown identifier: '" + builtin.ident + "'";
+      }
+    }
   }
 }
 
@@ -1799,7 +1791,7 @@ void SemanticAnalyser::check_stack_call(Call &call, bool kernel)
     case 0:
       break;
     case 1: {
-      if (auto *ident = dynamic_cast<Identifier *>(call.vargs.at(0))) {
+      if (auto *ident = dynamic_cast<Builtin *>(call.vargs.at(0))) {
         ConfigParser<StackMode> parser;
         auto ok = parser.parse(call.func, &stack_type.mode, ident->ident);
         if (!ok) {
@@ -1815,7 +1807,7 @@ void SemanticAnalyser::check_stack_call(Call &call, bool kernel)
       break;
     }
     case 2: {
-      if (auto *ident = dynamic_cast<Identifier *>(call.vargs.at(0))) {
+      if (auto *ident = dynamic_cast<Builtin *>(call.vargs.at(0))) {
         ConfigParser<StackMode> parser;
         auto ok = parser.parse(call.func, &stack_type.mode, ident->ident);
         if (!ok) {

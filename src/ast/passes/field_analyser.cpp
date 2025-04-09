@@ -23,7 +23,6 @@ public:
   }
 
   using Visitor<FieldAnalyser>::visit;
-  void visit(Identifier &identifier);
   void visit(Builtin &builtin);
   void visit(Map &map);
   void visit(Variable &var);
@@ -55,11 +54,6 @@ private:
 };
 
 } // namespace
-
-void FieldAnalyser::visit(Identifier &identifier)
-{
-  bpftrace_.btf_set_.insert(identifier.ident);
-}
 
 void FieldAnalyser::visit(Builtin &builtin)
 {
@@ -99,6 +93,8 @@ void FieldAnalyser::visit(Builtin &builtin)
     if (arg)
       sized_type_ = arg->type;
     return;
+  } else {
+    bpftrace_.btf_set_.insert(builtin.ident);
   }
 
   if (bpftrace_.has_btf_data())
