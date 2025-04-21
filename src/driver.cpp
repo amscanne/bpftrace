@@ -7,6 +7,7 @@ extern int yylex_destroy(yyscan_t yyscanner);
 
 namespace bpftrace {
 
+#if 0
 void Driver::parse()
 {
   // Reset state on every pass.
@@ -31,6 +32,8 @@ void Driver::error(const location &l, const std::string &m)
   // constructed. Therefore, we add diagnostics directly via the private field.
   ctx.diagnostics_->addError(ctx.wrap(l)) << m;
 }
+
+#endif
 
 ast::Pass CreateParsePass(bool debug)
 {
