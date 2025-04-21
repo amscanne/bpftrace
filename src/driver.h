@@ -17,6 +17,7 @@ using yyscan_t = void *;
 
 namespace bpftrace {
 
+#if 0
 class Driver {
 public:
   explicit Driver(ast::ASTContext &ctx, bool debug = false)
@@ -44,6 +45,8 @@ public:
 private:
   void parse(Parser::symbol_type first_token);
 };
+
+#endif
 
 ast::Pass CreateParsePass(bool debug = false);
 

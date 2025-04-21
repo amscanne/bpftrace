@@ -3,14 +3,12 @@ if(HAVE_BFD_DISASM)
 endif()
 
 add_library(required_resources required_resources.cpp)
-add_dependencies(required_resources parser)
 
 add_library(compiler_core STATIC
   functions.cpp
   struct.cpp
   types.cpp
 )
-add_dependencies(compiler_core parser)
 
 add_library(runtime STATIC
   async_action.cpp
@@ -225,6 +223,7 @@ add_subdirectory(arch)
 add_subdirectory(ast)
 add_subdirectory(cxxdemangler)
 add_subdirectory(debugfs)
+add_subdirectory(parser)
 add_subdirectory(resources)
 add_subdirectory(stdlib)
 add_subdirectory(tracefs)

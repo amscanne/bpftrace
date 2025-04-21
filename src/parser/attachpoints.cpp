@@ -19,44 +19,49 @@
 
 namespace bpftrace::ast {
 
+char AttachPointParseError::ID;
+
 AttachPointParser::State AttachPointParser::argument_count_error(
+    const std::string &provider,
     int expected,
     std::optional<int> expected2)
 {
   // Subtract one for the probe type (eg kprobe)
   int found = parts_.size() - 1;
 
-  errs_ << ap_->provider << " probe type requires " << expected;
+  AttachPointParseError err;
+  err << provider << " probe type requires " << expected;
   if (expected2.has_value()) {
-    errs_ << " or " << *expected2;
+    err << " or " << *expected2;
   }
-  errs_ << " arguments, found " << found << std::endl;
+  err << " arguments, found " << found << std::endl;
 
-  return INVALID;
+  return make_error<AttachPointParseError>(err);
 }
 
-std::optional<uint64_t> AttachPointParser::stoull(const std::string &str)
+Result<uint64_t> AttachPointParser::stoull(const std::string &str)
 {
   try {
     return util::to_uint(str, 0);
   } catch (const std::exception &e) {
-    errs_ << e.what() << std::endl;
-    return std::nullopt;
+    AttachPointParseError err;
+    err << e.what();
+    return err;
   }
 }
 
-std::optional<int64_t> AttachPointParser::stoll(const std::string &str)
+Result<int64_t> AttachPointParser::stoll(const std::string &str)
 {
   try {
     return util::to_int(str, 0);
   } catch (const std::exception &e) {
-    errs_ << e.what() << std::endl;
-    return std::nullopt;
+    AttachPointParseError err;
+    err << e.what();
+    return err;
   }
 }
 
-AttachPointParser::AttachPointParser(ASTContext &ctx,
-                                     BPFtrace &bpftrace,
+AttachPointParser::AttachPointParser(BPFtrace &bpftrace,
                                      bool listing)
     : ctx_(ctx), bpftrace_(bpftrace), listing_(listing)
 {
@@ -112,13 +117,12 @@ int AttachPointParser::parse()
 
 AttachPointParser::State AttachPointParser::parse_attachpoint(AttachPoint &ap)
 {
-  ap_ = &ap;
+  auto parts = lex(raw);
+  if (!parts) {
+    return parts.takeError();
+  }
 
-  parts_.clear();
-  if (State s = lex_attachpoint(*ap_))
-    return s;
-
-  if (parts_.empty()) {
+  if (parts->empty()) {
     errs_ << "Invalid attachpoint definition" << std::endl;
     return INVALID;
   }
@@ -216,17 +220,15 @@ AttachPointParser::State AttachPointParser::parse_attachpoint(AttachPoint &ap)
   __builtin_unreachable();
 }
 
-AttachPointParser::State AttachPointParser::lex_attachpoint(
-    const AttachPoint &ap)
+Result<std::vector<std::string>> AttachPointParser::lex(const std::string &raw)
 {
-  std::string raw = ap.raw_input;
   std::vector<std::string> ret;
   bool in_quotes = false;
   std::string argument;
 
   for (size_t idx = 0; idx < raw.size(); ++idx) {
     if (raw[idx] == ':' && !in_quotes) {
-      parts_.emplace_back(std::move(argument));
+      ret.emplace_back(std::move(argument));
       // The standard says an std::string in moved-from state is in
       // valid but unspecified state, so clear() to be safe
       argument.clear();
@@ -283,9 +285,9 @@ AttachPointParser::State AttachPointParser::lex_attachpoint(
   //
   // There will always be text in `argument` unless the AP definition
   // ended in a ':' which we will treat as an empty argument.
-  parts_.emplace_back(std::move(argument));
+  ret.emplace_back(std::move(argument));
 
-  return State::OK;
+  return ret;
 }
 
 AttachPointParser::State AttachPointParser::special_parser()

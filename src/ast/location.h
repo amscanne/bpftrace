@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-#include "location.hh"
+#include "parser/position.h"
 
 namespace bpftrace::ast {
 
@@ -22,7 +22,7 @@ public:
   SourceLocation() = default;
   SourceLocation(const SourceLocation &) = default;
   SourceLocation &operator=(const SourceLocation &) = default;
-  SourceLocation(location loc, std::shared_ptr<ASTSource> source = {});
+  SourceLocation(parser::Position pos, std::shared_ptr<ASTSource> source = {});
 
   // Canonical filename.
   std::string filename() const;
@@ -40,26 +40,17 @@ public:
   // Canonical line number, will be start of range.
   unsigned int line() const
   {
-    return line_range_.first;
+    return position_.start_line;
   };
 
   // Canonical column number, will be start of range.
   unsigned int column() const
   {
-    return column_range_.first;
+    return position_.start_column;
   };
 
 private:
-  using range_t = std::pair<unsigned int, unsigned int>;
-  SourceLocation(range_t &&lines,
-                 range_t &&columns,
-                 std::shared_ptr<ASTSource> source)
-      : line_range_(std::move(lines)),
-        column_range_(std::move(columns)),
-        source_(std::move(source)) {};
-
-  range_t line_range_;
-  range_t column_range_;
+  parser::Position position_;
   std::shared_ptr<ASTSource> source_;
 };
 

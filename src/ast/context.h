@@ -5,6 +5,7 @@
 
 #include "ast/diagnostic.h"
 #include "ast/pass_manager.h"
+#include "parser/position.h"
 
 namespace bpftrace {
 
@@ -96,16 +97,16 @@ public:
 
 private:
   // wrap potentially converts external types to internal ones. At the moment,
-  // this automatically converts the parser `location` to the `Location` class
+  // this automatically converts the parser `Position` to the `Location` class
   // bound to the current source file.
   template <typename T>
   auto wrap(T &&t) -> decltype(t)
   {
     return std::forward<T>(t);
   }
-  Location wrap(location loc)
+  Location wrap(parser::Position pos)
   {
-    return std::make_shared<LocationChain>(SourceLocation(loc, source_));
+    return std::make_shared<LocationChain>(SourceLocation(pos, source_));
   };
 
   std::vector<std::unique_ptr<Node>> nodes_;
