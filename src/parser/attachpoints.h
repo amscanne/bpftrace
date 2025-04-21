@@ -10,16 +10,36 @@
 
 namespace bpftrace::ast {
 
+class AttachPointParseError : ErrorInfo<AttachPointParseError> {
+public:
+  static char ID;
+  AttachPointParseError() {};
+  void log(llvm::raw_ostream &OS) const override {
+    OS << ss_.str();
+  }
+
+  template <typename T>
+  AttachPointParseError& operator<<(AttachPointParseError& out, const T &other) {
+    ss_ << other;
+    return *this;
+  }
+
+private:
+  std::stringstream ss_;
+};
+
+
 class AttachPointParser {
 public:
-  AttachPointParser(ASTContext &ctx, BPFtrace &bpftrace, bool listing);
+  AttachPointParser(BPFtrace &bpftrace, bool listing);
   ~AttachPointParser() = default;
-  int parse();
+
+  // Parse an attachpoint in a list.
+  Result<AttachPointList> parse(ASTContext &ast, const std::string &raw);
 
 private:
   enum State { OK = 0, INVALID, NEW_APS, SKIP };
 
-  State parse_attachpoint(AttachPoint &ap);
   // This method splits an attach point definition into arguments,
   // where arguments are separated by `:`. The exception is `:`s inside
   // of quoted strings, which we must treat as a literal.
@@ -30,7 +50,7 @@ private:
   // Note that this function assumes the raw string is generally well
   // formed. More specifically, that there is no unescaped whitespace
   // and no unmatched quotes.
-  State lex_attachpoint(const AttachPoint &ap);
+  Result<std::vector<std::string>> lex(const std::string &raw);
 
   State special_parser();
   State kprobe_parser(bool allow_offset = true);
@@ -53,10 +73,6 @@ private:
   std::optional<uint64_t> stoull(const std::string &str);
   std::optional<int64_t> stoll(const std::string &str);
 
-  ASTContext &ctx_;
-  BPFtrace &bpftrace_;
-  AttachPoint *ap_{ nullptr }; // Non-owning pointer
-  std::stringstream errs_;
   std::vector<std::string> parts_;
   AttachPointList new_attach_points;
   bool listing_;
