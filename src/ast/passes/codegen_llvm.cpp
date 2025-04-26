@@ -4,6 +4,7 @@
 #include <csignal>
 #include <cstdio>
 #include <ctime>
+#include <format>
 
 // Required for LLVM_VERSION_MAJOR.
 #include <llvm/IR/GlobalValue.h>
@@ -248,6 +249,9 @@ public:
   ScopedExpr visit(Program &program);
   ScopedExpr visit(BlockExpr &block);
 
+  void generate(Subprog &subprog);
+  size_t generate(Probe &probe, size_t index);
+
   // compile is the primary entrypoint; it will return the generated LLVMModule.
   // Only one call to `compile` is permitted per instantiation.
   std::unique_ptr<llvm::Module> compile();
@@ -351,7 +355,6 @@ private:
                                         int arg_num,
                                         int index,
                                         const Location &loc);
-
   ScopedExpr readDatastructElemFromStack(ScopedExpr &&scoped_src,
                                          Value *index,
                                          const SizedType &data_type,
@@ -3169,11 +3172,19 @@ void CodegenLLVM::generateProbe(Probe &probe,
                                 bool dummy)
 {
   auto probe_type = probetype(current_attach_point_->provider);
+<<<<<<< HEAD
   int index = current_attach_point_->index() ?: probe.index();
   auto func_name = util::get_function_name_for_probe(name, index);
+=======
+  if (probe_type == ProbeType::tracepoint)
+    tracepoint_struct_ = TracepointFormatParser::get_struct_name(full_func_id);
+
+  auto func_name = util::get_function_name_for_probe(
+      current_attach_point_->index(), inline_index_);
+>>>>>>> 5224b6c3 (codegen: ensure paths are not part of bytecode)
   auto *func = llvm::Function::Create(
       func_type, llvm::Function::ExternalLinkage, func_name, module_.get());
-  func->setSection(util::get_section_name(func_name));
+  func->setSection("probes");
   func->addFnAttr(Attribute::NoUnwind);
   scope_ = debug_.createProbeDebugInfo(*func);
 
@@ -3198,6 +3209,7 @@ void CodegenLLVM::generateProbe(Probe &probe,
 
   auto pt = probetype(current_attach_point_->provider);
   if ((pt == ProbeType::watchpoint || pt == ProbeType::asyncwatchpoint) &&
+<<<<<<< HEAD
       !current_attach_point_->func.empty()) {
     auto ok = generateWatchpointSetupProbe(
         func_type, name, current_attach_point_->address, index, probe.loc);
@@ -3205,6 +3217,12 @@ void CodegenLLVM::generateProbe(Probe &probe,
       probe.addError() << "unable to setup watchpoint: " << ok.takeError();
     }
   }
+=======
+      !current_attach_point_->func.empty())
+    generateWatchpointSetupProbe(func_type,
+                                 current_attach_point_->address,
+                                 probe.loc);
+>>>>>>> 5224b6c3 (codegen: ensure paths are not part of bytecode)
 }
 
 void CodegenLLVM::add_probe(AttachPoint &ap,
@@ -3213,11 +3231,56 @@ void CodegenLLVM::add_probe(AttachPoint &ap,
 {
   current_attach_point_ = &ap;
   probefull_ = ap.name();
+<<<<<<< HEAD
   generateProbe(probe, probefull_, func_type);
   bpftrace_.add_probe(ap,
                       probe,
                       expansions_.get_expansion(ap),
                       expansions_.get_expanded_funcs(ap));
+=======
+  if (ap.expansion != ExpansionType::NONE &&
+      ap.expansion != ExpansionType::FULL) {
+    // Do not generate code for kretprobes with session expansion as it will
+    // be a part of the common session probe generated for the entry probe.
+    if (ap.expansion == ExpansionType::SESSION &&
+        probetype(ap.provider) == ProbeType::kretprobe) {
+      return;
+    }
+    // For non-full expansion, we need to avoid generating the code for attach
+    // points with no matches as the BPF program would fail to load.
+    if (bpftrace_.probe_matcher_->get_matches_for_ap(ap).empty())
+      return;
+  }
+  if (probetype(ap.provider) == ProbeType::usdt) {
+    auto usdt = usdt_helper_.find(bpftrace_.pid(), ap.target, ap.ns, ap.func);
+    if (!usdt.has_value()) {
+      ap.addError() << "Failed to find usdt probe: " << probefull_;
+    } else
+      ap.usdt = *usdt;
+
+    // A "unique" USDT probe can be present in a binary in multiple
+    // locations. One case where this happens is if a function
+    // containing a USDT probe is inlined into a caller. So we must
+    // generate a new program for each instance. We _must_ regenerate
+    // because argument locations may differ between instance locations
+    // (eg arg0. may not be found in the same offset from the same
+    // register in each location)
+    auto reset_ids = async_ids_.create_reset_ids();
+    for (inline_index_ = 0;
+         inline_index_ < static_cast<size_t>(ap.usdt.num_locations);
+         inline_index_++) {
+      reset_ids();
+
+      std::string full_func_id = std::format("{}_loc{}", name, inline_index_);
+      generateProbe(probe, full_func_id, func_type);
+      bpftrace_.add_probe(ast_, ap, probe, inline_index_);
+    }
+    inline_index_ = 0;
+  } else {
+    generateProbe(probe, name, func_type);
+    bpftrace_.add_probe(ast_, ap, probe);
+  }
+>>>>>>> 5224b6c3 (codegen: ensure paths are not part of bytecode)
   current_attach_point_ = nullptr;
 }
 
@@ -3265,7 +3328,6 @@ ScopedExpr CodegenLLVM::visit(Subprog &subprog)
   fpm.addPass(UnreachableBlockElimPass());
   fpm.run(*func, fam);
   scope_stack_.pop_back();
-
   return ScopedExpr();
 }
 
@@ -3342,8 +3404,21 @@ ScopedExpr CodegenLLVM::visit(Probe &probe)
     if (attach_point->index() == 0)
       attach_point->set_index(getNextIndexForProbe());
 
+<<<<<<< HEAD
     add_probe(*attach_point, probe, func_type);
     generated = true;
+=======
+      for (const auto &match : matches) {
+        reset_ids();
+        auto &match_ap = attach_point->create_expansion_copy(ast_, match);
+        add_probe(match_ap, probe, match, func_type);
+        generated = true;
+      }
+    } else {
+      add_probe(*attach_point, probe, attach_point->name(), func_type);
+      generated = true;
+    }
+>>>>>>> 5224b6c3 (codegen: ensure paths are not part of bytecode)
   }
   if (!generated) {
     generateProbe(probe, "dummy", func_type, true);
@@ -3360,11 +3435,6 @@ ScopedExpr CodegenLLVM::visit(Program &program)
   for (Probe *probe : program.probes)
     visit(probe);
   return ScopedExpr();
-}
-
-int CodegenLLVM::getNextIndexForProbe()
-{
-  return next_probe_index_++;
 }
 
 ScopedExpr CodegenLLVM::getMapKey(Map &map, Expression &key_expr)
@@ -3918,12 +3988,18 @@ void CodegenLLVM::createFormatStringCall(Call &call,
     b_.CreateLifetimeEnd(fmt_args);
 }
 
+<<<<<<< HEAD
 Result<> CodegenLLVM::generateWatchpointSetupProbe(
     FunctionType *func_type,
     const std::string &expanded_probe_name,
     int arg_num,
     int index,
     const Location &loc)
+=======
+void CodegenLLVM::generateWatchpointSetupProbe(FunctionType *func_type,
+                                               int arg_num,
+                                               const Location &loc)
+>>>>>>> 5224b6c3 (codegen: ensure paths are not part of bytecode)
 {
   const auto &arguments = arch::Host::arguments();
   if (static_cast<size_t>(arg_num) >= arguments.size()) {
@@ -3935,10 +4011,10 @@ Result<> CodegenLLVM::generateWatchpointSetupProbe(
   }
 
   auto func_name = util::get_function_name_for_watchpoint_setup(
-      expanded_probe_name, index);
+      current_attach_point_->index());
   auto *func = llvm::Function::Create(
       func_type, llvm::Function::ExternalLinkage, func_name, module_.get());
-  func->setSection(util::get_section_name(func_name));
+  func->setSection("watchpoints");
   func->addFnAttr(Attribute::NoUnwind);
   debug_.createProbeDebugInfo(*func);
 

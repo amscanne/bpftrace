@@ -1726,7 +1726,8 @@ public:
                        Location &&loc)
       : Node(ctx, std::move(loc)),
         raw_input(std::move(raw_input)),
-        ignore_invalid(ignore_invalid) {};
+        ignore_invalid(ignore_invalid),
+        unique_id_(ctx.next_unique_id()) {};
   explicit AttachPoint(ASTContext &ctx,
                        const AttachPoint &other,
                        const Location &loc)
@@ -1746,7 +1747,8 @@ public:
         address(other.address),
         func_offset(other.func_offset),
         ignore_invalid(other.ignore_invalid),
-        index_(other.index_) {};
+        args_type(other.args_type),
+        unique_id_(ctx.next_unique_id()) {};
 
   bool operator==(const AttachPoint &other) const
   {
@@ -1818,19 +1820,22 @@ public:
   uint64_t func_offset = 0;
   uint64_t bpf_prog_id = 0;
   bool ignore_invalid = false;
+  std::shared_ptr<SizedType> args_type = nullptr;
 
   std::string name() const;
 
   AttachPoint *create_expansion_copy(ASTContext &ctx,
                                      const std::string &match) const;
 
-  int index() const;
-  void set_index(int index);
+  size_t index() const
+  {
+    return unique_id_;
+  }
 
   bool check_available(const std::string &identifier) const;
 
 private:
-  int index_ = 0;
+  size_t unique_id_;
 };
 using AttachPointList = std::vector<AttachPoint *>;
 
@@ -1857,8 +1862,14 @@ public:
       : Node(ctx, loc + other.loc),
         attach_points(clone(ctx, other.attach_points, loc)),
         block(clone(ctx, other.block, loc)),
+<<<<<<< HEAD
         orig_name(other.orig_name),
         index_(other.index_) {};
+=======
+        need_expansion(other.need_expansion)
+  {
+  }
+>>>>>>> 5224b6c3 (codegen: ensure paths are not part of bytecode)
 
   bool operator==(const Probe &other) const
   {
@@ -1878,15 +1889,14 @@ public:
   BlockExpr *block = nullptr;
   std::string orig_name;
 
+<<<<<<< HEAD
   std::string args_typename() const;
-
-  int index() const;
-  void set_index(int index);
+=======
+  std::string name() const;
+  bool need_expansion = false; // must build a BPF program per wildcard match
+>>>>>>> 5224b6c3 (codegen: ensure paths are not part of bytecode)
 
   bool has_ap_of_probetype(ProbeType probe_type);
-
-private:
-  int index_ = 0;
 };
 using ProbeList = std::vector<Probe *>;
 

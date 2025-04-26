@@ -82,8 +82,7 @@ BpfBytecode::BpfBytecode(std::span<const std::byte> elf)
 
 const BpfProgram &BpfBytecode::getProgramForProbe(const Probe &probe) const
 {
-  auto prog = programs_.find(
-      util::get_function_name_for_probe(probe.name, probe.index));
+  auto prog = programs_.find(util::get_function_name_for_probe(probe.index));
   if (prog == programs_.end()) {
     std::stringstream msg;
     if (probe.name != probe.orig_name)

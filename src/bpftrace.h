@@ -119,7 +119,8 @@ public:
                         ast::ExpansionType expansion,
                         std::set<std::string> expanded_funcs);
   Probe generateWatchpointSetupProbe(const ast::AttachPoint &ap,
-                                     const ast::Probe &probe);
+                                     const ast::Probe &probe,
+                                     size_t inline_index = 0);
   int num_probes() const;
   int prerun() const;
   int run(output::Output &out,

@@ -171,6 +171,7 @@ AttachPoint *AttachPoint::create_expansion_copy(ASTContext &ctx,
   // Create a new node with the same raw tracepoint. We initialize all the
   // information about the attach point, and then override/reset values
   // depending on the specific probe type.
+<<<<<<< HEAD
   auto *ap = ctx.make_node<AttachPoint>(raw_input,
                                         ignore_invalid,
                                         Location(loc));
@@ -188,6 +189,25 @@ AttachPoint *AttachPoint::create_expansion_copy(ASTContext &ctx,
   ap->async = async;
   ap->address = address;
   ap->func_offset = func_offset;
+=======
+  auto &ap = *ctx.make_node<AttachPoint>(raw_input,
+                                         ignore_invalid,
+                                         Location(loc));
+  ap.provider = provider;
+  ap.target = target;
+  ap.lang = lang;
+  ap.ns = ns;
+  ap.func = func;
+  ap.pin = pin;
+  ap.usdt = usdt;
+  ap.freq = freq;
+  ap.len = len;
+  ap.mode = mode;
+  ap.async = async;
+  ap.expansion = expansion;
+  ap.address = address;
+  ap.func_offset = func_offset;
+>>>>>>> 5224b6c3 (codegen: ensure paths are not part of bytecode)
 
   switch (probetype(ap->provider)) {
     case ProbeType::kprobe:
@@ -340,6 +360,7 @@ std::string AttachPoint::name() const
   return n;
 }
 
+<<<<<<< HEAD
 int AttachPoint::index() const
 {
   return index_;
@@ -363,6 +384,15 @@ int Probe::index() const
 void Probe::set_index(int index)
 {
   index_ = index;
+=======
+std::string Probe::name() const
+{
+  std::vector<std::string> ap_names;
+  std::ranges::transform(attach_points,
+                         std::back_inserter(ap_names),
+                         [](const AttachPoint *ap) { return ap->name(); });
+  return util::str_join(ap_names, ",");
+>>>>>>> 5224b6c3 (codegen: ensure paths are not part of bytecode)
 }
 
 bool Probe::has_ap_of_probetype(ProbeType probe_type)

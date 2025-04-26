@@ -92,7 +92,18 @@ public:
   // syntax tree in place.
   void clear();
 
+<<<<<<< HEAD
   // Root points to a node in `state_.nodes_`.
+=======
+  // generates a unique identifier for this specific context, which can be used
+  // for internal identifiers. This is useful to avoiding binding identifiers
+  // to user-provided data, which may make outputs overly sensitive.
+  size_t next_unique_id()
+  {
+    return next_unique_id_->fetch_add(1);
+  }
+
+>>>>>>> 5224b6c3 (codegen: ensure paths are not part of bytecode)
   Program *root = nullptr;
 
 private:
@@ -123,6 +134,7 @@ private:
 
   std::unique_ptr<State> state_;
   std::shared_ptr<ASTSource> source_;
+  std::unique_ptr<std::atomic<size_t>> next_unique_id_;
 
   friend class bpftrace::Driver;
   friend class Node;

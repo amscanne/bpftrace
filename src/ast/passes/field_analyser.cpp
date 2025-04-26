@@ -94,9 +94,28 @@ void FieldAnalyser::visit(Builtin &builtin)
     if (!probe_)
       return;
 
-    const auto *arg = bpftrace_.structs.GetProbeArg(*probe_, RETVAL_FIELD_NAME);
-    if (arg)
-      sized_type_ = arg->type;
+    // This is different for every single attachpoint. We need to check that
+    // they are sufficiently consistent to be able to annotate a useful type.
+    std::optional<SizedType> retval;
+    for (const auto &ap : probe_->attach_points)
+    {
+      SizedType current_retval = CreateNone();
+      auto args = ap.arg_type;
+      if (args && args->HasField(RETVAL_FIELD_NAME)) {
+        current_retval = args->GetField(RETVAL_FIELD_NAME);
+      }
+      if (!retval) {
+        retval.emplace(std::move(current_retval));
+      } else if (*retval != current_retval) {
+        // We can't use this builtin with these attach points, or need a
+        // dynamic expansion *before* the field analyser can annotate types.
+        builtin.addError() << "type mismatch, attach points have different return values";
+        return;
+      }
+    }
+    if (retval) {
+      sized_type_ = *retval;
+    }
     return;
   }
 
@@ -226,6 +245,107 @@ void FieldAnalyser::visit(Unop &unop)
   }
 }
 
+<<<<<<< HEAD
+=======
+void FieldAnalyser::resolve_args(Probe &probe)
+{
+  for (auto *ap : probe.attach_points) {
+    // load probe arguments into a special record type "struct <probename>_args"
+    std::shared_ptr<Struct> probe_args;
+
+    auto probe_type = probetype(ap->provider);
+    if (probe_type != ProbeType::fentry && probe_type != ProbeType::fexit &&
+        probe_type != ProbeType::rawtracepoint &&
+        probe_type != ProbeType::uprobe)
+      continue;
+
+    if (ap->expansion != ExpansionType::NONE) {
+      std::set<std::string> matches;
+
+      // Find all the matches for the wildcard..
+      try {
+        matches = bpftrace_.probe_matcher_->get_matches_for_ap(*ap);
+      } catch (const WildcardException &e) {
+        probe.addError() << e.what();
+        return;
+      }
+
+      // ... and check if they share same arguments.
+
+      std::shared_ptr<Struct> ap_args;
+      for (const auto &match : matches) {
+        // Both uprobes and fentry have a target (binary for uprobes, kernel
+        // module for fentry).
+        std::string func = match;
+        std::string target = util::erase_prefix(func);
+        std::string err;
+
+        // Trying to attach to multiple fentry. If some of them fails on
+        // argument resolution, do not fail hard, just print a warning and
+        // continue with other functions.
+        if (probe_type == ProbeType::fentry || probe_type == ProbeType::fexit) {
+          ap_args = bpftrace_.btf_->resolve_args(
+              func, probe_type == ProbeType::fexit, true, false, err);
+
+        } else if (probe_type == ProbeType::rawtracepoint) {
+          ap_args = bpftrace_.btf_->resolve_raw_tracepoint_args(func, err);
+        } else { // uprobe
+          Dwarf *dwarf = bpftrace_.get_dwarf(target);
+          if (dwarf)
+            ap_args = dwarf->resolve_args(func);
+          else
+            ap->addWarning() << "No debuginfo found for " << target;
+        }
+
+        if (!ap_args) {
+          ap->addWarning() << probetypeName(probe_type) << ap->func << ": "
+                           << err;
+          continue;
+        }
+
+        if (!probe_args)
+          probe_args = ap_args;
+        else if (*ap_args != *probe_args) {
+          ap->addError() << "Probe has attach points with mixed arguments";
+          break;
+        }
+      }
+    } else {
+      std::string err;
+      // Resolving args for an explicit function failed, print an error and fail
+      if (probe_type == ProbeType::fentry || probe_type == ProbeType::fexit) {
+        probe_args = bpftrace_.btf_->resolve_args(
+            ap->func, probe_type == ProbeType::fexit, true, false, err);
+
+      } else if (probe_type == ProbeType::rawtracepoint) {
+        probe_args = bpftrace_.btf_->resolve_raw_tracepoint_args(ap->func, err);
+      } else { // uprobe
+        Dwarf *dwarf = bpftrace_.get_dwarf(ap->target);
+        if (dwarf) {
+          probe_args = dwarf->resolve_args(ap->func);
+        } else {
+          ap->addWarning() << "No debuginfo found for " << ap->target;
+        }
+        if (probe_args && probe_args->fields.size() >
+                              static_cast<size_t>(arch::max_arg() + 1)) {
+          ap->addError() << "\'args\' builtin is not supported for "
+                         << "probes with stack-passed arguments.";
+        }
+      }
+
+      if (!probe_args) {
+        ap->addError() << probetypeName(probe_type) << ap->func << ": " << err;
+        return;
+      }
+    }
+
+    // Arguments are stored as an anonymous type in each individual attach
+    // point.
+    ap->args_type = std::move(probe_args):
+  }
+}
+
+>>>>>>> 5224b6c3 (codegen: ensure paths are not part of bytecode)
 void FieldAnalyser::resolve_fields(SizedType &type)
 {
   if (!type.IsRecordTy())

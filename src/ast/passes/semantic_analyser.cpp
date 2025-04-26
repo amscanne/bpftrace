@@ -1059,6 +1059,8 @@ void SemanticAnalyser::visit(Builtin &builtin)
     auto *probe = get_probe(builtin, builtin.ident);
     if (probe == nullptr)
       return;
+
+    SizedType args_type = CreateNone();
     for (auto *attach_point : probe->attach_points) {
       ProbeType type = probetype(attach_point->provider);
 
@@ -1072,6 +1074,13 @@ void SemanticAnalyser::visit(Builtin &builtin)
                                        : AddrSpace::kernel);
         builtin.builtin_type.MarkCtxAccess();
         break;
+      }
+
+      // We can't really do type infererance and semantic analysis prior to
+      // expanding these types. But we'll leave this for now, and just expand
+      // to the first available type.
+      if (args_type.IsNoneTy() && attach_point->args_type) {
+        args_type = *attach_point->args_type;
       }
     }
 
