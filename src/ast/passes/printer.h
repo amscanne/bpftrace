@@ -45,7 +45,8 @@ public:
   void visit(If &if_node);
   void visit(Unroll &unroll);
   void visit(While &while_block);
-  void visit(For &for_loop);
+  void visit(Range &range);
+  void visit(For &for_stmt);
   void visit(Config &config);
   void visit(Jump &jump);
   void visit(Predicate &pred);

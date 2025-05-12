@@ -403,29 +403,44 @@ void Printer::visit(While &while_block)
   visit(while_block.block);
 }
 
-void Printer::visit(For &for_loop)
+void Printer::visit(Range &range)
+{
+  std::string indent(depth_, ' ');
+
+  out_ << indent << "start\n";
+  ++depth_;
+  visit(range.start);
+  --depth_;
+
+  out_ << indent << "end\n";
+  ++depth_;
+  visit(range.end);
+  --depth_;
+}
+
+void Printer::visit(For &for_stmt)
 {
   std::string indent(depth_, ' ');
   out_ << indent << "for" << std::endl;
 
   ++depth_;
-  if (for_loop.ctx_type.IsRecordTy() &&
-      !for_loop.ctx_type.GetFields().empty()) {
+  if (for_stmt.ctx_type.IsRecordTy() &&
+      !for_stmt.ctx_type.GetFields().empty()) {
     out_ << indent << " ctx\n";
-    for (const auto &field : for_loop.ctx_type.GetFields()) {
+    for (const auto &field : for_stmt.ctx_type.GetFields()) {
       out_ << indent << "  " << field.name << type(field.type) << "\n";
     }
   }
 
   out_ << indent << " decl\n";
   ++depth_;
-  visit(for_loop.decl);
-  visit(for_loop.map);
+  visit(for_stmt.decl);
+  visit(for_stmt.iterable);
   --depth_;
 
   out_ << indent << " stmts\n";
   ++depth_;
-  visit(for_loop.stmts);
+  visit(for_stmt.stmts);
   --depth_;
 
   --depth_;

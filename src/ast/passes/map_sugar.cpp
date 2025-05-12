@@ -14,7 +14,7 @@ public:
 
   using Visitor<MapDefaultKey>::visit;
   void visit(Call &call);
-  void visit(For &for_loop);
+  void visit(For &for_stmt);
   void visit(Map &map);
   void visit(MapAccess &acc);
   void visit(AssignScalarMapStatement &assign);
@@ -206,14 +206,16 @@ void MapDefaultKey::visit(Call &call)
   }
 }
 
-void MapDefaultKey::visit(For &for_loop)
+void MapDefaultKey::visit(For &for_stmt)
 {
-  if (!check(*for_loop.map, true)) {
-    for_loop.map->addError() << for_loop.map->ident
-                             << " has no explicit keys (scalar map), and "
-                                "cannot be used for iteration";
+  if (auto *map = for_stmt.iterable.as<Map>()) {
+    if (!check(*map, true)) {
+      map->addError() << map->ident
+                      << " has no explicit keys (scalar map), and "
+                         "cannot be used for iteration";
+    }
   }
-  Visitor<MapDefaultKey>::visit(for_loop.stmts);
+  visit(for_stmt.stmts);
 }
 
 void MapFunctionAliases::visit(Call &call)

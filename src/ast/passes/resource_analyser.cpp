@@ -41,7 +41,7 @@ public:
   void visit(MapAccess &acc);
   void visit(MapDeclStatement &decl);
   void visit(Tuple &tuple);
-  void visit(For &f);
+  void visit(For &for_stmt);
   void visit(Ternary &ternary);
   void visit(AssignMapStatement &assignment);
   void visit(AssignVarStatement &assignment);
@@ -436,15 +436,15 @@ void ResourceAnalyser::visit(Tuple &tuple)
   }
 }
 
-void ResourceAnalyser::visit(For &f)
+void ResourceAnalyser::visit(For &for_stmt)
 {
-  Visitor<ResourceAnalyser>::visit(f);
+  Visitor<ResourceAnalyser>::visit(for_stmt);
 
   // Need tuple per for loop to store key and value
-  if (exceeds_stack_limit(f.decl->type().GetSize())) {
+  if (exceeds_stack_limit(for_stmt.decl->type().GetSize())) {
     resources_.tuple_buffers++;
     resources_.max_tuple_size = std::max(resources_.max_tuple_size,
-                                         f.decl->type().GetSize());
+                                         for_stmt.decl->type().GetSize());
   }
 }
 

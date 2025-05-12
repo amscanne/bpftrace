@@ -180,11 +180,17 @@ public:
     visitImpl(while_block.block);
     return default_value();
   }
-  R visit(For &for_loop)
+  R visit(Range &range)
   {
-    visitImpl(for_loop.decl);
-    visitImpl(for_loop.map);
-    visitImpl(for_loop.stmts);
+    visitImpl(range.start);
+    visitImpl(range.end);
+    return default_value();
+  }
+  R visit(For &for_stmt)
+  {
+    visitImpl(for_stmt.decl);
+    visitImpl(for_stmt.iterable);
+    visitImpl(for_stmt.stmts);
     return default_value();
   }
   R visit(Predicate &pred)
@@ -236,6 +242,10 @@ public:
     visitImpl(program.map_decls);
     visitImpl(program.probes);
     return default_value();
+  }
+  R visit(Iterable &iterable)
+  {
+    return visitImpl(iterable.value);
   }
   R visit(Expression &expr)
   {
