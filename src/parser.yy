@@ -10,7 +10,7 @@
 %define define_location_comparison
 %define parse.assert
 %define parse.trace
-%expect 4
+%expect 0
 
 %define parse.error verbose
 
@@ -99,6 +99,9 @@ void yyerror(bpftrace::Driver &driver, const char *s);
   PTR        "->"
   STRUCT     "struct"
   UNION      "union"
+
+  // Pseudo token; see below.
+  LOW "low-precendce"
 ;
 
 %token <std::string> BUILTIN "builtin"
@@ -173,6 +176,16 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %type <ast::Program *> program
 
 
+// A pseudo token, which is the lowest precedence among all tokens.
+//
+// This helps us explicitly lower the precedence of a given rule to force shift
+// vs. reduce, and make the grammer explicit (still ambiguous, but explicitly
+// ambiguous). For example, consider the inherently ambiguous `@foo[..]`, which
+// could be interpreted as accessed foo, or indexing into the value of the
+// `@foo`, e.g.  (@foo)[...]. We lower the precedence of the brackets to ensure
+// that this is shifted, and the longer `mep_expr` rule will match.
+%left LOW
+
 %left COMMA
 %right ASSIGN LEFTASSIGN RIGHTASSIGN PLUSASSIGN MINUSASSIGN MULASSIGN DIVASSIGN MODASSIGN BANDASSIGN BORASSIGN BXORASSIGN
 %left QUES COLON
@@ -187,7 +200,9 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %left PLUS MINUS
 %left MUL DIV MOD
 %right LNOT BNOT
-%left LPAREN RPAREN LBRACKET RBRACKET DOT PTR
+%left DOT PTR
+%right PAREN RPAREN
+%right LBRACKET RBRACKET
 
 // In order to support the parsing of full programs and the parsing of just
 // expressions (used while expanding C macros, for example), use the trick
@@ -199,12 +214,12 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 
 %%
 
-start:          START_PROGRAM program { driver.result = $2; }
-        |       START_EXPR expr       { driver.result = $2; }
+start:          START_PROGRAM program END { driver.result = $2; }
+        |       START_EXPR expr END       { driver.result = $2; }
                 ;
 
 program:
-                c_definitions config imports map_decl_list macros body END {
+                c_definitions config imports map_decl_list macros body {
                     $$ = driver.ctx.make_node<ast::Program>($1, $2, std::move($3), std::move($4), std::move($5), std::move($6.second), std::move($6.first), @$);
                 }
                 ;
@@ -546,7 +561,7 @@ primary_expr:
         |       param              { $$ = $1; }
         |       param_count        { $$ = $1; }
         |       var                { $$ = $1; }
-        |       map                { $$ = $1; }
+        |       map %prec LOW      { $$ = $1; }
         |       map_expr           { $$ = $1; }
         |       "(" vargs "," expr ")"
                 {
@@ -679,12 +694,12 @@ addi_expr:
                 ;
 
 cast_expr:
-                unary_expr                                  { $$ = $1; }
-        |       LPAREN type RPAREN cast_expr                { $$ = driver.ctx.make_node<ast::Cast>($2, $4, @1 + @3); }
+                unary_expr                            { $$ = $1; }
+        |       LPAREN type RPAREN cast_expr          { $$ = driver.ctx.make_node<ast::Cast>($2, $4, @1 + @3); }
 /* workaround for typedef types, see https://github.com/bpftrace/bpftrace/pull/2560#issuecomment-1521783935 */
-        |       LPAREN IDENT RPAREN cast_expr               { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 0), $4, @1 + @3); }
-        |       LPAREN IDENT "*" RPAREN cast_expr           { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 1), $5, @1 + @4); }
-        |       LPAREN IDENT "*" "*" RPAREN cast_expr       { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 2), $6, @1 + @5); }
+        |       LPAREN IDENT RPAREN cast_expr         { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 0), $4, @1 + @3); }
+        |       LPAREN IDENT "*" RPAREN cast_expr     { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 1), $5, @1 + @4); }
+        |       LPAREN IDENT "*" "*" RPAREN cast_expr { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 2), $6, @1 + @5); }
                 ;
 
 sizeof_expr:
@@ -722,7 +737,7 @@ ident:
                 ;
 
 raw_ident:
-                IDENT         { $$ = driver.ctx.make_node<ast::Identifier>($1, @$); }
+                IDENT %prec LOW { $$ = driver.ctx.make_node<ast::Identifier>($1, @$); }
                 ;
 
 struct_field:
