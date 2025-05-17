@@ -10,16 +10,13 @@
 
 #include "ast/clone.h"
 #include "ast/context.h"
+#include "ast/ops.h"
 #include "diagnostic.h"
-#include "parser/ops.h"
 #include "probe_types.h"
 #include "types.h"
 #include "usdt.h"
 
 namespace bpftrace::ast {
-
-using JumpType = parser::JumpType;
-using Operator = parser::Operator;
 
 // There are 2 kinds of attach point expansion:
 // - full expansion  - separate LLVM function is generated for each match

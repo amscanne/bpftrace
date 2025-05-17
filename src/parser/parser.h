@@ -9,19 +9,26 @@ namespace bpftrace::parser {
 class ParseError : public ErrorInfo<ParseError> {
 public:
   static char ID;
-  ParseError(std::string &&s) : s_(std::move(s)) {};
+  ParseError(std::string &&msg, Position &&pos) : msg_(std::move(msg)), pos_(std::move(pos)) {};
   void log(llvm::raw_ostream &OS) const override {
-    OS << s;
+    OS << msg_;
   }
+  const std::string &msg() { return msg_; }
+  const Position &pos() { return pos_; }
 private:
-  std::string s;
+  std::string msg_;
+  Position pos_;
 };
 
 // BaseParser is a generic parser.
+//
+// Specific parsers are split into their own implementation files, but they may
+// inherit from this common recursive descent plumbing.
+template <typename T>
 class BaseParser {
 public:
   BaseParser(Tokenizer &tokenizer) : tokenizer(tokenizer) {
-    positions_.push_back(tokenizer_.current().position());
+    push();
   };
 
   // match functions check the next token in sequence. The `matchAny` and
@@ -82,16 +89,26 @@ public:
     }
   }
 
+  // Examines the last position in the stack, and returns a position that spans
+  // from the pushed value to the current position.
+  Postion position() {
+    auto prev = positions_.back();
+    return prev + tokenizer_.current().position();
+  }
+
+  // must invokes some other rule, which is producing a new value.
+  template  <typename R, typename ...Args, Result<R> (T::*method)(Args...)>
+  Result<R> must(Args &&...args) {
+    auto &t = *static_cast<T*>(this);
+    positions_.push_back(tokenizer_.current().position());
+    auto r = (t.*method)(std::forward<Args>(args)...);
+    positions_.pop_back();
+    return std::move(r);
+  }
+
 private:
   Tokenizer &tokenizer_;
   std::vector<Position> positions_;
-};
-
-// Parser parses top-level programs.
-//
-// In the future this will be split into parts that allow parsing just function
-// bodies, etc.
-class Parser {
 };
 
 } // namespace parser

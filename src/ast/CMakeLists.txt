@@ -4,12 +4,11 @@ add_library(ast_defs STATIC
   helpers.cpp
   location.cpp
 )
-add_dependencies(ast_defs parser)
+add_dependencies(ast_defs tokenizer)
 target_link_libraries(ast_defs util)
 
 add_library(ast STATIC
   async_event_types.cpp
-  attachpoint_parser.cpp
   codegen_helper.cpp
   diagnostic.cpp
   dibuilderbpf.cpp

@@ -5,7 +5,7 @@
 
 #include "ast/diagnostic.h"
 #include "ast/pass_manager.h"
-#include "parser/position.h"
+#include "tokenizer/position.h"
 
 namespace bpftrace {
 
@@ -114,7 +114,7 @@ private:
   {
     return std::forward<T>(t);
   }
-  Location wrap(parser::Position pos)
+  Location wrap(tokenizer::Position pos)
   {
     return std::make_shared<LocationChain>(SourceLocation(pos, source_));
   };

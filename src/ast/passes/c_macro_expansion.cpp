@@ -5,7 +5,8 @@
 #include "ast/passes/c_macro_expansion.h"
 #include "ast/visitor.h"
 #include "clang_parser.h"
-#include "driver.h"
+#include "parser/script.h"
+#include "tokenizer/tokenizer.h"
 #include "util/format.h"
 
 namespace bpftrace::ast {
@@ -13,7 +14,7 @@ namespace bpftrace::ast {
 class CMacroExpander : public Visitor<CMacroExpander> {
 public:
   CMacroExpander(ASTContext &ast, CDefinitions &c_definitions)
-      : ast_(ast), c_definitions_(c_definitions) {};
+      : ast_(ast), c_definitions_(c_definitions){};
 
   using Visitor<CMacroExpander>::visit;
   void visit(Expression &expr);
@@ -42,8 +43,8 @@ void CMacroExpander::visit(Expression &expr)
 
       // Parse just the macro as an expression.
       ASTContext macro(ident->ident, value);
-      Driver driver(macro);
-      auto expanded = driver.parse_expr();
+      auto expanded = parser::parse_expr(macro,
+                                         tokenizer::StringTokenizer(value));
       if (!expanded) {
         ident->addError() << "unable to expand macro as an expression: "
                           << value;
