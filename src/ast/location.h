@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-#include "parser/position.h"
+#include "tokenizer/position.h"
 
 namespace bpftrace::ast {
 
@@ -22,7 +22,7 @@ public:
   SourceLocation() = default;
   SourceLocation(const SourceLocation &) = default;
   SourceLocation &operator=(const SourceLocation &) = default;
-  SourceLocation(parser::Position pos, std::shared_ptr<ASTSource> source = {});
+  SourceLocation(tokenizer::Position pos, std::shared_ptr<ASTSource> source = {});
 
   // Canonical filename.
   std::string filename() const;
@@ -50,7 +50,7 @@ public:
   };
 
 private:
-  parser::Position position_;
+  tokenizer::Position position_;
   std::shared_ptr<ASTSource> source_;
 };
 

@@ -4,154 +4,12 @@
 
 namespace bpftrace::parser {
 
-Result<Program*> Parser::parse_program()
-{
-  std::stringstream c_definitions;
-  std::optional<Config&> config;
-  SubprogList functions;
-  ProbeList probes;
-
-  while (true) {
-    if (match(Token::END)) {
-      break;
-    } else if (match(Token::HASH)) {
-      // The full line matches whenver it starts with a hash. This is a special
-      // case in the tokenizer, which essentially matches '#[^ !].*$'.
-      c_definitions << consume(HASH) << "\n";
-    } else if (matchAll(IDENT, "struct") || matchAll(IDENT, "union") ||
-               matchAll(IDENT, "enum")) {
-      // Inline C structure definitions.
-      while (!match(Token::OPEN_BRACKET)) {
-        c_definitions << " " << consume();
-      }
-      c_definitions << must(parse_definition);
-    } else if (matchAll(IDENT, "config")) {
-      // If we match the configuration block, match sure we didn't parse one
-      // already and then parse it here. We will continue to parse it anyways,
-      // but the compiler will fail.
-      if (config.has_value())
-        fail() << "multiple configuration blocks found";
-      config.emplace(must(parse_config));
-    } else if (matchAll(IDENT, "fn")) {
-      // Parse a subprogram definition.
-      subprogs.push_back(must(parse_subprog));
-    } else {
-      // Other things encountered at the top-level will be processed as a probe
-      // definition.
-      probes.push_back(must(parse_probe))
-    }
-  }
-
-  return make<Program>(
-      c_definitions.str(), config, std::move(functions), std::move(probes));
-}
-
-static std::unordered_map<std::string, SizedType> builtins = {
-  { "void", CreateVoid() },
-  { "min_t", CreateMin(true) },
-  { "max_t", CreateMax(true) },
-  { "sum_t", CreateSum(true) },
-  { "count_t", CreateCount(true) },
-  { "avg_t", CreateAvg(true) },
-  { "stats_t", CreateStats(true) },
-  { "umin_t", CreateMin(false) },
-  { "umax_t", CreateMax(false) },
-  { "usum_t", CreateSum(false) },
-  { "ucount_t", CreateCount(false) },
-  { "uavg_t", CreateAvg(false) },
-  { "ustats_t", CreateStats(false) },
-  { "timestamp", CreateTimestamp() },
-  { "macaddr_t", CreateMacAddress() },
-  { "cgroup_path_t", CreateCgroupPath() },
-  { "strerror_t", CreateStrerror() },
-};
-
-static std::unordered_map<std::string, SizedType> integers = {
-  { "bool", CreateBool() },     { "uint8", CreateUInt(8) },
-  { "uint16", CreateUInt(16) }, { "uint32", CreateUInt(32) },
-  { "uint64", CreateUInt(64) }, { "int8", CreateInt(8) },
-  { "int16", CreateInt(16) },   { "int32", CreateInt(32) },
-  { "int64", CreateInt(64) },
-};
-
-std::optional<SizedType> parse_type()
-{
-  // We handle only the identifier cases here, if this looks like pointer type
-  // then we pass to parse_unop_expr to resolve.
-  if (!match(Token::IDENT)) {
-    auto maybeType = parse_unop();
-    if (!std::holds_alternative<SizedType>(maybeType)) {
-      fail() << "unexpected type, found expression";
-      return std::nullopt;
-    }
-    return *std::get<SizedType>(&maybeType);
-  }
-
-  // We pull the identifier name but don't consume it yet. The `parse_type`
-  // function will not consume any tokens if the type cannot be parsed safely.
-  auto name = tokenizer_.current().contents();
-
-  // Builtin types may not be composed into arrays or anything else. Users
-  // will receive an array when parsing the next token in these cases.
-  if (builtins.find(name) != builtins.end()) {
-    if (matchAny(OPEN_BRACKET, MUL)) {
-      fail() << "builtin types may not be used as pointers or arrays";
-      return CreateVoid();
-    }
-    return *builtins.find(name);
-  }
-
-  // The following types are composed, and we check if they match an array
-  // declaration.
-  std::optional<SizedType> base;
-  if (name == "string") {
-    base = CreateString(0);
-  } else if (name == "inet") {
-    base = CreateInet(0);
-  } else if (name == "buffer") {
-    base = CreateBuffer(0);
-  } else if (name == "struct") {
-    consume(IDENT); // The `struct` token.
-    if (!match(IDENT)) {
-      fail() << "unexpected token following `struct`";
-      return CreateVoid();
-    }
-    auto struct_name = tokenizer_.current().contents();
-    base = ident_to_record(struct_name);
-  } else if (integers.find(name) != integers.end()) {
-    base = *integers.find(name);
-  } else {
-    return std::nullopt; // Not a type.
-  }
-
-  // Now we can consume the identifier and determine if this is referring to an
-  // array type or something else. After this point, we are committed to
-  // returning a type because we will have consumed the token.
-  consume(IDENT);
-
-  // Now the only legal suffix to the type is an array, e.g. '['. If it is not
-  // this, then we consider the type finished.
-  while (match(Token::OPEN_BRACKET)) {
-    consume(Token::OPEN_BRACKET);
-    if (match(Token::INTEGER)) {
-      auto count = parse_int(consume(INTEGER));
-      consume(Token::CLOSE_BRACKET);
-      base = CreateArray(count, *base);
-    } else if (match(CLOSE_BRACKET)) {
-      consume(Token::CLOSE_BRACKET);
-      base = CreateArray(0, *base);
-    } else {
-      fail() << "mangled type name";
-      return CreateVoid();
-    }
-  }
-
-  return *base;
-}
-
 Result<AssignConfigVarStatement*> parse_config_assign_statement()
 {
   auto name = consume(IDENT);
+  if (!name) {
+    return name.takeError();
+  }
   consume(OP, Operator::ASSIGN);
   auto value = must(parse_expr);
   return make<AssignConfigVarStatement>(name, value);
@@ -406,7 +264,7 @@ Result<Map*> Parser::parse_map()
   }
 }
 
-std::variant<Expression&, SizedType> Parser::parse_primary_expr()
+std::variant<Expression, SizedType> Parser::parse_primary_expr()
 {
   if (match(OPEN_PAREN)) {
     consume(OPEN_PAREN);
@@ -481,7 +339,7 @@ Expression Parser::parse_expr()
 {
   bool was_paren = match(OPEN_PAREN);
   auto last = parse_primary_expr();
-  bool is_paren = match(OPEN_PARENT);
+  bool is_paren = match(OPEN_PAREN);
 
   // If the last expression is a type, then we have a cast. We require either
   // the type or the next expression to be in a parenthesis, so we don't accept
@@ -489,11 +347,16 @@ Expression Parser::parse_expr()
   if (std::holds_alternative<SizedType>(last)) {
     if (!was_paren && !is_paren)
       fail() << "did you mean to put parenthesis for this cast?";
-    return make<Cast>(*std::get<SizedType>(&last), parse_expr());
+    auto &last_type = std::get<SizedType>(last);
+    auto r = parse_expr();
+    if (!r) {
+      return r.takeError();
+    }
+    return ast_.make_node<Cast>(std::move(last_type), std::move(*r), position());
   }
 
   // The first term was a primary expression.
-  auto last_expr = *std::get<Expression&>(&last);
+  auto &last_expr = std::get<Expression>(last);
   switch (tokenizer_.current_token()) {
     case QUESTION:
       auto true_cond = must(parse_expr);
@@ -517,6 +380,19 @@ Expression Parser::parse_expr()
       last = make<ArrayAccess>(last, parse_expr());
       consume(CLOSE_BRACKET);
     case QUESTION:
+      auto t = must<parse_expr>();
+      if (!t) {
+        return t.takeError();
+      }
+      auto ok = consume(COLON);
+      if (!ok) {
+        return ok.takeError();
+      }
+      auto f = must<parse_expr>();
+      if (!f) {
+         return f.takeError();
+      }
+      return ast_.make_node<Ternary>(last_expr, *t, *f, position());
     case OP:
       // Check if this is a compound op.
       auto op = parse_compound_op(current_token_contents());

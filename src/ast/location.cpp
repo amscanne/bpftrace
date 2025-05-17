@@ -6,7 +6,7 @@
 
 namespace bpftrace::ast {
 
-SourceLocation::SourceLocation(parser::Position pos, std::shared_ptr<ASTSource> source)
+SourceLocation::SourceLocation(tokenizer::Position pos, std::shared_ptr<ASTSource> source)
     : position_(pos), source_(std::move(source))
 {
 }

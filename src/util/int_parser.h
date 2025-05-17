@@ -6,6 +6,8 @@
 #include <unistd.h>
 #include <variant>
 
+#include <util/result.h>
+
 namespace bpftrace::util {
 
 //   String -> int conversion specific to bpftrace
@@ -17,12 +19,7 @@ namespace bpftrace::util {
 //   - support underscore as separator, e.g. 1_234_000
 //
 //   All errors are raised as std::invalid_argument exception
-int64_t to_int(const std::string &num, int base);
-uint64_t to_uint(const std::string &num, int base);
-
-std::optional<std::variant<int64_t, uint64_t>> get_int_from_str(
-    const std::string &s);
-
-std::optional<pid_t> parse_pid(const std::string &str, std::string &err);
+Result<int64_t> to_int(const std::string &num);
+Result<uint64_t> to_uint(const std::string &num);
 
 } // namespace bpftrace::util

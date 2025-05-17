@@ -28,7 +28,6 @@ private:
   std::stringstream ss_;
 };
 
-
 class AttachPointParser {
 public:
   AttachPointParser(BPFtrace &bpftrace, bool listing);

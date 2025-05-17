@@ -107,119 +107,46 @@ std::variant<T, std::string> _parse_exp(const std::string &coeff,
 namespace bpftrace::util {
 
 template <typename T>
-T to_int(const std::string &num, int base)
+Result<T> to_int(const std::string &num, int base)
 {
   std::string n(num);
   auto it = std::ranges::remove(n, '_');
   n.erase(it.begin(), it.end());
 
-  std::variant<T, std::string> res;
-
-  // If hex
-  if ((n.starts_with("0x")) || (n.starts_with("0X"))) {
-    res = _parse_int<T>(n, base);
+  Result<T> res;
+  if (n.starts_with("0x") || n.starts_with("0X")) {
+    res = _parse_int<T>(n, 16);
+  }
+  if (n.starts_with("0b") || n.starts_with("0B")) {
+    res = _parse_int<T>(n, 2);
+  }
+  if (n.starts_with("0") && n.size() > 2 && n[1] >= '0' && n[1] <= '7') {
+    res = _parse_int<T>(n, 7);
+  }
+  if (!res) {
+    return res.takeError();
+  }
+  auto pos = n.find_first_of("eE");
+  if (pos != std::string::npos) {
+    res = _parse_exp<T>(n.substr(0, pos), n.substr(pos + 1, std::string::npos));
   } else {
-    auto pos = n.find_first_of("eE");
-    if (pos != std::string::npos) {
-      res = _parse_exp<T>(n.substr(0, pos),
-                          n.substr(pos + 1, std::string::npos));
-    } else {
-      res = _parse_int<T>(n, base);
-    }
+    res = _parse_int<T>(n, base);
   }
-
-  if (auto *err = std::get_if<std::string>(&res))
-    throw std::invalid_argument(*err);
-  return std::get<T>(res);
 }
 
-int64_t to_int(const std::string &num, int base)
-{
-  return to_int<int64_t>(num, base);
+if (auto *err = std::get_if<std::string>(&res))
+  throw std::invalid_argument(*err);
+return std::get<T>(res);
 }
 
-uint64_t to_uint(const std::string &num, int base)
+Result<int64_t> to_int(const std::string &num)
 {
-  return to_int<uint64_t>(num, base);
+  return to_int<int64_t>(num);
 }
 
-std::optional<std::variant<int64_t, uint64_t>> get_int_from_str(
-    const std::string &s)
+Result<uint64_t> to_uint(const std::string &num)
 {
-  if (s.empty()) {
-    return std::nullopt;
-  }
-
-  if (s.starts_with("0x") || s.starts_with("0X")) {
-    // Treat all hex's as unsigned
-    std::size_t idx;
-    try {
-      uint64_t ret = std::stoull(s, &idx, 0);
-      if (idx == s.size()) {
-        return ret;
-      } else {
-        return std::nullopt;
-      }
-    } catch (...) {
-      return std::nullopt;
-    }
-  }
-
-  char *endptr;
-  const char *s_ptr = s.c_str();
-  errno = 0;
-
-  if (s.at(0) == '-') {
-    int64_t ret = strtol(s_ptr, &endptr, 0);
-    if (endptr == s_ptr || *endptr != '\0' || errno == ERANGE ||
-        errno == EINVAL) {
-      return std::nullopt;
-    }
-    return ret;
-  }
-
-  uint64_t ret = strtoul(s_ptr, &endptr, 0);
-  if (endptr == s_ptr || *endptr != '\0' || errno == ERANGE ||
-      errno == EINVAL) {
-    return std::nullopt;
-  }
-  return ret;
-}
-
-static std::string get_invalid_pid_message(const std::string &pid,
-                                           const std::string &msg)
-{
-  return "pid '" + pid + "' " + msg;
-}
-
-std::optional<pid_t> parse_pid(const std::string &str, std::string &err)
-{
-  std::size_t idx = 0;
-  pid_t pid;
-  constexpr ssize_t pid_max = 4 * 1024 * 1024;
-  try {
-    pid = std::stol(str, &idx, 10);
-  } catch (const std::out_of_range &e) {
-    err = get_invalid_pid_message(str, "outside of integer range");
-    return std::nullopt;
-  } catch (const std::invalid_argument &e) {
-    err = get_invalid_pid_message(str, "is not a valid decimal number");
-    return std::nullopt;
-  }
-  // Detect cases like `13ABC`
-  if (idx < str.size()) {
-    err = get_invalid_pid_message(str, "is not a valid decimal number");
-    return std::nullopt;
-  }
-
-  if (pid < 1 || pid > pid_max) {
-    err = get_invalid_pid_message(str,
-                                  "out of valid pid range [1," +
-                                      std::to_string(pid_max) + "]");
-    return std::nullopt;
-  }
-
-  return pid;
+  return to_int<uint64_t>(num);
 }
 
 } // namespace bpftrace::util
