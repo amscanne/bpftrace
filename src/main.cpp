@@ -91,6 +91,8 @@ enum Options {
   NO_FEATURE,
   DEBUG,
   DRY_RUN,
+  PID,
+  CGROUP,
 };
 
 constexpr auto FULL_SEARCH = "*:*";
@@ -115,7 +117,8 @@ void usage(std::ostream& out)
   out << "    --include FILE add an #include file before preprocessing" << std::endl;
   out << "    -l [search|filename]" << std::endl;
   out << "                   list kernel probes or probes in a program" << std::endl;
-  out << "    -p PID         filter actions and enable USDT probes on PID" << std::endl;
+  out << "    -p, --pid PID  filter actions and enable USDT probes on PID" << std::endl;
+  out << "    --cgroup ROOT  filter for processes in within cgroup" << std::endl;
   out << "    -c 'CMD'       run CMD and enable USDT probes on resulting process" << std::endl;
   out << "    --no-feature FEATURE[,FEATURE]" << std::endl;
   out << "                   disable use of detected features" << std::endl;
@@ -299,7 +302,6 @@ std::vector<std::string> extra_flags(
 void CreateDynamicPasses(std::function<void(ast::Pass&& pass)> add)
 {
   add(ast::CreateFoldLiteralsPass());
-  add(ast::CreatePidFilterPass());
   add(ast::CreateSemanticPass());
   add(ast::CreateResourcePass());
   add(ast::CreateRecursionCheckPass());
@@ -331,6 +333,7 @@ ast::Pass printPass(const std::string& name)
 
 struct Args {
   std::string pid_str;
+  std::string cgroup_str;
   std::string cmd_str;
   bool listing = false;
   bool safe_mode = true;
@@ -440,6 +443,12 @@ Args parse_args(int argc, char* argv[])
             .has_arg = no_argument,
             .flag = nullptr,
             .val = Options::DRY_RUN },
+    option{ .name = "pid",
+            .has_arg = required_argument,
+            .val = Options::PID },
+    option{ .name = "cgroup",
+            .has_arg = required_argument,
+            .val = Options::CGROUP },
     option{ .name = nullptr, .has_arg = 0, .flag = nullptr, .val = 0 }, // Must
                                                                         // be
                                                                         // last
@@ -524,7 +533,11 @@ Args parse_args(int argc, char* argv[])
         args.script = optarg;
         break;
       case 'p':
+      case Options::PID:
         args.pid_str = optarg;
+        break;
+      case Options::CGROUP:
+        args.cgroup_str = optarg;
         break;
       case 'I':
         args.include_dirs.emplace_back(optarg);
@@ -892,6 +905,12 @@ int main(int argc, char* argv[])
   // Start with all the basic parsing steps.
   for (auto& pass : ast::AllParsePasses(std::move(flags))) {
     addPass(std::move(pass));
+  }
+
+  // If a pid or a cgroup has been specified, then after parsing we apply the
+  // filter for this specific case.
+  if () {
+    add(ast::CreatePidFilterPass());
   }
 
   switch (args.build_mode) {

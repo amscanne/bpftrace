@@ -233,6 +233,7 @@ public:
   int ncpus_;
   int online_cpus_;
   int max_cpu_id_;
+  uint64_t cgroup_;
   std::unique_ptr<Config> config_;
 
 private:
