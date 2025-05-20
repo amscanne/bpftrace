@@ -142,7 +142,7 @@ Result<OK> ResolveImports::importScript([[maybe_unused]] Node &node,
   return OK();
 }
 
-Result<OK> ResolveImports::importObject([[maybe_unused]] Node &node,
+Result<OK> ResolveImports::importObject(Node &node,
                                         const std::string &name,
                                         const std::filesystem::path &path)
 {
@@ -150,12 +150,12 @@ Result<OK> ResolveImports::importObject([[maybe_unused]] Node &node,
     return OK(); // Already added.
   }
 
-  auto [_, added] = imports.objects.emplace(name, ExternalObject(path));
+  auto [_, added] = imports.objects.emplace(name, ExternalObject(node, path));
   assert(added);
   return OK();
 }
 
-Result<OK> ResolveImports::importBitcode([[maybe_unused]] Node &node,
+Result<OK> ResolveImports::importBitcode(Node &node,
                                          const std::string &name,
                                          const std::string &contents)
 {
@@ -163,7 +163,7 @@ Result<OK> ResolveImports::importBitcode([[maybe_unused]] Node &node,
     return OK(); // Already added.
   }
 
-  auto [_, added] = imports.bitcode.emplace(name, Bitcode(contents));
+  auto [_, added] = imports.bitcode.emplace(name, Bitcode(node, contents));
   assert(added);
   return OK();
 }

@@ -367,6 +367,11 @@ private:
   VariableLLVM *maybeGetVariable(const std::string &var_ident);
   VariableLLVM &getVariable(const std::string &var_ident);
 
+  // N.B. DeclareKernelFunc is split into a separate implementation in order to
+  // support late-binding when linking bitcode. For whatever reason, the debug
+  // information is not correctly carried in the linking process, so we simply
+  // add it manually. This also adds an extra sanity check, since the linking
+  // should fail if these prototypes are different.
   llvm::Function *DeclareKernelFunc(Kfunc kfunc, Node &call);
 
   CallInst *CreateKernelFuncCall(Kfunc kfunc,
@@ -4773,14 +4778,18 @@ Value *CodegenLLVM::createFmtString(int print_id)
 ///
 /// If the function declaration is already in the module, just return it.
 ///
-llvm::Function *CodegenLLVM::DeclareKernelFunc(Kfunc kfunc, Node &call)
+static llvm::Function *declareKernelFunc(LLVMContext &ctx,
+                                         llvm::Module &m,
+                                         BPFtrace &bpftrace,
+                                         const std::string &func_name,
+                                         Node &call)
 {
-  const std::string &func_name = kfunc_name(kfunc);
-  if (auto *fun = module_->getFunction(func_name))
-    return fun;
+  AsyncIds empty;
+  DIBuilderBPF debug(m);
+  IRBuilderBPF b(ctx, m, bpftrace, empty);
 
   std::string err;
-  auto func_struct = bpftrace_.btf_->resolve_args(
+  auto func_struct = bpftrace.btf_->resolve_args(
       func_name, true, false, false, err);
   if (!func_struct) {
     call.addError() << "Unknown kernel function: " << func_name;
@@ -4791,7 +4800,7 @@ llvm::Function *CodegenLLVM::DeclareKernelFunc(Kfunc kfunc, Node &call)
   std::vector<llvm::Type *> args;
   for (auto &field : func_struct->fields) {
     if (field.name != RETVAL_FIELD_NAME) {
-      args.push_back(b_.GetType(field.type, false));
+      args.push_back(b.GetType(field.type, false));
       debug_args.AddField(field.name,
                           field.type,
                           field.offset,
@@ -4801,22 +4810,27 @@ llvm::Function *CodegenLLVM::DeclareKernelFunc(Kfunc kfunc, Node &call)
   }
 
   FunctionType *func_type = FunctionType::get(
-      b_.GetType(func_struct->GetField(RETVAL_FIELD_NAME).type, false),
+      b.GetType(func_struct->GetField(RETVAL_FIELD_NAME).type, false),
       args,
       false);
 
-  auto *fun = llvm::Function::Create(func_type,
-                                     llvm::GlobalValue::ExternalWeakLinkage,
-                                     func_name,
-                                     module_.get());
+  auto *fun = llvm::Function::Create(
+      func_type, llvm::GlobalValue::ExternalWeakLinkage, func_name, m);
   fun->setSection(".ksyms");
   fun->setUnnamedAddr(GlobalValue::UnnamedAddr::Local);
   fun->addFnAttr(Attribute::NoUnwind);
 
-  debug_.createFunctionDebugInfo(
+  debug.createFunctionDebugInfo(
       *fun, func_struct->GetField(RETVAL_FIELD_NAME).type, debug_args, true);
+  debug.finalize();
 
   return fun;
+}
+
+llvm::Function *CodegenLLVM::DeclareKernelFunc(Kfunc kfunc, Node &call)
+{
+  const std::string &func_name = kfunc_name(kfunc);
+  return declareKernelFunc(llvm_ctx_, *module_, bpftrace_, func_name, call);
 }
 
 CallInst *CodegenLLVM::CreateKernelFuncCall(Kfunc kfunc,
@@ -4900,7 +4914,8 @@ Pass CreateCompilePass(
 Pass CreateLinkBitcodePass()
 {
   return Pass::create("LinkBitcode",
-                      [](Imports &imports,
+                      [](BPFtrace &bpftrace,
+                         Imports &imports,
                          CompiledModule &cm,
                          CompileContext &ctx) -> Result<> {
                         for (const auto &[_, bc] : imports.bitcode) {
@@ -4917,19 +4932,32 @@ Pass CreateLinkBitcodePass()
                           // this is also marking all these functions for
                           // below, which will adjust their linkage.
                           for (auto &fn : (*mod)->functions()) {
-                            if (fn.isDSOLocal()) {
+                            if (!fn.isDeclaration()) {
                               fn.removeFnAttr(Attribute::NoInline);
                               fn.removeFnAttr(Attribute::OptimizeNone);
                               fn.addFnAttr(Attribute::AlwaysInline);
                               fn.addFnAttr(Attribute::NoUnwind);
+                            } else if (fn.getSection() == ".ksyms") {
+                              // Declare it up front in our current module,
+                              // which should also detect collisions. This also
+                              // ensures that the local definition carries
+                              // debug information, which for some unknown
+                              // reason, does not seem to happen when linked.
+                              declareKernelFunc(*ctx.context,
+                                                *cm.module,
+                                                bpftrace,
+                                                fn.getName().str(),
+                                                bc.node);
                             }
                           }
 
                           // Link into the original source module, consume the
                           // new one. This returns `false` on success, and
                           // `true` when everything has been linked.
-                          auto err = Linker::linkModules(*cm.module,
-                                                         std::move(*mod));
+                          auto err = Linker::linkModules(
+                              *cm.module,
+                              std::move(*mod),
+                              Linker::Flags::LinkOnlyNeeded);
                           assert(!err);
                         }
 
@@ -4937,6 +4965,7 @@ Pass CreateLinkBitcodePass()
                         // linkage. This is using all the functions marked
                         // above. It doesn't really make sense to have
                         // `always_inline` but be an external linkage.
+                        // has debug information attached to it.
                         for (auto &fn : cm.module->functions()) {
                           if (fn.hasFnAttribute(Attribute::AlwaysInline)) {
                             fn.setLinkage(llvm::Function::InternalLinkage);

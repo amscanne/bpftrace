@@ -258,6 +258,10 @@ DIType *DIBuilderBPF::GetType(const SizedType &stype, bool emit_codegen_types)
                             getOrCreateArray({}));
   }
 
+  if (stype.IsNoneTy()) {
+    return createUnspecifiedType("void");
+  }
+
   if (stype.IsByteArray() || stype.IsRecordTy() || stype.IsStack()) {
     auto *subrange = getOrCreateSubrange(0, stype.GetSize());
     return createArrayType(

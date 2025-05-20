@@ -12,9 +12,15 @@
 
 namespace bpftrace::ast {
 
+class Node;
+
 class Bitcode {
 public:
-  Bitcode(const std::string &data) : data(data) {};
+  Bitcode(Node &node, const std::string &data) : node(node), data(data) {};
+
+  // This is a reference to the original node that imported this, so
+  // that a useful error can be generated somewhere.
+  Node &node;
 
   // This is only loaded from the standard library, so it is always a
   // reference. This can be parsed and loaded in a subsequent pass.
@@ -23,7 +29,11 @@ public:
 
 class ExternalObject {
 public:
-  ExternalObject(std::filesystem::path path) : path(std::move(path)) {};
+  ExternalObject(Node &node, std::filesystem::path path)
+      : node(node), path(std::move(path)) {};
+
+  // Per bitcode, this is a reference to the object.
+  Node &node;
 
   // Objects are left on the filesystem, since these paths are passed directly
   // to the linker.
