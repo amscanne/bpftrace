@@ -15,6 +15,7 @@ add_library(ast STATIC
   dibuilderbpf.cpp
   irbuilderbpf.cpp
   pass_manager.cpp
+  scoped_value.cpp
   signal.cpp
 
   passes/c_macro_expansion.cpp
