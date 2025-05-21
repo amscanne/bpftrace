@@ -17,27 +17,32 @@ ScopedValue::ScopedValue(Value *rvalue) : value_(rvalue)
 {
 }
 
-ScopedValue::ScopedValue(ScopedValue &&other, loadfn_t transform)
+ScopedValue::ScopedValue(Value *lvalue, ScopedValue &&other)
 {
   if (std::holds_alternative<lvalue_t>(other.value_)) {
     // We lose the ability to reference directly as an l-value, since the
-    // transformation is not necessarily reversible.
+    // transformation is not necessarily reversible. This binds the free
+    // function to the original location value.
     auto &[v, load, free] = std::get<lvalue_t>(other.value_);
-    value_.emplace<tvalue_t>(
-        std::make_tuple(transform(load(v)), [v, free]() { free(v); }));
+    value_.emplace<tvalue_t>(std::make_tuple(lvalue, [v, free]() { free(v); }));
   } else if (std::holds_alternative<tvalue_t>(other.value_)) {
     // We just apply another transformation.
     auto &[v, free] = std::get<tvalue_t>(other.value_);
-    value_.emplace<tvalue_t>(std::make_tuple(transform(v), free));
+    value_.emplace<tvalue_t>(std::make_tuple(lvalue, free));
   } else {
     // Just transform the value directly.
-    value_.emplace<rvalue_t>(transform(std::get<rvalue_t>(other.value_)));
+    value_.emplace<rvalue_t>(lvalue);
   }
   // Clear the other version.
   other.value_.emplace<rvalue_t>(nullptr);
 }
 
-ScopedValue::~ScopedValue()
+ScopedValue::ScopedValue(ScopedValue &&other) : value_(std::move(other.value_))
+{
+  other.value_.emplace<rvalue_t>(nullptr);
+}
+
+void ScopedValue::destroy()
 {
   if (std::holds_alternative<lvalue_t>(value_)) {
     auto &[v, _, free] = std::get<lvalue_t>(value_);
@@ -46,6 +51,20 @@ ScopedValue::~ScopedValue()
     auto &[_, free] = std::get<tvalue_t>(value_);
     free();
   }
+  value_.emplace<rvalue_t>(nullptr);
+}
+
+ScopedValue &ScopedValue::operator=(ScopedValue &&other)
+{
+  destroy();
+  value_ = std::move(other.value_);
+  other.value_.emplace<rvalue_t>(nullptr);
+  return *this;
+}
+
+ScopedValue::~ScopedValue()
+{
+  destroy();
 }
 
 Value *ScopedValue::rvalue()
@@ -73,7 +92,7 @@ Value *ScopedValue::lvalue()
 
 void ScopedValue::disarm()
 {
-  value_.emplace<rvalue_t>(lvalue());
+  value_.emplace<rvalue_t>(rvalue());
 }
 
 } // namespace bpftrace::ast

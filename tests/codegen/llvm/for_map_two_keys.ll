@@ -30,11 +30,11 @@ entry:
   store i64 16, ptr %1, align 8
   %2 = getelementptr %int64_int64__tuple_t, ptr %tuple, i32 0, i32 1
   store i64 17, ptr %2, align 8
+  call void @llvm.lifetime.end.p0(i64 -1, ptr %tuple)
   call void @llvm.lifetime.start.p0(i64 -1, ptr %"@map_val")
   store i64 32, ptr %"@map_val", align 8
   %update_elem = call i64 inttoptr (i64 2 to ptr)(ptr @AT_map, ptr %tuple, ptr %"@map_val", i64 0)
   call void @llvm.lifetime.end.p0(i64 -1, ptr %"@map_val")
-  call void @llvm.lifetime.end.p0(i64 -1, ptr %tuple)
   %for_each_map_elem = call i64 inttoptr (i64 164 to ptr)(ptr @AT_map, ptr @map_for_each_cb, ptr null, i64 0)
   ret i64 0
 }

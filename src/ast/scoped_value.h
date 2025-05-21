@@ -21,7 +21,9 @@ using namespace llvm;
 class ScopedValue {
 public:
   ~ScopedValue();
-  ScopedValue &operator=(ScopedValue &&other) = delete;
+  ScopedValue() = default;
+  ScopedValue(ScopedValue &&other);
+  ScopedValue &operator=(ScopedValue &&other);
   ScopedValue(const ScopedValue &other) = delete;
   ScopedValue &operator=(const ScopedValue &other) = delete;
 
@@ -41,9 +43,8 @@ public:
   explicit ScopedValue(Value *rvalue);
 
   // Provide a transformation of an existing `ScopedValue`. This preserves the
-  // original memory location, but changes the transform that is applied on
-  // load. If it is an r-value, then it is applied immediately.
-  explicit ScopedValue(ScopedValue &&other, loadfn_t transform);
+  // original memory location, but updates the l-value that is returned.
+  explicit ScopedValue(Value *lvalue, ScopedValue &&other);
 
   // Returns the rvalue, or nullptr if there is none.
   Value *rvalue();
@@ -58,6 +59,9 @@ public:
   void disarm();
 
 private:
+  // Executes the free/release function.
+  void destroy();
+
   // Just the value.
   using rvalue_t = llvm::Value *;
   // The address, a load and release function.
