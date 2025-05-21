@@ -88,6 +88,7 @@ std::string typestr(const SizedType &type, bool debug)
     case Type::lhist_t:
     case Type::none:
     case Type::voidtype:
+    case Type::tracepoint_args:
       return typestr(type.GetTy());
   }
 
@@ -229,6 +230,7 @@ std::string typestr(Type t)
     case Type::cgroup_path_t: return "cgroup_path_t"; break;
     case Type::strerror_t: return "strerror_t"; break;
     case Type::timestamp_mode: return "timestamp_mode"; break;
+    case Type::tracepoint_args: return "tracepoint_args"; break;
       // clang-format on
   }
 
@@ -478,6 +480,11 @@ SizedType CreateStrerror()
 SizedType CreateTimestampMode()
 {
   return { Type::timestamp_mode, 0 };
+}
+
+SizedType CreateTracepointArgs()
+{
+  return { Type::tracepoint_args, 0 };
 }
 
 bool SizedType::IsSigned() const

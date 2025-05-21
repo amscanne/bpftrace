@@ -630,6 +630,7 @@ static bool IsValidVarDeclType(const SizedType &ty)
     case Type::sum_t:
     case Type::stack_mode:
     case Type::voidtype:
+    case Type::tracepoint_args:
       return false;
     case Type::integer:
     case Type::kstack_t:
@@ -729,30 +730,6 @@ void SemanticAnalyser::visit(Identifier &identifier)
     } else {
       identifier.addError() << "Unknown identifier: '" + identifier.ident + "'";
     }
-  }
-}
-
-void SemanticAnalyser::builtin_args_tracepoint(AttachPoint *attach_point,
-                                               Builtin &builtin)
-{
-  // tracepoint wildcard expansion, part 2 of 3. This:
-  // 1. expands the wildcard, then sets args to be the first matched probe.
-  //    This is so that enough of the type information is available to
-  //    survive the later semantic analyser checks.
-  // 2. sets is_tparg so that codegen does the real type setting after
-  //    expansion.
-  auto matches = bpftrace_.probe_matcher_->get_matches_for_ap(*attach_point);
-  if (!matches.empty()) {
-    const auto &match = *matches.begin();
-    std::string tracepoint_struct = TracepointFormatParser::get_struct_name(
-        match);
-    builtin.builtin_type = CreateRecord(
-        tracepoint_struct, bpftrace_.structs.Lookup(tracepoint_struct));
-    builtin.builtin_type.SetAS(attach_point->target == "syscalls"
-                                   ? AddrSpace::user
-                                   : AddrSpace::kernel);
-    builtin.builtin_type.MarkCtxAccess();
-    builtin.builtin_type.is_tparg = true;
   }
 }
 
@@ -1030,7 +1007,24 @@ void SemanticAnalyser::visit(Builtin &builtin)
 
       if (type == ProbeType::tracepoint) {
         attach_point->expansion = ExpansionType::FULL;
-        builtin_args_tracepoint(attach_point, builtin);
+
+        // tracepoint wildcard expansion, part 2 of 3. This:
+        // 1. expands the wildcard, then sets args to be the first matched probe.
+        //    This is so that enough of the type information is available to
+        //    survive the later semantic analyser checks.
+        // 2. sets the kind to be tracepoint arguments, so that codegen does the real
+        //    type setting after expansion.
+        //
+        // FIXME: this doesn't make much sense anymore. If we have conflicting
+        // types at this point, then we can't meaningful leave this as an args
+        // kind. This only works because it's unlikely these expansion paths
+        // are ever used. Expansion needs to happen in front of type inference.
+        auto matches = bpftrace_.probe_matcher_->get_matches_for_ap(*attach_point);
+        if (!matches.empty()) {
+          builtin.builtin_type = CreateTracepointArgs();
+          builtin.builtin_type.SetAS(AddrSpace::bpf);
+          builtin.builtin_type.MarkCtxAccess();
+        }
       }
     }
 
@@ -2679,14 +2673,8 @@ void SemanticAnalyser::visit(FieldAccess &acc)
     return;
   }
 
-  if (!bpftrace_.structs.Has(type.GetName())) {
-    acc.addError() << "Unknown struct/union: '" << type.GetName() << "'";
-    return;
-  }
-
   std::map<std::string, std::shared_ptr<const Struct>> structs;
-
-  if (type.is_tparg) {
+  if (type.IsTracepointArgsTy()) {
     auto *probe = get_probe(acc);
     if (probe == nullptr)
       return;
@@ -2709,6 +2697,10 @@ void SemanticAnalyser::visit(FieldAccess &acc)
       }
     }
   } else {
+    if (!bpftrace_.structs.Has(type.GetName())) {
+      acc.addError() << "Unknown struct/union: '" << type.GetName() << "'";
+      return;
+    }
     structs[type.GetName()] = type.GetStruct();
   }
 
@@ -2737,6 +2729,12 @@ void SemanticAnalyser::visit(FieldAccess &acc)
         }
       }
 
+      // FIXME: this really doesn't make much sense. If we have multiple
+      // tracepoints attaching here, we are taking the type of whatever happens
+      // to be the last matching structure. Essentially we are sure that every
+      // field has a member `foo`, but the type of `foo` could be completely
+      // different. The only way to fix this is to do type inference *after*
+      // we've expanded probes in cases where they are divergent types.
       acc.field_type = field.type;
       if (acc.expr.type().IsCtxAccess() &&
           (acc.field_type.IsArrayTy() || acc.field_type.IsRecordTy())) {
@@ -2747,9 +2745,8 @@ void SemanticAnalyser::visit(FieldAccess &acc)
 
       // The kernel uses the first 8 bytes to store `struct pt_regs`. Any
       // access to the first 8 bytes results in verifier error.
-      if (type.is_tparg && field.offset < 8)
-        acc.addError()
-            << "BPF does not support accessing common tracepoint fields";
+      if (type.IsTracepointArgsTy() && field.offset < 8)
+        acc.addError() << "BPF does not support accessing common tracepoint fields";
     }
   }
 }
@@ -3936,7 +3933,7 @@ void SemanticAnalyser::assign_map_type(Map &map,
 {
   const std::string &map_ident = map.ident;
 
-  if (type.IsRecordTy() && type.is_tparg) {
+  if (type.IsTracepointArgsTy()) {
     loc_node->addError() << "Storing tracepoint args in maps is not supported";
   }
 

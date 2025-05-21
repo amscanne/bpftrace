@@ -50,6 +50,14 @@ enum class Type : uint8_t {
   cgroup_path_t,
   strerror_t,
   timestamp_mode,
+
+  // FIXME: This is a temporary type that indicates the value is tracepoint
+  // arguments that are not yet expanded and therefore cannot be mapped to a
+  // concrete structure. When expansion is done ahead of type inference, this
+  // should be replaced with a structure in the BPF address space that reflects
+  // the tracepoint arguments directly, and this type removed.
+  tracepoint_args,
+
   // clang-format on
 };
 
@@ -165,7 +173,6 @@ public:
 
   StackType stack_type;
   int funcarg_idx = -1;
-  bool is_tparg = false;
   bool is_funcarg = false;
   TimestampMode ts_mode = TimestampMode::boot;
 
@@ -194,7 +201,6 @@ private:
   {
     archive(type_,
             stack_type,
-            is_tparg,
             is_funcarg,
             funcarg_idx,
             is_signed_,
@@ -444,8 +450,12 @@ public:
   };
   bool IsRecordTy() const
   {
-    return type_ == Type::record;
+    return type_ == Type::record || type_ == Type::tracepoint_args;
   };
+  bool IsTracepointArgsTy() const
+  {
+    return type_ == Type::tracepoint_args;
+  }
   bool IsBufferTy() const
   {
     return type_ == Type::buffer;
@@ -565,6 +575,7 @@ SizedType CreateMacAddress();
 SizedType CreateCgroupPath();
 SizedType CreateStrerror();
 SizedType CreateTimestampMode();
+SizedType CreateTracepointArgs();
 
 std::string addrspacestr(AddrSpace as);
 std::string typestr(Type t);

@@ -53,6 +53,7 @@ bool is_quoted_type(const SizedType &ty)
     case Type::timestamp_mode:
     case Type::tuple:
     case Type::voidtype:
+    case Type::tracepoint_args:
       return false;
   }
   return false;
@@ -425,7 +426,8 @@ std::string Output::value_to_str(BPFtrace &bpftrace,
     case Type::stack_mode:
     case Type::pointer:
     case Type::stats_t:
-    case Type::timestamp_mode: {
+    case Type::timestamp_mode:
+    case Type::tracepoint_args: {
       LOG(BUG) << "Invalid value type: " << type;
     }
   }
@@ -478,7 +480,9 @@ std::string Output::map_key_str(BPFtrace &bpftrace,
     case Type::stats_t:
     case Type::timestamp_mode:
     case Type::voidtype:
+    case Type::tracepoint_args: {
       LOG(BUG) << "Invalid mapkey argument type: " << arg;
+    }
   }
   return "";
 }

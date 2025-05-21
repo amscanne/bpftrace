@@ -783,6 +783,13 @@ ScopedExpr CodegenLLVM::visit(Builtin &builtin)
     // uprobe args record is built on stack
     return ScopedExpr(b_.CreateUprobeArgsRecord(ctx_, builtin.builtin_type));
   } else if (builtin.ident == "args" || builtin.ident == "ctx") {
+    // During semantic analysis, we left the arguments as a generic tracepoint
+    // args, but we didn't have final expansion. If this is still the case, we
+    // can finally replace it here.
+    if (builtin.builtin_type.IsTracepointArgsTy()) {
+      builtin.builtin_type = CreateRecord(tracepoint_struct_, bpftrace_.structs.Lookup(tracepoint_struct_));
+      builtin.builtin_type.SetAS(AddrSpace::bpf);
+    }
     // ctx is undocumented builtin: for debugging.
     return ScopedExpr(ctx_);
   } else if (builtin.ident == "cpid") {
@@ -2247,14 +2254,11 @@ ScopedExpr CodegenLLVM::visit(Ternary &ternary)
 
 ScopedExpr CodegenLLVM::visit(FieldAccess &acc)
 {
-  SizedType type = acc.expr.type();
-  AddrSpace addrspace = acc.expr.type().GetAS();
+  // Visit first, as if this is tracepoint arguments, we may modify the type.
+  // This is because final expansion is done here, and not in type analysis.
   auto scoped_arg = visit(acc.expr);
-
-  assert(type.IsRecordTy());
-  bool is_ctx = type.IsCtxAccess();
-  bool is_tparg = type.is_tparg;
-  bool is_funcarg = type.is_funcarg;
+  SizedType type = acc.expr.type();
+  assert(type.IsRecordTy() && !type.IsTracepointArgsTy());
 
   if (type.is_funcarg) {
     auto probe_type = probetype(current_attach_point_->provider);
@@ -2271,18 +2275,6 @@ ScopedExpr CodegenLLVM::visit(FieldAccess &acc)
                                          acc.field_type);
     }
   }
-
-  std::string cast_type = is_tparg ? tracepoint_struct_ : type.GetName();
-
-  // This overwrites the stored type!
-  type = CreateRecord(cast_type, bpftrace_.structs.Lookup(cast_type));
-  if (is_ctx)
-    type.MarkCtxAccess();
-  type.is_tparg = is_tparg;
-  type.is_funcarg = is_funcarg;
-  // Restore the addrspace info
-  // struct MyStruct { const int* a; };  $s = (struct MyStruct *)arg0;  $s->a
-  type.SetAS(addrspace);
 
   const auto &field = type.GetField(acc.field);
 
@@ -3302,9 +3294,10 @@ int CodegenLLVM::getNextIndexForProbe()
 
 ScopedExpr CodegenLLVM::getMapKey(Map &map, Expression &key_expr)
 {
+  // Visit first, as we may modify the type because of expansion.
+  auto scoped_key_expr = visit(key_expr);
   const auto alloca_created_here = needMapKeyAllocation(map, key_expr);
 
-  auto scoped_key_expr = visit(key_expr);
   const auto &key_type = map.key_type;
   // Allocation needs to be done after recursing via visit(key_expr) so that we
   // have the expression SSA value.
