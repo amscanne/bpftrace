@@ -17,21 +17,41 @@ ScopedValue::ScopedValue(Value *rvalue) : value_(rvalue)
 {
 }
 
-ScopedValue::ScopedValue(Value *lvalue, ScopedValue &&other)
+ScopedValue::ScopedValue(Value *rvalue, ScopedValue &&other)
 {
   if (std::holds_alternative<lvalue_t>(other.value_)) {
     // We lose the ability to reference directly as an l-value, since the
     // transformation is not necessarily reversible. This binds the free
     // function to the original location value.
     auto &[v, load, free] = std::get<lvalue_t>(other.value_);
-    value_.emplace<tvalue_t>(std::make_tuple(lvalue, [v, free]() { free(v); }));
+    value_.emplace<tvalue_t>(std::make_tuple(rvalue, [v, free]() { free(v); }));
   } else if (std::holds_alternative<tvalue_t>(other.value_)) {
     // We just apply another transformation.
     auto &[v, free] = std::get<tvalue_t>(other.value_);
-    value_.emplace<tvalue_t>(std::make_tuple(lvalue, free));
+    value_.emplace<tvalue_t>(std::make_tuple(rvalue, free));
   } else {
     // Just transform the value directly.
-    value_.emplace<rvalue_t>(lvalue);
+    value_.emplace<rvalue_t>(rvalue);
+  }
+  // Clear the other version.
+  other.value_.emplace<rvalue_t>(nullptr);
+}
+
+ScopedValue::ScopedValue(Value *lvalue, loadfn_t load, ScopedValue &&other)
+{
+  if (std::holds_alternative<lvalue_t>(other.value_)) {
+    // Replace the load function, and bind the free function.
+    auto &[v, orig_load, free] = std::get<lvalue_t>(other.value_);
+    value_.emplace<lvalue_t>(
+        std::make_tuple(lvalue, load, [v, free](llvm::Value *) { free(v); }));
+  } else if (std::holds_alternative<tvalue_t>(other.value_)) {
+    // Just carry over the bound release function.
+    auto &[v, free] = std::get<tvalue_t>(other.value_);
+    value_.emplace<lvalue_t>(
+        std::make_tuple(lvalue, load, [free](llvm::Value *) { free(); }));
+  } else {
+    // Just set as a regular l-value.
+    value_.emplace<lvalue_t>(lvalue, load, [](llvm::Value *) {});
   }
   // Clear the other version.
   other.value_.emplace<rvalue_t>(nullptr);

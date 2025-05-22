@@ -43,8 +43,15 @@ public:
   explicit ScopedValue(Value *rvalue);
 
   // Provide a transformation of an existing `ScopedValue`. This preserves the
-  // original memory location, but updates the l-value that is returned.
-  explicit ScopedValue(Value *lvalue, ScopedValue &&other);
+  // original memory location, but updates the r-value that is returned. This
+  // is effectively a one-way transformation of the type.
+  explicit ScopedValue(Value *rvalue, ScopedValue &&other);
+
+  // Provide another transformation of an existing `ScopedValue`. This changes
+  // the underlying load function, and returns a new r-value, but updates the
+  // free function to be bound to the original. This is effectively indexing
+  // into some larger type.
+  explicit ScopedValue(Value *lvalue, loadfn_t load, ScopedValue &&other);
 
   // Returns the rvalue, or nullptr if there is none.
   Value *rvalue();

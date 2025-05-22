@@ -1,4 +1,7 @@
+<<<<<<< HEAD
 #include <filesystem>
+=======
+>>>>>>> 0b1092a7 (inprog: switching to ScopedValue for irbuilderbpf)
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/Module.h>
 
@@ -6,7 +9,10 @@
 #include "ast/async_event_types.h"
 #include "ast/codegen_helper.h"
 #include "ast/irbuilderbpf.h"
+<<<<<<< HEAD
 #include "async_action.h"
+=======
+>>>>>>> 0b1092a7 (inprog: switching to ScopedValue for irbuilderbpf)
 #include "bpfmap.h"
 #include "bpftrace.h"
 #include "globalvars.h"
@@ -73,11 +79,16 @@ libbpf::bpf_func_id IRBuilderBPF::selectProbeReadHelper(AddrSpace as, bool str)
 // It represents the inode of the initial (global) PID namespace
 constexpr uint32_t PROC_PID_INIT_INO = 0xeffffffc;
 
+<<<<<<< HEAD
 Value *IRBuilderBPF::CreateGetPid(const Location &loc, bool force_init)
+=======
+ScopedValue IRBuilderBPF::CreateGetPid(Value *ctx, const Location &loc)
+>>>>>>> 0b1092a7 (inprog: switching to ScopedValue for irbuilderbpf)
 {
   const auto &pidns = bpftrace_.get_pidns_self_stat();
   if (!force_init && pidns && pidns->st_ino != PROC_PID_INIT_INO) {
     // Get namespaced target PID when we're running in a namespace
+<<<<<<< HEAD
     AllocaInst *res = CreateAllocaBPF(BpfPidnsInfoType(), "bpf_pidns_info");
     CreateGetNsPidTgid(
         getInt64(pidns->st_dev), getInt64(pidns->st_ino), res, loc);
@@ -86,19 +97,34 @@ Value *IRBuilderBPF::CreateGetPid(const Location &loc, bool force_init)
         CreateGEP(BpfPidnsInfoType(), res, { getInt32(0), getInt32(0) }));
     CreateLifetimeEnd(res);
     return pid;
+=======
+    auto res = CreateGetNsPidTgid(
+        ctx, getInt64(pidns->st_dev), getInt64(pidns->st_ino), loc);
+    return ScopedValue(
+        CreateGEP(BpfPidnsInfoType(),
+                  res.lvalue(),
+                  { getInt32(0), getInt32(0) }),
+        [this](Value *v) { return CreateLoad(getInt32Ty(), v); },
+        std::move(res));
+>>>>>>> 0b1092a7 (inprog: switching to ScopedValue for irbuilderbpf)
   }
 
   // Get global target PID otherwise
   Value *pidtgid = CreateGetPidTgid(loc);
   Value *pid = CreateTrunc(CreateLShr(pidtgid, 32), getInt32Ty(), "pid");
-  return pid;
+  return ScopedValue(pid);
 }
 
+<<<<<<< HEAD
 Value *IRBuilderBPF::CreateGetTid(const Location &loc, bool force_init)
+=======
+ScopedValue IRBuilderBPF::CreateGetTid(Value *ctx, const Location &loc)
+>>>>>>> 0b1092a7 (inprog: switching to ScopedValue for irbuilderbpf)
 {
   const auto &pidns = bpftrace_.get_pidns_self_stat();
   if (!force_init && pidns && pidns->st_ino != PROC_PID_INIT_INO) {
     // Get namespaced target TID when we're running in a namespace
+<<<<<<< HEAD
     AllocaInst *res = CreateAllocaBPF(BpfPidnsInfoType(), "bpf_pidns_info");
     CreateGetNsPidTgid(
         getInt64(pidns->st_dev), getInt64(pidns->st_ino), res, loc);
@@ -107,15 +133,30 @@ Value *IRBuilderBPF::CreateGetTid(const Location &loc, bool force_init)
         CreateGEP(BpfPidnsInfoType(), res, { getInt32(0), getInt32(1) }));
     CreateLifetimeEnd(res);
     return tid;
+=======
+    auto res = CreateGetNsPidTgid(
+        ctx, getInt64(pidns->st_dev), getInt64(pidns->st_ino), loc);
+    return ScopedValue(
+        CreateGEP(BpfPidnsInfoType(),
+                  res.lvalue(),
+                  { getInt32(0), getInt32(1) }),
+        [this](Value *v) { return CreateLoad(getInt32Ty(), v); },
+        std::move(res));
+>>>>>>> 0b1092a7 (inprog: switching to ScopedValue for irbuilderbpf)
   }
 
   // Get global target TID otherwise
   Value *pidtgid = CreateGetPidTgid(loc);
   Value *tid = CreateTrunc(pidtgid, getInt32Ty(), "tid");
-  return tid;
+  return ScopedValue(tid);
 }
 
+<<<<<<< HEAD
 AllocaInst *IRBuilderBPF::CreateUSym(Value *val,
+=======
+ScopedValue IRBuilderBPF::CreateUSym(Value *ctx,
+                                     Value *val,
+>>>>>>> 0b1092a7 (inprog: switching to ScopedValue for irbuilderbpf)
                                      int probe_id,
                                      const Location &loc)
 {
@@ -125,19 +166,29 @@ AllocaInst *IRBuilderBPF::CreateUSym(Value *val,
     getInt32Ty(), // probe id
   };
   StructType *usym_t = GetStructType("usym_t", elements, false);
-  AllocaInst *buf = CreateAllocaBPF(usym_t, "usym");
+  auto buf = CreateAllocaBPF(usym_t, "usym");
 
+<<<<<<< HEAD
   Value *pid = CreateGetPid(loc, false);
+=======
+  auto pid = CreateGetPid(ctx, loc);
+>>>>>>> 0b1092a7 (inprog: switching to ScopedValue for irbuilderbpf)
   Value *probe_id_val = Constant::getIntegerValue(getInt32Ty(),
                                                   APInt(32, probe_id));
 
   // The extra 0 here ensures the type of addr_offset will be int64
-  Value *addr_offset = CreateGEP(usym_t, buf, { getInt64(0), getInt32(0) });
-  Value *pid_offset = CreateGEP(usym_t, buf, { getInt64(0), getInt32(1) });
-  Value *probeid_offset = CreateGEP(usym_t, buf, { getInt64(0), getInt32(2) });
+  Value *addr_offset = CreateGEP(usym_t,
+                                 buf.rvalue(),
+                                 { getInt64(0), getInt32(0) });
+  Value *pid_offset = CreateGEP(usym_t,
+                                buf.rvalue(),
+                                { getInt64(0), getInt32(1) });
+  Value *probeid_offset = CreateGEP(usym_t,
+                                    buf.rvalue(),
+                                    { getInt64(0), getInt32(2) });
 
   CreateStore(val, addr_offset);
-  CreateStore(pid, pid_offset);
+  CreateStore(pid.rvalue(), pid_offset);
   CreateStore(probe_id_val, probeid_offset);
   return buf;
 }
@@ -214,7 +265,7 @@ void IRBuilderBPF::hoist(const std::function<void()> &functor)
   restoreIP(ip);
 }
 
-AllocaInst *IRBuilderBPF::CreateAllocaBPF(llvm::Type *ty,
+ScopedValue IRBuilderBPF::CreateAllocaBPF(llvm::Type *ty,
                                           const std::string &name)
 {
   // Anything this large should be allocated in a scratch map instead
@@ -226,10 +277,13 @@ AllocaInst *IRBuilderBPF::CreateAllocaBPF(llvm::Type *ty,
   });
 
   CreateLifetimeStart(alloca);
-  return alloca;
+  return ScopedValue(
+      alloca,
+      [this, ty](Value *v) { return CreateLoad(ty, v); },
+      [this](Value *v) { CreateLifetimeEnd(v); });
 }
 
-AllocaInst *IRBuilderBPF::CreateAllocaBPF(const SizedType &stype,
+ScopedValue IRBuilderBPF::CreateAllocaBPF(const SizedType &stype,
                                           const std::string &name)
 {
   llvm::Type *ty = GetType(stype);
@@ -245,23 +299,27 @@ void IRBuilderBPF::CreateAllocationInit(const SizedType &stype, Value *alloc)
   }
 }
 
-AllocaInst *IRBuilderBPF::CreateAllocaBPFInit(const SizedType &stype,
+ScopedValue IRBuilderBPF::CreateAllocaBPFInit(const SizedType &stype,
                                               const std::string &name)
 {
   // Anything this large should be allocated in a scratch map instead
   assert(stype.GetSize() <= 256);
+  llvm::Type *ty = GetType(stype);
 
   AllocaInst *alloca;
-  hoist([this, &stype, &name, &alloca]() {
-    llvm::Type *ty = GetType(stype);
+  hoist([&]() {
     alloca = CreateAlloca(ty, nullptr, name);
     CreateLifetimeStart(alloca);
     CreateAllocationInit(stype, alloca);
   });
-  return alloca;
+
+  return ScopedValue(
+      alloca,
+      [this, ty](Value *v) { return CreateLoad(ty, v); },
+      [this](Value *v) { CreateLifetimeEnd(v); });
 }
 
-AllocaInst *IRBuilderBPF::CreateAllocaBPF(int bytes, const std::string &name)
+ScopedValue IRBuilderBPF::CreateAllocaBPF(int bytes, const std::string &name)
 {
   llvm::Type *ty = ArrayType::get(getInt8Ty(), bytes);
   return CreateAllocaBPF(ty, name);
@@ -562,8 +620,8 @@ CallInst *IRBuilderBPF::CreateGetStackScratchMap(StackType stack_type,
                              failure_callback);
 }
 
-Value *IRBuilderBPF::CreateGetStrAllocation(const std::string &name,
-                                            const Location &loc)
+ScopedValue IRBuilderBPF::CreateGetStrAllocation(const std::string &name,
+                                                 const Location &loc)
 {
   const auto max_strlen = bpftrace_.config_->max_strlen;
   const auto str_type = CreateArray(max_strlen, CreateInt8());
@@ -574,17 +632,18 @@ Value *IRBuilderBPF::CreateGetStrAllocation(const std::string &name,
                           [](AsyncIds &async_ids) { return async_ids.str(); });
 }
 
-Value *IRBuilderBPF::CreateGetFmtStringArgsAllocation(StructType *struct_type,
-                                                      const std::string &name,
-                                                      const Location &loc)
+ScopedValue IRBuilderBPF::CreateGetFmtStringArgsAllocation(
+    StructType *struct_type,
+    const std::string &name,
+    const Location &loc)
 {
   return createAllocation(
       bpftrace::globalvars::FMT_STRINGS_BUFFER, struct_type, name, loc);
 }
 
-Value *IRBuilderBPF::CreateTupleAllocation(const SizedType &tuple_type,
-                                           const std::string &name,
-                                           const Location &loc)
+ScopedValue IRBuilderBPF::CreateTupleAllocation(const SizedType &tuple_type,
+                                                const std::string &name,
+                                                const Location &loc)
 {
   return createAllocation(bpftrace::globalvars::TUPLE_BUFFER,
                           GetType(tuple_type),
@@ -595,9 +654,10 @@ Value *IRBuilderBPF::CreateTupleAllocation(const SizedType &tuple_type,
                           });
 }
 
-Value *IRBuilderBPF::CreateReadMapValueAllocation(const SizedType &value_type,
-                                                  const std::string &name,
-                                                  const Location &loc)
+ScopedValue IRBuilderBPF::CreateReadMapValueAllocation(
+    const SizedType &value_type,
+    const std::string &name,
+    const Location &loc)
 {
   return createAllocation(bpftrace::globalvars::READ_MAP_VALUE_BUFFER,
                           GetType(value_type),
@@ -608,9 +668,10 @@ Value *IRBuilderBPF::CreateReadMapValueAllocation(const SizedType &value_type,
                           });
 }
 
-Value *IRBuilderBPF::CreateWriteMapValueAllocation(const SizedType &value_type,
-                                                   const std::string &name,
-                                                   const Location &loc)
+ScopedValue IRBuilderBPF::CreateWriteMapValueAllocation(
+    const SizedType &value_type,
+    const std::string &name,
+    const Location &loc)
 {
   return createAllocation(bpftrace::globalvars::WRITE_MAP_VALUE_BUFFER,
                           GetType(value_type),
@@ -618,15 +679,16 @@ Value *IRBuilderBPF::CreateWriteMapValueAllocation(const SizedType &value_type,
                           loc);
 }
 
-Value *IRBuilderBPF::CreateVariableAllocationInit(const SizedType &value_type,
-                                                  const std::string &name,
-                                                  const Location &loc)
+ScopedValue IRBuilderBPF::CreateVariableAllocationInit(
+    const SizedType &value_type,
+    const std::string &name,
+    const Location &loc)
 {
   // Hoist variable declaration and initialization to entry point of
   // probe/subprogram. While we technically do not need this as variables
   // are properly scoped, it eases debugging and is consistent with previous
   // stack-only variable implementation.
-  Value *alloc;
+  ScopedValue alloc;
   hoist([this, &value_type, &name, &loc, &alloc] {
     alloc = createAllocation(bpftrace::globalvars::VARIABLE_BUFFER,
                              GetType(value_type),
@@ -635,14 +697,14 @@ Value *IRBuilderBPF::CreateVariableAllocationInit(const SizedType &value_type,
                              [](AsyncIds &async_ids) {
                                return async_ids.variable();
                              });
-    CreateAllocationInit(value_type, alloc);
+    CreateAllocationInit(value_type, alloc.rvalue());
   });
   return alloc;
 }
 
-Value *IRBuilderBPF::CreateMapKeyAllocation(const SizedType &value_type,
-                                            const std::string &name,
-                                            const Location &loc)
+ScopedValue IRBuilderBPF::CreateMapKeyAllocation(const SizedType &value_type,
+                                                 const std::string &name,
+                                                 const Location &loc)
 {
   return createAllocation(bpftrace::globalvars::MAP_KEY_BUFFER,
                           GetType(value_type),
@@ -653,7 +715,7 @@ Value *IRBuilderBPF::CreateMapKeyAllocation(const SizedType &value_type,
                           });
 }
 
-Value *IRBuilderBPF::createAllocation(
+ScopedValue IRBuilderBPF::createAllocation(
     std::string_view global_var_name,
     llvm::Type *obj_type,
     const std::string &name,
@@ -727,14 +789,12 @@ CallInst *IRBuilderBPF::createGetScratchMap(const std::string &map_name,
                                             BasicBlock *failure_callback,
                                             int key)
 {
-  AllocaInst *keyAlloc = CreateAllocaBPF(getInt32Ty(),
-                                         "lookup_" + name + "_key");
-  CreateStore(getInt32(key), keyAlloc);
+  auto keyAlloc = CreateAllocaBPF(getInt32Ty(), "lookup_" + name + "_key");
+  CreateStore(getInt32(key), keyAlloc.rvalue());
 
   CallInst *call = createMapLookup(map_name,
-                                   keyAlloc,
+                                   keyAlloc.rvalue(),
                                    "lookup_" + name + "_map");
-  CreateLifetimeEnd(keyAlloc);
 
   llvm::Function *parent = GetInsertBlock()->getParent();
   BasicBlock *lookup_failure_block = BasicBlock::Create(
@@ -851,14 +911,14 @@ Value *IRBuilderBPF::CreatePerCpuMapAggElems(Map &map,
 
   const std::string &map_name = map.ident;
 
-  AllocaInst *i = CreateAllocaBPF(getInt32Ty(), "i");
-  AllocaInst *val_1 = CreateAllocaBPF(getInt64Ty(), "val_1");
+  auto i = CreateAllocaBPF(getInt32Ty(), "i");
+  auto val_1 = CreateAllocaBPF(getInt64Ty(), "val_1");
   // used for min/max/avg
-  AllocaInst *val_2 = CreateAllocaBPF(getInt64Ty(), "val_2");
+  auto val_2 = CreateAllocaBPF(getInt64Ty(), "val_2");
 
-  CreateStore(getInt32(0), i);
-  CreateStore(getInt64(0), val_1);
-  CreateStore(getInt64(0), val_2);
+  CreateStore(getInt32(0), i.lvalue());
+  CreateStore(getInt64(0), val_1.lvalue());
+  CreateStore(getInt64(0), val_2.lvalue());
 
   llvm::Function *parent = GetInsertBlock()->getParent();
   BasicBlock *while_cond = BasicBlock::Create(module_.getContext(),
@@ -874,7 +934,7 @@ Value *IRBuilderBPF::CreatePerCpuMapAggElems(Map &map,
   SetInsertPoint(while_cond);
 
   auto *cond = CreateICmp(CmpInst::ICMP_ULT,
-                          CreateLoad(getInt32Ty(), i),
+                          CreateLoad(getInt32Ty(), i.lvalue()),
                           CreateLoad(getInt32Ty(),
                                      module_.getGlobalVariable(std::string(
                                          bpftrace::globalvars::NUM_CPUS))),
@@ -883,9 +943,7 @@ Value *IRBuilderBPF::CreatePerCpuMapAggElems(Map &map,
 
   SetInsertPoint(while_body);
 
-  CallInst *call = createPerCpuMapLookup(map_name,
-                                         key,
-                                         CreateLoad(getInt32Ty(), i));
+  CallInst *call = createPerCpuMapLookup(map_name, key, i.rvalue());
 
   llvm::Function *lookup_parent = GetInsertBlock()->getParent();
   BasicBlock *lookup_success_block = BasicBlock::Create(module_.getContext(),
@@ -926,7 +984,7 @@ Value *IRBuilderBPF::CreatePerCpuMapAggElems(Map &map,
                                                        error_parent);
 
   // If the CPU is 0 and the map lookup fails it means the key doesn't exist
-  Value *error_condition = CreateICmpEQ(CreateLoad(getInt32Ty(), i),
+  Value *error_condition = CreateICmpEQ(i.rvalue(),
                                         getInt32(0),
                                         "error_lookup_cond");
   CreateCondBr(error_condition, error_success_block, error_failure_block);
@@ -940,7 +998,7 @@ Value *IRBuilderBPF::CreatePerCpuMapAggElems(Map &map,
 
   // This should only get triggered in the AOT case
   CreateDebugOutput("No cpu found for cpu id: %lu",
-                    std::vector<Value *>{ CreateLoad(getInt32Ty(), i) },
+                    std::vector<Value *>{ i.rvalue() },
                     loc);
 
   CreateBr(while_end);
@@ -1990,11 +2048,13 @@ CallInst *IRBuilderBPF::CreateGetPidTgid(const Location &loc)
   return res;
 }
 
-void IRBuilderBPF::CreateGetNsPidTgid(Value *dev,
-                                      Value *ino,
-                                      AllocaInst *ret,
-                                      const Location &loc)
+ScopedValue IRBuilderBPF::CreateGetNsPidTgid(Value *ctx,
+                                             Value *dev,
+                                             Value *ino,
+                                             const Location &loc)
 {
+  auto res = CreateAllocaBPF(BpfPidnsInfoType(), "bpf_pidns_info");
+
   // long bpf_get_ns_current_pid_tgid(
   //   u64 dev, u64 ino, struct bpf_pidns_info *nsdata, u32 size)
   // Return: 0 on success
@@ -2009,6 +2069,7 @@ void IRBuilderBPF::CreateGetNsPidTgid(Value *dev,
                                                                getInt32Ty(),
                                                            },
                                                            false);
+<<<<<<< HEAD
   CallInst *call = CreateHelperCall(libbpf::BPF_FUNC_get_ns_current_pid_tgid,
                                     getnspidtgid_func_type,
                                     { dev, ino, ret, getInt32(struct_size) },
@@ -2016,6 +2077,18 @@ void IRBuilderBPF::CreateGetNsPidTgid(Value *dev,
                                     "get_ns_pid_tgid",
                                     loc);
   CreateHelperErrorCond(call, libbpf::BPF_FUNC_get_ns_current_pid_tgid, loc);
+=======
+  CallInst *call = CreateHelperCall(
+      libbpf::BPF_FUNC_get_ns_current_pid_tgid,
+      getnspidtgid_func_type,
+      { dev, ino, res.lvalue(), getInt32(struct_size) },
+      "get_ns_pid_tgid",
+      loc);
+  CreateHelperErrorCond(
+      ctx, call, libbpf::BPF_FUNC_get_ns_current_pid_tgid, loc);
+
+  return res;
+>>>>>>> 0b1092a7 (inprog: switching to ScopedValue for irbuilderbpf)
 }
 
 llvm::Type *IRBuilderBPF::BpfPidnsInfoType()
@@ -2279,10 +2352,16 @@ void IRBuilderBPF::CreatePerCpuMapElemInit(Map &map,
                                            Value *val,
                                            const Location &loc)
 {
+<<<<<<< HEAD
   AllocaInst *initValue = CreateAllocaBPF(val->getType(), "initial_value");
   CreateStore(val, initValue);
   CreateMapUpdateElem(map.ident, key, initValue, loc, BPF_ANY);
   CreateLifetimeEnd(initValue);
+=======
+  auto initValue = CreateAllocaBPF(val->getType(), "initial_value");
+  CreateStore(val, initValue.lvalue());
+  CreateMapUpdateElem(ctx, map.ident, key, initValue.lvalue(), loc, BPF_ANY);
+>>>>>>> 0b1092a7 (inprog: switching to ScopedValue for irbuilderbpf)
 }
 
 void IRBuilderBPF::CreatePerCpuMapElemAdd(Map &map,
