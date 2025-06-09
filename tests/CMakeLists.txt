@@ -25,75 +25,81 @@ else()
   message(STATUS "Disabled codegen tests. Requires GNU/GCC and LLVM 18 (found ${CMAKE_CXX_COMPILER_ID}, LLVM ${LLVM_VERSION_MAJOR})")
 endif()
 
-add_executable(bpftrace_test
-  ast.cpp
-  async_action.cpp
-  bpfbytecode.cpp
-  bpftrace.cpp
-  child.cpp
-  clang_parser.cpp
-  config.cpp
-  collect_nodes.cpp
-  deprecated.cpp
-  field_analyser.cpp
-  fold_literals.cpp
-  function_registry.cpp
-  imports.cpp
-  location.cpp
-  log.cpp
-  macro_expansion.cpp
-  main.cpp
-  mocks.cpp
-  output.cpp
-  parser.cpp
-  portability_analyser.cpp
-  procmon.cpp
-  probe.cpp
-  config_analyser.cpp
-  pass_manager.cpp
-  pid_filter_pass.cpp
-  recursion_check.cpp
-  resource_analyser.cpp
-  result.cpp
-  required_resources.cpp
-  return_path_analyser.cpp
-  scopeguard.cpp
-  semantic_analyser.cpp
-  temp.cpp
-  tracepoint_format_parser.cpp
-  types.cpp
-  unstable_feature.cpp
-  utils.cpp
-
-  ${CODEGEN_SRC}
-)
-add_test(NAME bpftrace_test COMMAND bpftrace_test)
-
-add_subdirectory(data)
-add_dependencies(bpftrace_test data_source_dwarf data_source_btf data_source_funcs parser)
-target_include_directories(bpftrace_test PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-target_include_directories(bpftrace_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-
-target_compile_definitions(bpftrace_test PRIVATE TEST_CODEGEN_LOCATION="${CMAKE_SOURCE_DIR}/tests/codegen/llvm/")
-target_link_libraries(bpftrace_test libbpftrace)
-
-target_compile_definitions(bpftrace_test PRIVATE ${BPFTRACE_FLAGS})
-
-if(BUILD_ASAN)
-  target_compile_options(bpftrace_test PUBLIC "-fsanitize=address")
-  target_link_options(bpftrace_test PUBLIC "-fsanitize=address")
-endif()
-
 # bpftrace tests require (at minimum) version 1.11.
 # There's no great way to enforce a minimum version from cmake -- the cmake
 # modules don't respect minimum requested version.
 find_package(GTest REQUIRED)
 find_package(GMock REQUIRED)
 include_directories(SYSTEM ${GTEST_INCLUDE_DIRS} ${GMOCK_INCLUDE_DIRS})
-target_link_libraries(bpftrace_test ${GTEST_BOTH_LIBRARIES} ${GMOCK_LIBRARIES})
 
 find_package(Threads REQUIRED)
-target_link_libraries(bpftrace_test ${CMAKE_THREAD_LIBS_INIT})
+
+# Add data sources first
+add_subdirectory(data)
+
+# Common test dependencies and settings
+function(add_bpftrace_test test_name test_source)
+  add_executable(${test_name} ${test_source} ${ARGN})
+  target_include_directories(${test_name} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  target_include_directories(${test_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_definitions(${test_name} PRIVATE TEST_CODEGEN_LOCATION="${CMAKE_SOURCE_DIR}/tests/codegen/llvm/")
+  target_link_libraries(${test_name} libbpftrace)
+  target_link_libraries(${test_name} ${GTEST_BOTH_LIBRARIES} ${GMOCK_LIBRARIES})
+  target_link_libraries(${test_name} ${CMAKE_THREAD_LIBS_INIT})
+  target_compile_definitions(${test_name} PRIVATE ${BPFTRACE_FLAGS})
+
+  if(BUILD_ASAN)
+    target_compile_options(${test_name} PUBLIC "-fsanitize=address")
+    target_link_options(${test_name} PUBLIC "-fsanitize=address")
+  endif()
+
+  gtest_discover_tests(${test_name})
+  add_dependencies(${test_name} data_source_dwarf data_source_btf data_source_funcs parser)
+endfunction()
+
+# Add individual test targets
+add_bpftrace_test(test_ast ast.cpp)
+add_bpftrace_test(test_async_action async_action.cpp)
+add_bpftrace_test(test_bpfbytecode bpfbytecode.cpp)
+add_bpftrace_test(test_bpftrace bpftrace.cpp)
+add_bpftrace_test(test_child child.cpp)
+add_bpftrace_test(test_clang_parser clang_parser.cpp)
+add_bpftrace_test(test_config config.cpp)
+add_bpftrace_test(test_collect_nodes collect_nodes.cpp)
+add_bpftrace_test(test_deprecated deprecated.cpp)
+add_bpftrace_test(test_field_analyser field_analyser.cpp)
+add_bpftrace_test(test_fold_literals fold_literals.cpp)
+add_bpftrace_test(test_function_registry function_registry.cpp)
+add_bpftrace_test(test_imports imports.cpp)
+add_bpftrace_test(test_location location.cpp)
+add_bpftrace_test(test_log log.cpp)
+add_bpftrace_test(test_macro_expansion macro_expansion.cpp)
+add_bpftrace_test(test_mocks mocks.cpp)
+add_bpftrace_test(test_output output.cpp)
+add_bpftrace_test(test_parser parser.cpp)
+add_bpftrace_test(test_portability_analyser portability_analyser.cpp)
+add_bpftrace_test(test_procmon procmon.cpp)
+add_bpftrace_test(test_probe probe.cpp)
+add_bpftrace_test(test_config_analyser config_analyser.cpp)
+add_bpftrace_test(test_pass_manager pass_manager.cpp)
+add_bpftrace_test(test_pid_filter_pass pid_filter_pass.cpp)
+add_bpftrace_test(test_recursion_check recursion_check.cpp)
+add_bpftrace_test(test_resource_analyser resource_analyser.cpp)
+add_bpftrace_test(test_result result.cpp)
+add_bpftrace_test(test_required_resources required_resources.cpp)
+add_bpftrace_test(test_return_path_analyser return_path_analyser.cpp)
+add_bpftrace_test(test_scopeguard scopeguard.cpp)
+add_bpftrace_test(test_semantic_analyser semantic_analyser.cpp)
+add_bpftrace_test(test_temp temp.cpp)
+add_bpftrace_test(test_tracepoint_format_parser tracepoint_format_parser.cpp)
+add_bpftrace_test(test_types types.cpp)
+add_bpftrace_test(test_unstable_feature unstable_feature.cpp)
+add_bpftrace_test(test_utils utils.cpp)
+
+# Add codegen tests if available
+if(NOT "${CODEGEN_SRC}" STREQUAL "")
+  add_bpftrace_test(test_codegen ${CODEGEN_SRC} main.cpp)
+endif()
 
 add_subdirectory(testprogs)
 add_subdirectory(testlibs)

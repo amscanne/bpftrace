@@ -229,3 +229,10 @@ add_subdirectory(resources)
 add_subdirectory(stdlib)
 add_subdirectory(tracefs)
 add_subdirectory(util)
+
+# Add tests that are co-located with source files
+if(BUILD_TESTING)
+  find_package(GTest REQUIRED)
+  find_package(GMock REQUIRED)
+  find_package(Threads REQUIRED)
+endif()

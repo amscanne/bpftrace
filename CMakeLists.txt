@@ -77,6 +77,29 @@ if("${CMAKE_GENERATOR}" STREQUAL "Ninja")
 endif()
 
 include(CTest)
+include(GoogleTest)
+
+# Function to add a bpftrace test from any directory.
+function(add_bpftrace_test test_name test_source)
+  add_executable(${test_name} ${test_source} ${ARGN})
+  target_include_directories(${test_name} PRIVATE ${CMAKE_SOURCE_DIR}/tests)
+  target_include_directories(${test_name} PRIVATE ${CMAKE_BINARY_DIR})
+  target_compile_definitions(${test_name} PRIVATE TEST_CODEGEN_LOCATION="${CMAKE_SOURCE_DIR}/tests/codegen/llvm/")
+  target_link_libraries(${test_name} libbpftrace)
+  target_link_libraries(${test_name} ${GTEST_BOTH_LIBRARIES} ${GMOCK_LIBRARIES})
+  target_link_libraries(${test_name} ${CMAKE_THREAD_LIBS_INIT})
+  target_compile_definitions(${test_name} PRIVATE ${BPFTRACE_FLAGS})
+
+  if(BUILD_ASAN)
+    target_compile_options(${test_name} PUBLIC "-fsanitize=address")
+    target_link_options(${test_name} PUBLIC "-fsanitize=address")
+  endif()
+
+  gtest_discover_tests(${test_name})
+  # Note: data_source_* targets are only available in the tests directory
+  # Individual test directories should add their own dependencies as needed
+  add_dependencies(${test_name} parser)
+endfunction()
 
 if(STATIC_LINKING)
   set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
