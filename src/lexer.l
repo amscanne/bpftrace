@@ -45,10 +45,6 @@ vspace   [\n\r]
 space    {hspace}|{vspace}
 path     :(\\.|[_\-\./a-zA-Z0-9#$+\*])+
 builtin  arg[0-9]+|args|cgroup|comm|cpid|numaid|cpu|ncpus|ctx|curtask|elapsed|func|gid|pid|probe|rand|retval|sarg[0-9]|tid|uid|usermode|username|jiffies|nsecs|kstack|ustack
-
-int_type        bool|(u)?int(8|16|32|64)
-builtin_type    void|(u)?(min|max|sum|avg|stats)_t|count_t|probe_t|username|lhist_t|hist_t|usym_t|ksym_t|timestamp|macaddr_t|cgroup_path_t|strerror_t|kstack_t|ustack_t|string
-sized_type      inet|buffer
 subprog         fn
 macro           macro
 
@@ -170,13 +166,10 @@ oct_esc  [0-7]{1,3}
 "break"                 { return Parser::make_BREAK(yytext, driver.loc); }
 "sizeof"                { return Parser::make_SIZEOF(yytext, driver.loc); }
 "offsetof"              { return Parser::make_OFFSETOF(yytext, driver.loc); }
+"typeof"                { return Parser::make_TYPEOF(yytext, driver.loc); }
+"cast"                  { return Parser::make_CAST(yytext, driver.loc); }
 "let"                   { return Parser::make_LET(yytext, driver.loc); }
 "import"                { return Parser::make_IMPORT(yytext, driver.loc); }
-
-{int_type}              { return Parser::make_INT_TYPE(yytext, driver.loc); }
-{builtin_type}          { return Parser::make_BUILTIN_TYPE(yytext, driver.loc); }
-{sized_type}            { return Parser::make_SIZED_TYPE(yytext, driver.loc); }
-
 
 \"                      { yy_push_state(STR, yyscanner); driver.buffer.clear(); }
 <STR>{

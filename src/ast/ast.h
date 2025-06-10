@@ -424,12 +424,10 @@ public:
 
 class Sizeof : public Node {
 public:
-  explicit Sizeof(ASTContext &ctx, SizedType type, Location &&loc)
-      : Node(ctx, std::move(loc)), record(type) {};
-  explicit Sizeof(ASTContext &ctx, Expression expr, Location &&loc)
-      : Node(ctx, std::move(loc)), record(expr) {};
+  explicit Sizeof(ASTContext &ctx, TypeExpr *type_expr, Location &&loc)
+      : Node(ctx, std::move(loc)), type_expr(type_expr) {};
   explicit Sizeof(ASTContext &ctx, const Sizeof &other, const Location &loc)
-      : Node(ctx, loc + other.loc), record(clone(ctx, other.record, loc)) {};
+      : Node(ctx, loc + other.loc), record(clone(ctx, other.type_expr, loc)) {};
 
   const SizedType &type() const
   {
@@ -437,24 +435,19 @@ public:
     return uint64;
   }
 
-  std::variant<Expression, SizedType> record;
+  TypeExpr *type_expr;
 };
 
 class Offsetof : public Node {
 public:
   explicit Offsetof(ASTContext &ctx,
-                    SizedType record,
+                    TypeExpr *type_expr,
                     std::vector<std::string> &field,
                     Location &&loc)
-      : Node(ctx, std::move(loc)), record(record), field(field) {};
-  explicit Offsetof(ASTContext &ctx,
-                    Expression expr,
-                    std::vector<std::string> &field,
-                    Location &&loc)
-      : Node(ctx, std::move(loc)), record(expr), field(field) {};
+      : Node(ctx, std::move(loc)), type_expr(type_expr), field(field) {};
   explicit Offsetof(ASTContext &ctx, const Offsetof &other, const Location &loc)
       : Node(ctx, loc + other.loc),
-        record(clone(ctx, other.record, loc + other.loc)),
+        type_expr(clone(ctx, other.type_expr, loc + other.loc)),
         field(other.field) {};
 
   const SizedType &type() const
@@ -463,7 +456,7 @@ public:
     return uint64;
   }
 
-  std::variant<Expression, SizedType> record;
+  TypeExpr *type_expr;
   std::vector<std::string> field;
 };
 
@@ -688,23 +681,23 @@ public:
 class Cast : public Node {
 public:
   explicit Cast(ASTContext &ctx,
-                SizedType type,
+                TypeExpr *type_expr,
                 Expression expr,
                 Location &&loc)
       : Node(ctx, std::move(loc)),
-        cast_type(std::move(type)),
+        type_expr(type_expr),
         expr(std::move(expr)) {};
   explicit Cast(ASTContext &ctx, const Cast &other, const Location &loc)
       : Node(ctx, loc + other.loc),
-        cast_type(other.cast_type),
+        type_expr(clone(ctx, other.type_expr, loc)),
         expr(clone(ctx, other.expr, loc)) {};
 
   const SizedType &type() const
   {
-    return cast_type;
+    return type_expr->type();
   }
 
-  SizedType cast_type;
+  TypeExpr *type_expr;
   Expression expr;
 };
 
@@ -900,6 +893,64 @@ public:
 
   StatementList stmts;
   Expression expr;
+};
+
+class TypeExpr : public Node {
+  explicit TypeExpr(ASTContext &ctx,
+                    Expression expr,
+                    Location &&loc)
+      : Node(ctx, std::move(loc)),
+        value(std::move(expr)) {};
+  explicit TypeExpr(ASTContext &ctx,
+                    SizedType type,
+                    Location &&loc)
+      : Node(ctx, std::move(loc)),
+        value(std::move(type)) {};
+  explicit TypeExpr(ASTContext &ctx,
+                    const TypeExpr &other,
+                    const Location &loc)
+      : Node(ctx, loc + other.loc),
+        value(clone(ctx, other.value, loc)) {};
+
+  const SizedType &type() const
+  {
+    if (std::holds_alternative<Expression>(value)) {
+      return std::get<Expression>(value).type();
+    } else {
+      return std::get<SizedType>(value);
+    }
+  }
+
+  std::variant<Expression, SizedType> value;
+};
+
+class TypeBinop : public Node {
+public:
+  explicit TypeBinop(ASTContext &ctx,
+                     TypeExpr *left,
+                     Operator op,
+                     TypeExpr *right,
+                     Location &&loc)
+      : Node(ctx, std::move(loc)),
+        left(left),
+        right(right),
+        op(op) {};
+  explicit TypeBinop(ASTContext &ctx, const TypeBinop &other, const Location &loc)
+      : Node(ctx, loc + other.loc),
+        left(clone(ctx, other.left, loc)),
+        right(clone(ctx, other.right, loc)),
+        op(other.op),
+        result_type(other.result_type) {};
+
+  const SizedType &type() const
+  {
+    static SizedType int64 = CreateInt64();
+    return int64;
+  }
+
+  TypeExpr *left;
+  TypeExpr *right;
+  Operator op;
 };
 
 class If : public Node {

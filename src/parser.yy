@@ -106,7 +106,6 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 
 %token <std::string> BUILTIN "builtin"
 %token <std::string> INT_TYPE "integer type"
-%token <std::string> BUILTIN_TYPE "builtin type"
 %token <std::string> SUBPROG "subprog"
 %token <std::string> MACRO "macro"
 %token <std::string> SIZED_TYPE "sized type"
@@ -131,8 +130,10 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %token <std::string> BREAK "break"
 %token <std::string> SIZEOF "sizeof"
 %token <std::string> OFFSETOF "offsetof"
+%token <std::string> TYPEOF "typeof"
 %token <std::string> LET "let"
 %token <std::string> IMPORT "import"
+%token <std::string> CAST "cast"
 
 %type <ast::Operator> unary_op compound_op
 %type <std::string> attach_point_def c_definitions ident keyword external_name
@@ -166,7 +167,9 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %type <ast::StatementList> block block_or_if stmt_list
 %type <ast::AssignConfigVarStatement *> config_assign_stmt
 %type <ast::ConfigStatementList> config_assign_stmt_list config_block
-%type <SizedType> type int_type pointer_type struct_type
+%type <SizedType> type
+%type <ast::TypeExpr *> type_expr type_raw
+%type <ast::TypeExpr *> typeof
 %type <ast::Variable *> var
 %type <ast::Program *> program
 
@@ -237,8 +240,7 @@ import_stmt:
                 ;
 
 type:
-                int_type { $$ = $1; }
-        |       BUILTIN_TYPE {
+                IDENT {
                     static std::unordered_map<std::string, SizedType> type_map = {
                         {"void", CreateVoid()},
                         {"min_t", CreateMin(true)},
@@ -257,39 +259,6 @@ type:
                         {"cgroup_path_t", CreateCgroupPath()},
                         {"strerror_t", CreateStrerror()},
                         {"string", CreateString(0)},
-                    };
-                    $$ = type_map[$1];
-                }
-        |       SIZED_TYPE {
-                    if ($1 == "inet") {
-                        $$ = CreateInet(0);
-                    } else if ($1 == "buffer") {
-                        $$ = CreateBuffer(0);
-                    }
-                }
-        |       SIZED_TYPE "[" UNSIGNED_INT "]" {
-                    if ($1 == "inet") {
-                        $$ = CreateInet($3);
-                    } else if ($1 == "buffer") {
-                        $$ = CreateBuffer($3);
-                    }
-                }
-        |       int_type "[" UNSIGNED_INT "]" {
-                  $$ = CreateArray($3, $1);
-                }
-        |       struct_type "[" UNSIGNED_INT "]" {
-                  $$ = CreateArray($3, $1);
-                }
-        |       int_type "[" "]" {
-                  $$ = CreateArray(0, $1);
-                }
-        |       pointer_type { $$ = $1; }
-        |       struct_type { $$ = $1; }
-                ;
-
-int_type:
-                INT_TYPE {
-                    static std::unordered_map<std::string, SizedType> type_map = {
                         {"bool", CreateBool()},
                         {"uint8", CreateUInt(8)},
                         {"uint16", CreateUInt(16)},
@@ -299,16 +268,60 @@ int_type:
                         {"int16", CreateInt(16)},
                         {"int32", CreateInt(32)},
                         {"int64", CreateInt(64)},
+                        {"inet", CreateInet(0)},
+                        {"buffer", CreateBuffer(0)},
                     };
-                    $$ = type_map[$1];
+                    auto it = type_map.find($1);
+                    if (it != type_map.end()) {
+                        $$ = *it;
+                    } else {
+                        // Random typedefs are assumed to be structs, currently. We probably need
+                        // to delegate all type-related resolution until after parsing, when we can
+                        // load type information properly.
+                        $$ = CreateRecord($1);
+                    }
+                }
+        |       STRUCT IDENT {
+                    constexpr std::string_view ENUM = "enum ";
+                    if (ident.starts_with(ENUM)) {
+                        // This is an automatic promotion to a uint64 even
+                        // though it's possible that highest variant value of
+                        // that enum fits into a smaller int. This will also
+                        // affect casts from a smaller int and cause an ERROR:
+                        // Integer size mismatch.  This could potentially be
+                        // revisited or the cast relaxed if we check the
+                        // variant values during semantic analysis.
+                        auto enum_name = ident.substr(ENUM.size());
+                        $$ = CreateEnum(64, enum_name);
+                    } else {
+                        $$ = CreateRecord($2);
+                    }
+                }
+        |       type "*"                  { $$ = CreatePointer($1); }
+        |       type "[" UNSIGNED_INT "]" {
+                    if ($1.IsStringTy() && $1.GetSize() == 0) {
+                      $$ = CreateString($3);
+                    } else if ($1.IsInetTy() && $1.GetSize() == 0) {
+                      $$ = CreateInet($3);
+                    } else if ($1.IsBufferTy() && $1.GetSize() == 0) {
+                      $$ = CreateBuffer($3);
+                    } else {
+                      $$ = CreateArray($3, $1);
+                    } 
                 }
                 ;
 
-pointer_type:
-                type "*" { $$ = CreatePointer($1); }
+typeof:
+                TYPEOF "(" expr ")" { $$ = driver.ctx.make_node<ast::TypeExpr>($3, @$); }
                 ;
-struct_type:
-                STRUCT IDENT { $$ = ast::ident_to_sized_type($2); }
+
+type_raw:
+                type   { $$ = driver.ctx.make_node<ast::TypeExpr>($1, @$); }
+                ;
+
+type_expr:
+                type_raw { $$ = $1; }
+        |       typeof   { $$ = $1; }
                 ;
 
 config:
@@ -651,6 +664,7 @@ equality_expr:
                 relational_expr                  { $$ = $1; }
         |       equality_expr EQ relational_expr { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::EQ, $3, @2); }
         |       equality_expr NE relational_expr { $$ = driver.ctx.make_node<ast::Binop>($1, ast::Operator::NE, $3, @2); }
+        |       type_expr IS type_expr           { $$ = driver.ctx.make_node<ast::TypeComparison>($1, $3, @2); }
                 ;
 
 relational_expr:
@@ -681,23 +695,23 @@ addi_expr:
                 ;
 
 cast_expr:
-                unary_expr                                  { $$ = $1; }
-        |       LPAREN type RPAREN cast_expr                { $$ = driver.ctx.make_node<ast::Cast>($2, $4, @1 + @3); }
-/* workaround for typedef types, see https://github.com/bpftrace/bpftrace/pull/2560#issuecomment-1521783935 */
-        |       LPAREN IDENT RPAREN cast_expr               { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 0), $4, @1 + @3); }
-        |       LPAREN IDENT "*" RPAREN cast_expr           { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 1), $5, @1 + @4); }
-        |       LPAREN IDENT "*" "*" RPAREN cast_expr       { $$ = driver.ctx.make_node<ast::Cast>(ast::ident_to_record($2, 2), $6, @1 + @5); }
-                ;
+                unary_expr                             { $$ = $1; }
+        |       CAST "(" type_expr "," expr ")"        { $$ = driver.ctx.make_node<ast::Cast>($1, $3, @1 + @3); }
+        // This is the legacy cast interface, which may still match against
+        // types that don't otherwise parse. We immediately attach a warning
+        // to these cases, but will optimistically parse as a `cast`.
+        //|       LPAREN type RPAREN cast_expr %prec LOW {
+        //            $$ = driver.ctx.make_node<ast::Cast>($2, $4, @1 + @3);
+        //            $$.addWarning() << "Ambiguous cast, consider using new `as` syntax";
+        //        }
+        //        ;
 
 sizeof_expr:
-                SIZEOF "(" type ")"                         { $$ = driver.ctx.make_node<ast::Sizeof>($3, @$); }
-        |       SIZEOF "(" expr ")"                         { $$ = driver.ctx.make_node<ast::Sizeof>($3, @$); }
+                SIZEOF "(" type_expr ")" { $$ = driver.ctx.make_node<ast::Sizeof>($3, @$); }
                 ;
 
 offsetof_expr:
-                OFFSETOF "(" struct_type "," struct_field ")"      { $$ = driver.ctx.make_node<ast::Offsetof>($3, $5, @$); }
-                /* For example: offsetof(*curtask, comm) */
-        |       OFFSETOF "(" expr "," struct_field ")"             { $$ = driver.ctx.make_node<ast::Offsetof>($3, $5, @$); }
+                OFFSETOF "(" type_expr "," struct_field ")" { $$ = driver.ctx.make_node<ast::Offsetof>($3, $5, @$); }
                 ;
 
 keyword:
@@ -714,13 +728,13 @@ keyword:
         |       UNROLL        { $$ = $1; }
         |       WHILE         { $$ = $1; }
         |       SUBPROG       { $$ = $1; }
+        |       CAST          { $$ = $1; }
+        |       TYPEOF        { $$ = $1; }
         ;
 
 ident:
                 IDENT         { $$ = $1; }
         |       BUILTIN       { $$ = $1; }
-        |       BUILTIN_TYPE  { $$ = $1; }
-        |       SIZED_TYPE    { $$ = $1; }
                 ;
 
 struct_field:
