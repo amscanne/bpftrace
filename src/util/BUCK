@@ -1,0 +1,9 @@
+load("//:build_defs.bzl", "cc_library")
+
+cc_library(
+    name = "util",
+    srcs = glob(["*.cpp"]),
+    headers = glob(["*.h"]),
+    header_namespace = "",
+    visibility = ["PUBLIC"],
+)

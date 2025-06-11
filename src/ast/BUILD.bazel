@@ -1,0 +1,60 @@
+load("//:build_defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "ast_defs",
+    srcs = [
+        "ast.cpp",
+        "context.cpp",
+        "helpers.cpp",
+        "location.cpp",
+    ],
+    hdrs = glob(["*.h"]),
+    includes = [".."],
+    deps = [
+        "//src:parser",
+        "//src/util",
+    ],
+)
+
+cc_library(
+    name = "ast",
+    srcs = [
+        "async_event_types.cpp",
+        "attachpoint_parser.cpp",
+        "codegen_helper.cpp",
+        "diagnostic.cpp",
+        "dibuilderbpf.cpp",
+        "irbuilderbpf.cpp",
+        "pass_manager.cpp",
+        "signal.cpp",
+    ] + glob(["passes/*.cpp"]),
+    hdrs = glob([
+        "*.h",
+        "passes/*.h",
+    ]),
+    includes = [".."],
+    deps = [
+        ":ast_defs",
+        "//src:compiler_core",
+        "//src:parser",
+        "//src/arch",
+        "//src/debugfs",
+        "//src/stdlib",
+        "//src/tracefs",
+        "//src/util",
+        "@llvm-project//clang:ast",
+        "@llvm-project//clang:basic",
+        "@llvm-project//clang:frontend",
+        "@llvm-project//clang:lex",
+        "@llvm-project//llvm:BPFCodeGen",
+        "@llvm-project//llvm:Core",
+        "@llvm-project//llvm:ExecutionEngine",
+        "@llvm-project//llvm:IPO",
+        "@llvm-project//llvm:IRReader",
+        "@llvm-project//llvm:MCJIT",
+        "@llvm-project//llvm:OrcJIT",
+        "@llvm-project//llvm:Support",
+    ],
+)

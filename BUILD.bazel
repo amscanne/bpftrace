@@ -1,0 +1,87 @@
+load("//:build_defs.bzl", "cc_binary", "filegroup", "genrule")
+load("@rules_bison//bison:bison.bzl", "bison")
+load("@rules_flex//flex:flex.bzl", "flex")
+
+package(default_visibility = ["//visibility:public"])
+
+# Version configuration with build stamping
+genrule(
+    name = "version_h",
+    srcs = ["src/version.h.in"],
+    outs = ["version.h"],
+    cmd = """
+        sed -e 's/@bpftrace_VERSION_MAJOR@/$$(cat bazel-out/volatile-status.txt | grep VERSION_MAJOR | cut -d' ' -f2)/g' \
+            -e 's/@bpftrace_VERSION_MINOR@/$$(cat bazel-out/volatile-status.txt | grep VERSION_MINOR | cut -d' ' -f2)/g' \
+            -e 's/@bpftrace_VERSION_PATCH@/$$(cat bazel-out/volatile-status.txt | grep VERSION_PATCH | cut -d' ' -f2)/g' \
+            -e 's/@BPFTRACE_GIT_COMMIT_ID@/$$(cat bazel-out/volatile-status.txt | grep GIT_COMMIT_SHORT | cut -d' ' -f2)/g' \
+            -e 's/@BPFTRACE_GIT_COMMIT_DATE@/$$(cat bazel-out/volatile-status.txt | grep GIT_COMMIT_DATE | cut -d' ' -f2-)/g' \
+            $< > $@
+    """,
+    stamp = 1,
+)
+
+# Flex and Bison generated files
+flex(
+    name = "flex_lexer",
+    src = "src/lexer.l",
+    out = "lex.yy.cc",
+)
+
+bison(
+    name = "bison_parser",
+    src = "src/parser.yy",
+    header_out = "parser.tab.hh",
+    source_out = "parser.tab.cc",
+)
+
+# Main executable
+cc_binary(
+    name = "bpftrace",
+    srcs = [
+        "src/benchmark.cpp",
+        "src/main.cpp",
+    ],
+    hdrs = [
+        "src/benchmark.h",
+    ],
+    includes = ["src"],
+    copts = [
+        "-Wall",
+        "-Wextra",
+        "-Werror=missing-field-initializers",
+        "-Werror=undef",
+        "-Wpointer-arith",
+        "-Wcast-align",
+        "-Wwrite-strings",
+        "-Wcast-qual",
+        "-Wunreachable-code",
+        "-Wdisabled-optimization",
+        "-std=c++20",
+    ],
+    defines = [
+        "SYSTEM_INCLUDE_PATHS=\\\"auto\\\"",
+        # Add other compile definitions as needed
+        # "HAVE_NAME_TO_HANDLE_AT=1",
+        # "HAVE_BFD_DISASM",
+        # "HAVE_LIBDW",
+        # "HAVE_LIBPCAP",
+        # "HAVE_BLAZESYM",
+    ],
+    deps = ["//src:libbpftrace"],
+)
+
+# Install tools (*.bt files)
+filegroup(
+    name = "bt_tools",
+    srcs = glob(["tools/*.bt"]),
+)
+
+# Test data and other files
+filegroup(
+    name = "test_data",
+    srcs = glob([
+        "tests/**/*",
+        "man/**/*",
+        "scripts/**/*",
+    ]),
+)

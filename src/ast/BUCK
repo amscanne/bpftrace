@@ -1,0 +1,51 @@
+load("//:build_defs.bzl", "cc_library")
+
+cc_library(
+    name = "ast_defs",
+    srcs = [
+        "ast.cpp",
+        "context.cpp",
+        "helpers.cpp",
+        "location.cpp",
+    ],
+    headers = glob(["*.h"]),
+    header_namespace = "",
+    deps = [
+        "//src:parser",
+        "//src/util:util",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+cc_library(
+    name = "ast",
+    srcs = [
+        "async_event_types.cpp",
+        "attachpoint_parser.cpp",
+        "codegen_helper.cpp",
+        "diagnostic.cpp",
+        "dibuilderbpf.cpp",
+        "irbuilderbpf.cpp",
+        "pass_manager.cpp",
+        "signal.cpp",
+    ] + glob(["passes/*.cpp"]),
+    headers = glob([
+        "*.h",
+        "passes/*.h",
+    ]),
+    header_namespace = "",
+    deps = [
+        ":ast_defs",
+        "//src:compiler_core",
+        "//src:parser",
+        "//src/arch:arch",
+        "//src/debugfs:debugfs",
+        "//src/stdlib:stdlib",
+        "//src/tracefs:tracefs",
+        "//src/util:util",
+        # Note: LLVM dependencies would need to be configured for Buck2
+        # These would typically be handled through prebuilt_cxx_library rules
+        # or system library integration
+    ],
+    visibility = ["PUBLIC"],
+)

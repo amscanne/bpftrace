@@ -1,0 +1,14 @@
+load("//:build_defs.bzl", "filegroup", "sh_binary")
+
+# BPFtrace tool scripts
+filegroup(
+    name = "bt_scripts",
+    srcs = glob(["*.bt"]),
+)
+
+# Workspace status script for build stamping
+sh_binary(
+    name = "workspace_status",
+    main = "workspace_status.sh",
+    visibility = ["PUBLIC"],
+)

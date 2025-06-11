@@ -1,0 +1,11 @@
+load("//:build_defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "tracefs",
+    srcs = glob(["*.cpp"]),
+    hdrs = glob(["*.h"]),
+    includes = [".."],
+    deps = ["//src/util"],
+)
