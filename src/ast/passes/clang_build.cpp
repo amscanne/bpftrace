@@ -106,6 +106,7 @@ Result<PipeFds> create_pipe()
 
 static Result<> build(const std::string &name,
                       LoadedObject &obj,
+                      bool bpf,
                       Imports &imports,
                       BitcodeModules &result)
 {
@@ -115,7 +116,7 @@ static Result<> build(const std::string &name,
   for (const auto &[name, other] : stdlib::Stdlib::files) {
     vfs->addFile(name, 0, llvm::MemoryBuffer::getMemBuffer(other));
   }
-  for (auto &[name, other] : imports.c_headers) {
+  for (auto &[name, other] : imports.headers) {
     vfs->addFile(name, 0, llvm::MemoryBuffer::getMemBuffer(other.data()));
   }
 
@@ -151,7 +152,12 @@ static Result<> build(const std::string &name,
   clang::CompilerInvocation::CreateFromArgs(*inv,
                                             llvm::ArrayRef<const char *>(args),
                                             *diags);
-  inv->getTargetOpts().Triple = "bpf";
+  if (bpf) {
+    // If this is not set, it will default the current host. It doesn't need to
+    // hit the backend, but it does affect the layout and some other settings
+    // of the generated module.
+    inv->getTargetOpts().Triple = "bpf";
+  }
 
   clang::CompilerInstance ci;
   ci.setInvocation(inv);
@@ -159,37 +165,51 @@ static Result<> build(const std::string &name,
   ci.setFileManager(new clang::FileManager(clang::FileSystemOptions(), vfs));
   ci.createSourceManager(ci.getFileManager());
 
-  // Generate the object file, which should include the required BTF
-  // debug information. This also generates the module as a
-  // side-effect, which is what we actually extract for linking.
-  std::unique_ptr<clang::CodeGenAction> action =
-      std::make_unique<clang::EmitObjAction>();
-  if (!ci.ExecuteAction(*action)) {
-    // This is likely a build failure, we can surface this directly
-    // into the user context. We first highlight the location of the
-    // original import, then include the C message as a "hint".
-    auto &e = obj.node.addError();
-    e << "failed to build";
-    e.addHint() << errstr;
-    return OK();
+  auto fn = [&](auto &action) {
+    if (!ci.ExecuteAction(*action)) {
+      // This is likely a build failure, we can surface this directly
+      // into the user context. We first highlight the location of the
+      // original import, then include the C message as a "hint".
+      auto &e = obj.node.addError();
+      e << "failed to build";
+      e.addHint() << errstr;
+      return false;
+    }
+    if (!errstr.empty()) {
+      // If the compilation didn't fail, then these weren't errors but we
+      // can surface them as compilation warnings.
+      auto &e = obj.node.addWarning();
+      e << "found external warnings";
+      e.addHint() << errstr;
+    }
+    return true;
+  };
+
+  if (bpf) {
+    // Generate the object file, which should include the required BTF debug
+    // information. This also generates the module as a side-effect, which is
+    // what we actually extract for linking.
+    auto action = std::make_unique<clang::EmitObjAction>();
+    bool ok = fn(action);
+    if (ok) {
+      std::unique_ptr<llvm::LLVMContext> ctx(action->takeLLVMContext());
+      std::unique_ptr<llvm::Module> mod = action->takeModule();
+      result.bpf.emplace_back(std::move(ctx),
+                              std::move(mod),
+                              pipefds->read_all());
+    }
+  } else {
+    // Generate only the LLVM module, which we will later execute via a JIT.
+    // This does not happen at this stage, however.
+    auto action = std::make_unique<clang::EmitLLVMOnlyAction>();
+    bool ok = fn(action);
+    if (ok) {
+      std::unique_ptr<llvm::LLVMContext> ctx(action->takeLLVMContext());
+      std::unique_ptr<llvm::Module> mod = action->takeModule();
+      result.host.emplace_back(std::move(ctx), std::move(mod));
+    }
   }
-  if (!errstr.empty()) {
-    // If the compilation didn't fail, then these weren't errors but we
-    // can surface them as compilation warnings.
-    auto &e = obj.node.addWarning();
-    e << "found external warnings";
-    e.addHint() << errstr;
-  }
-  std::unique_ptr<llvm::LLVMContext> ctx(action->takeLLVMContext());
-  std::unique_ptr<llvm::Module> mod = action->takeModule();
-  if (!mod) {
-    // This is an internal error, not suitable to surface as a user
-    // diagnostic. Surface it directly as an error in the pipeline.
-    return make_error<ClangBuildError>("failed to generate module");
-  }
-  result.contexts.emplace_back(std::move(ctx));
-  result.modules.emplace_back(std::move(mod));
-  result.objects.emplace_back(pipefds->read_all());
+
   return OK();
 }
 
@@ -201,8 +221,15 @@ ast::Pass CreateClangBuildPass()
 
                              // For each of the source files in the imports, we
                              // build it and turn it into a bitcode file.
-                             for (auto &[name, obj] : imports.c_sources) {
-                               auto ok = build(name, obj, imports, result);
+                             for (auto &[name, obj] : imports.bpf_sources) {
+                               auto ok = build(name, obj, true, imports, result);
+                               if (!ok) {
+                                 return ok.takeError();
+                               }
+                             }
+                             for (auto &[name, obj] : imports.host_sources) {
+                               auto ok = build(
+                                   name, obj, false, imports, result);
                                if (!ok) {
                                  return ok.takeError();
                                }

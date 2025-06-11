@@ -233,9 +233,11 @@ Result<OK> ResolveImports::importAny(Node &node,
     if (path.extension() == ".bt") {
       return importScript(node, name, path);
     } else if (path.extension() == ".c" && path.stem().extension() == ".bpf") {
-      return importC(node, name, path, imports.c_sources);
+      return importC(node, name, path, imports.bpf_sources);
+    } else if (path.extension() == ".c") {
+      return importC(node, name, path, imports.host_sources);
     } else if (path.extension() == ".h") {
-      return importC(node, name, path, imports.c_headers);
+      return importC(node, name, path, imports.headers);
     } else if (path.extension() == ".o" && path.stem().extension() == ".bpf") {
       return importObject(node, name, path);
     } else if (!ignore_unknown) {
@@ -255,9 +257,11 @@ Result<OK> ResolveImports::importAny(Node &node,
   if (path.extension() == ".bt") {
     return importScript(node, name, data);
   } else if (path.extension() == ".c" && path.stem().extension() == ".bpf") {
-    return importC(node, name, data, imports.c_sources);
+    return importC(node, name, data, imports.bpf_sources);
+  } else if (path.extension() == ".c") {
+    return importC(node, name, data, imports.host_sources);
   } else if (path.extension() == ".h") {
-    return importC(node, name, data, imports.c_headers);
+    return importC(node, name, data, imports.headers);
   } else if (!ignore_unknown) {
     node.addError() << "unknown import type: " << path;
   }
