@@ -5001,9 +5001,18 @@ std::unique_ptr<llvm::Module> CodegenLLVM::compile()
   return std::move(module_);
 }
 
-Pass CreateLLVMInitPass()
+Result<CompileContext> CompileContext::create()
 {
-  return Pass::create("llvm-init", [] { return CompileContext(); });
+  auto ok = util::TempDir::create();
+  if (!ok) {
+    return ok.takeError();
+  }
+  return CompileContext(std::move(*ok));
+}
+
+Pass CreateCompileInitPass()
+{
+  return Pass::create("llvm-init", [] { return CompileContext::create(); });
 }
 
 Pass CreateCompilePass(

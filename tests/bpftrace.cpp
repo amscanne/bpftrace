@@ -120,7 +120,7 @@ static auto parse_probe(const std::string &str,
                 .add(ast::CreateMapSugarPass())
                 .add(ast::CreateSemanticPass())
                 .add(ast::CreateProbePass())
-                .add(ast::CreateLLVMInitPass())
+                .add(ast::CreateCompileInitPass())
                 .add(ast::CreateCompilePass(std::ref(*usdt)))
                 .run();
   ASSERT_TRUE(ok && ast.diagnostics().ok());

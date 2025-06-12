@@ -10,19 +10,24 @@
 #include "ast/pass_manager.h"
 #include "ast/passes/link.h"
 #include "usdt.h"
+#include "util/temp.h"
 
 namespace bpftrace::ast {
 
 class CompileContext : public ast::State<"compile-context"> {
 public:
-  CompileContext() : context(std::make_unique<llvm::LLVMContext>()) {};
+  static Result<CompileContext> create();
+
   std::unique_ptr<llvm::LLVMContext> context;
+  util::TempDir working_dir;
+private:
+  CompileContext(util::TempDir &&working_dir) : context(std::make_unique<llvm::LLVMContext>()), working_dir(std::move(working_dir)) {};
 };
 
-// LLVMInit will create the required LLVM context which can be subsequently
-// shared by other passes. This should always be added, unless an external
-// `LLVMContext` is injected into the pass ahead of time.
-Pass CreateLLVMInitPass();
+// Create the required LLVM context and working directories which can be
+// subsequently shared by other passes. This must be done before any code
+// generation or linking passes, as they rely on the working directory.
+Pass CreateCompileInitPass();
 
 class CompiledModule : public ast::State<"compiled-module"> {
 public:
@@ -65,7 +70,7 @@ inline std::vector<Pass> AllCompilePasses(
         std::nullopt)
 {
   std::vector<Pass> passes;
-  passes.emplace_back(CreateLLVMInitPass());
+  passes.emplace_back(CreateCompileInitPass());
   passes.emplace_back(CreateCompilePass(std::move(usdt_helper)));
   passes.emplace_back(CreateVerifyPass());
   passes.emplace_back(CreateOptimizePass());

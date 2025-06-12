@@ -906,7 +906,7 @@ int main(int argc, char* argv[])
       break;
   }
 
-  pm.add(ast::CreateLLVMInitPass());
+  pm.add(ast::CreateCompileInitPass());
   pm.add(ast::CreateCompilePass());
   if (bt_debug.contains(DebugStage::Codegen)) {
     pm.add(ast::Pass::create("dump-ir-prefix", [&] {

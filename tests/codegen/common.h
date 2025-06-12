@@ -73,7 +73,7 @@ static void test(BPFtrace &bpftrace,
                 .add(ast::CreateSemanticPass())
                 .add(ast::CreateResourcePass())
                 .add(ast::CreateProbePass())
-                .add(ast::CreateLLVMInitPass())
+                .add(ast::CreateCompileInitPass())
                 .add(ast::CreateCompilePass())
                 .add(ast::CreateDumpIRPass(out))
                 .run();
