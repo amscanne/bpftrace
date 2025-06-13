@@ -34,6 +34,7 @@
 #include "ast/passes/resource_analyser.h"
 #include "ast/passes/return_path_analyser.h"
 #include "ast/passes/semantic_analyser.h"
+#include "ast/passes/type_system.h"
 #include "benchmark.h"
 #include "bpffeature.h"
 #include "bpftrace.h"
@@ -301,6 +302,8 @@ void CreateDynamicPasses(std::function<void(ast::Pass&& pass)> add)
 {
   add(ast::CreateFoldLiteralsPass());
   add(ast::CreatePidFilterPass());
+  add(ast::CreateClangBuildPass());
+  add(ast::CreateTypeSystemPass());
   add(ast::CreateSemanticPass());
   add(ast::CreateResourcePass());
   add(ast::CreateRecursionCheckPass());
@@ -312,6 +315,8 @@ void CreateAotPasses(std::function<void(ast::Pass&& pass)> add)
 {
   add(ast::CreatePortabilityPass());
   add(ast::CreateFoldLiteralsPass());
+  add(ast::CreateClangBuildPass());
+  add(ast::CreateTypeSystemPass());
   add(ast::CreateSemanticPass());
   add(ast::CreateResourcePass());
   add(ast::CreateRecursionCheckPass());
@@ -908,7 +913,9 @@ int main(int argc, char* argv[])
   }
 
   pm.add(ast::CreateLLVMInitPass());
-  pm.add(ast::CreateClangBuildPass());
+  if (bt_debug.contains(DebugStage::Types)) {
+    pm.add(ast::CreateDumpTypesPass(std::cout));
+  }
   pm.add(ast::CreateCompilePass());
   pm.add(ast::CreateLinkBitcodePass());
   if (bt_debug.contains(DebugStage::Codegen)) {

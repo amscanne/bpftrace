@@ -61,6 +61,8 @@ kprobe:f
                 .put(ast)
                 .put<BPFtrace>(*bpftrace)
                 .add(ast::AllParsePasses())
+                .add(ast::CreateClangBuildPass())
+                .add(ast::CreateTypeSystemPass())
                 .add(ast::CreateSemanticPass())
                 .add(ast::CreateResourcePass())
                 .add(ast::AllCompilePasses())
@@ -109,6 +111,8 @@ kprobe:f { 1; } kprobe:d { 1; }
                 .put(ast)
                 .put<BPFtrace>(bpftrace)
                 .add(ast::AllParsePasses())
+                .add(ast::CreateClangBuildPass())
+                .add(ast::CreateTypeSystemPass())
                 .add(ast::CreateSemanticPass())
                 .add(ast::AllCompilePasses())
                 .run();
