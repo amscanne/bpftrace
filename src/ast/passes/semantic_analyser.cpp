@@ -595,6 +595,14 @@ static const std::map<std::string, call_spec> CALL_SPEC = {
       .max_args=1,
       .discard_ret_warn = true },
   },
+  // N.B. This is a special generated builtin that refers to the C interop. It
+  // accepts a context as the first arugment, but we have no way to represent
+  // that currently.
+  { "__usdt_arg",
+    { .min_args=2,
+      .max_args=2,
+      .discard_ret_warn = true },
+  },
 };
 // clang-format on
 
@@ -870,13 +878,17 @@ void SemanticAnalyser::visit(Builtin &builtin)
             << progtypeName(bt) << " and " << progtypeName(bt2);
     }
     switch (bt) {
-      case libbpf::BPF_PROG_TYPE_KPROBE:
-        builtin.builtin_type = CreatePointer(
-            CreateRecord("struct pt_regs",
-                         bpftrace_.structs.Lookup("struct pt_regs")),
-            AddrSpace::kernel);
+      case libbpf::BPF_PROG_TYPE_KPROBE: {
+        auto pt_regs = bpftrace_.structs.Lookup("struct pt_regs");
+        if (pt_regs.lock()) {
+          builtin.builtin_type = CreatePointer(
+              CreateRecord("struct pt_regs", pt_regs), AddrSpace::kernel);
+        } else {
+          builtin.builtin_type = CreatePointer(CreateNone());
+        }
         builtin.builtin_type.MarkCtxAccess();
         break;
+      }
       case libbpf::BPF_PROG_TYPE_TRACEPOINT:
         builtin.addError() << "Use args instead of ctx in tracepoint";
         break;
@@ -1021,9 +1033,9 @@ void SemanticAnalyser::visit(Builtin &builtin)
     for (auto *attach_point : probe->attach_points) {
       ProbeType type = probetype(attach_point->provider);
       if (type != ProbeType::kprobe && type != ProbeType::uprobe)
-        builtin.addError()
-            << "The " + builtin.ident
-            << " builtin can only be used with 'kprobes' and 'uprobes' probes";
+        builtin.addError() << "The " + builtin.ident
+                           << " builtin can only be used with 'kprobes' and "
+                              "'uprobes' probes";
       if (is_final_pass() &&
           (attach_point->address != 0 || attach_point->func_offset != 0)) {
         // If sargX values are needed when using an offset, they can be stored
@@ -1086,7 +1098,8 @@ void SemanticAnalyser::visit(Builtin &builtin)
 
     if (type == ProbeType::invalid) {
       builtin.addError()
-          << "The args builtin can only be used within the context of a single "
+          << "The args builtin can only be used within the context of a "
+             "single "
              "probe type, e.g. \"probe1 {args}\" is valid while "
              "\"probe1,probe2 {args}\" is not.";
     } else if (type == ProbeType::fentry || type == ProbeType::fexit ||
@@ -1166,12 +1179,13 @@ void SemanticAnalyser::visit(Call &call)
   if (call.func == "hist") {
     if (call.vargs.size() == 3) {
       call.vargs.emplace_back(
-          ctx_.make_node<Integer>(0, Location(call.loc))); // default bits is 0
+          ctx_.make_node<Integer>(0, Location(call.loc))); // default bits is
+                                                           // 0
     } else {
       const auto *bits = call.vargs.at(3).as<Integer>();
       if (!bits) {
-        // Bug here as the validity of the integer literal is already checked by
-        // check_arg above.
+        // Bug here as the validity of the integer literal is already checked
+        // by check_arg above.
         LOG(BUG) << call.func << ": invalid bits value, need integer literal";
       } else if (bits->value > 5) {
         call.addError() << call.func << ": bits " << bits->value
@@ -1750,6 +1764,8 @@ If you're seeing errors, try clamping the string sizes. For example:
                         << arg.type().GetTy() << " provided)";
       }
     }
+  } else if (call.func == "__usdt_arg") {
+    call.return_type = CreateUInt64();
   } else {
     call.addError() << "Unknown function: '" << call.func << "'";
   }
@@ -2260,7 +2276,8 @@ void SemanticAnalyser::visit(Binop &binop)
   else if (addr_lhs != AddrSpace::none) {
     binop.result_type.SetAS(addr_lhs);
   } else {
-    // In case rhs is none, then this triggers warning in selectProbeReadHelper.
+    // In case rhs is none, then this triggers warning in
+    // selectProbeReadHelper.
     binop.result_type.SetAS(addr_rhs);
   }
 
