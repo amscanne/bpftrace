@@ -23,6 +23,7 @@ function(add_stdlib_source PREFIX FILENAME)
   get_filename_component(name "${FILENAME}" NAME)
   string(REPLACE "." "_" header_name "${name}")
   string(REPLACE "/" "_" rule_name "${PREFIX}/${header_name}")
+  string(REPLACE "-" "_" rule_name "${rule_name}")
   embed(
     ${rule_name}
     ${FILENAME}

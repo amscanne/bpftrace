@@ -5060,28 +5060,49 @@ Pass CreateLinkBitcodePass()
   return Pass::create(
       "LinkBitcode", [](BitcodeModules &bm, CompiledModule &cm) -> Result<> {
         for (auto &mod : bm.modules) {
-          // Modify to ensure everything is inlined. Note that
-          // this is also marking all these functions for
-          // below, which will adjust their linkage.
+          // Make a copy of the module, and strip out all
+          // intrinsics. This is to ensure that they aren't
+          // incorrectly declared in the resulting module.
+          auto copy = llvm::CloneModule(*mod);
+          std::vector<llvm::Function *> duplicated;
+          for (auto &fn : copy->functions()) {
+            if (fn.isIntrinsic()) {
+              duplicated.push_back(&fn);
+              continue;
+            }
+            auto *orig_fn = cm.module->getFunction(fn.getName());
+            if (orig_fn != nullptr && orig_fn->hasLocalLinkage()) {
+              duplicated.push_back(&fn);
+            }
+          }
+          for (auto *fn : duplicated) {
+            fn->eraseFromParent();
+          }
+
+          //  Modify to ensure everything is inlined. Note that
+          //  this is also marking all these functions for
+          //  below, which will adjust their linkage.
           //
-          // We also want to ensure that we remove any
-          // attributes that prevent any subsequent inline
-          // (such as "OptimizeNone"), and suitably tag these
-          // functions are "NoUnwind", like the rest.
-          for (auto &fn : mod->functions()) {
-            if (fn.isDSOLocal()) {
+          //  We also want to ensure that we remove any
+          //  attributes that prevent any subsequent inline
+          //  (such as "OptimizeNone"), and suitably tag these
+          //  functions are "NoUnwind", like the rest.
+          for (auto &fn : copy->functions()) {
+            std::cerr << fn.getName().str() << ": " << fn.isIntrinsic() << "\n";
+            if (fn.isDSOLocal() && !fn.isIntrinsic()) {
               fn.removeFnAttr(Attribute::NoInline);
               fn.removeFnAttr(Attribute::OptimizeNone);
               fn.addFnAttr(Attribute::AlwaysInline);
               fn.addFnAttr(Attribute::NoUnwind);
             }
           }
-
           // Link into the original source module, consume the
           // new one. This function returns `false` on success.
           // Hopefully this path is unlikely to cause errors,
           // since it seems the information available is sparse.
-          auto err = Linker::linkModules(*cm.module, llvm::CloneModule(*mod));
+          auto err = Linker::linkModules(*cm.module,
+                                         std::move(copy),
+                                         Linker::LinkOnlyNeeded);
           if (err) {
             return make_error<LinkError>("error during LLVM linking", EINVAL);
           }
@@ -5094,7 +5115,7 @@ Pass CreateLinkBitcodePass()
         for (auto &fn : cm.module->functions()) {
           if (fn.hasFnAttribute(Attribute::AlwaysInline)) {
             fn.setLinkage(llvm::Function::InternalLinkage);
-            llvm::stripDebugInfo(fn);
+            // llvm::stripDebugInfo(fn);
           }
         }
 
