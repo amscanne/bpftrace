@@ -841,6 +841,9 @@ public:
     return T::lookup(handle_, type_id);
   }
 
+  // Dumps a stream of C declarations.
+  Result<> emit_decl(std::ostream &out) const;
+
 private:
   Types(HandleRef &&handle) : handle_(std::move(handle)) {};
   HandleRef handle_;

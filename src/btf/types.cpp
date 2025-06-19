@@ -699,6 +699,22 @@ Result<OK> Types::append(const Types &other)
   return OK();
 }
 
+Result<> Types::emit_decl(std::ostream &out) const
+{
+  struct btf_dump *dump = btf_dump__new(handle_->btf_library(), btf_dump_printf, NULL, NULL);
+  if (!dump) {
+    return make_error<TypeError>(rc);
+  }
+  size_t sz = size();
+
+  for (i = 1; i < sz; i++) {
+    int rc = btf_dump__dump_type(dump, i);
+    if (rc) {
+      return make_error<TypeError>(rc);
+    }
+  }
+}
+
 std::ostream &operator<<(std::ostream &out, const BaseType &type)
 {
   auto name_offset = type.btf_type()->name_off;
