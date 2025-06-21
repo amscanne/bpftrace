@@ -98,6 +98,22 @@ void AsyncHandlers::print_non_map(const OpaqueValue &data)
     LOG(BUG) << "error printing non-map value: " << v.takeError();
   }
   out.value(*v);
+
+#if 0
+  if (ty.IsExternTy()) {
+    // In the future, this can be done just once for all types required by the
+    // resources. For now, just instantiate the type here.
+    stdlib::Value val(data, sz);
+    const auto &name = ty.ExternTypeName();
+    auto ptr = stdlib::Stdlib::type_factories[name](bpfbytecode);
+    ptr->output(val);
+  } else {
+    std::vector<uint8_t> bytes;
+    for (size_t i = 0; i < ty.GetSize(); ++i)
+      bytes.emplace_back(print->content[i]);
+    out.value(bpftrace, ty, bytes);
+  }
+#endif
 }
 
 void AsyncHandlers::print_map(const OpaqueValue &data)
