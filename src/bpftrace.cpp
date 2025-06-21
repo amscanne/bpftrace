@@ -254,7 +254,7 @@ void perf_event_printer(void *cb_cookie, void *raw_data, int size)
     ctx->handlers.print_map(data);
     return;
   } else if (printf_id == async_action::AsyncAction::print_non_map) {
-    ctx->handlers.print_non_map(data);
+    ctx->handlers.print_non_map(data, size);
     return;
   } else if (printf_id == async_action::AsyncAction::clear) {
     ctx->handlers.clear_map(data);
