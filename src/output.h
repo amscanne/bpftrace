@@ -33,6 +33,30 @@ enum class MessageType {
 
 std::ostream &operator<<(std::ostream &out, MessageType type);
 
+<<<<<<< HEAD
+=======
+// Value defines basic values that may be output.
+//
+// These are used for externally-defined primitives, and the
+// backend needs to be able to support marshalling them.
+class Value {
+public:
+  using Variant = std::variant<
+    bool,
+    int64_t,
+    uint64_t,
+    double,
+    std::string,
+    std::vector<Value>,
+    std::map<std::string, Value>>;
+
+  template <typename T>
+  Value (T t) : variant(t) {};
+
+  const Variant variant;
+};
+
+>>>>>>> 65854785 (support extern types)
 // Abstract class (interface) for output
 // Provides default implementation of some methods for formatting map and
 // non-map values into strings.
@@ -91,6 +115,11 @@ public:
   virtual void value(BPFtrace &bpftrace,
                      const SizedType &ty,
                      std::vector<uint8_t> &value) const = 0;
+<<<<<<< HEAD
+=======
+  // Write a standard library value to the output.
+  virtual void value(
+>>>>>>> 65854785 (support extern types)
 
   virtual void message(MessageType type,
                        const std::string &msg,
@@ -116,8 +145,12 @@ protected:
                      int &buckets,
                      int &start_value,
                      int &end_value) const;
+<<<<<<< HEAD
   std::string get_helper_error_msg(libbpf::bpf_func_id func_id,
                                    int retcode) const;
+=======
+  std::string get_helper_error_msg(int func_id, int retcode) const;
+>>>>>>> 65854785 (support extern types)
   // Convert a log2 histogram into string
   virtual std::string hist_to_str(const std::vector<uint64_t> &values,
                                   uint32_t div,
