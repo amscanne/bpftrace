@@ -51,6 +51,7 @@ enum class Type : uint8_t {
   cgroup_path_t,
   strerror_t,
   timestamp_mode,
+  extern_t,
   // clang-format on
 };
 
@@ -187,6 +188,11 @@ private:
                                                   // Type::pointer
   size_t num_elements_ = 0; // Only populated for array types
 
+  // Set if the this is an external type, i.e. a type that is defined in
+  // the standard library. This can be used to lookup the type information
+  // in the standard library type factories.
+  std::string extern_type_name_;
+
   std::shared_ptr<Struct> inner_struct() const;
 
   friend class cereal::access;
@@ -205,7 +211,8 @@ private:
             ctx_,
             as_,
             size_bits_,
-            inner_struct_);
+            inner_struct_,
+            extern_type_name_);
   }
 
 public:
@@ -499,6 +506,18 @@ public:
     return type_ == Type::hist_t || type_ == Type::lhist_t;
   }
 
+  // This indicates that the type is an external type.
+  bool IsExternTy() const
+  {
+    return type_ == Type::extern_t;
+  }
+
+  // Returns the external type name.
+  const std::string &ExternTypeName() const
+  {
+    return extern_type_name_;
+  }
+
   bool NeedsPercpuMap() const;
 
   friend std::string typestr(const SizedType &type, bool debug);
@@ -516,6 +535,7 @@ public:
                                 std::weak_ptr<Struct> record);
   friend SizedType CreateInteger(size_t bits, bool is_signed);
   friend SizedType CreateTuple(std::shared_ptr<Struct> &&tuple);
+  friend SizedType CreateExtern(const std::string &name);
 };
 
 // Type helpers
@@ -567,6 +587,7 @@ SizedType CreateMacAddress();
 SizedType CreateCgroupPath();
 SizedType CreateStrerror();
 SizedType CreateTimestampMode();
+SizedType CreateExtern(const std::string &name);
 
 std::string addrspacestr(AddrSpace as);
 std::string typestr(Type t);
