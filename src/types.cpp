@@ -91,6 +91,8 @@ std::string typestr(const SizedType &type, bool debug)
     case Type::voidtype:
     case Type::boolean:
       return typestr(type.GetTy());
+    case Type::extern_t:
+      return "extern " + type.ExternTypeName();
   }
 
   __builtin_unreachable();
@@ -199,40 +201,42 @@ std::string typestr(Type t)
 {
   switch (t) {
       // clang-format off
-    case Type::none:     return "none";     break;
-    case Type::voidtype: return "void";     break;
-    case Type::integer:  return "int";  break;
-    case Type::pointer:  return "pointer";  break;
-    case Type::record:   return "record";   break;
-    case Type::hist_t:     return "hist_t";     break;
-    case Type::lhist_t:    return "lhist_t";    break;
-    case Type::tseries_t:    return "tseries_t";    break;
-    case Type::count_t:    return "count_t";    break;
-    case Type::sum_t:      return "sum_t";      break;
-    case Type::min_t:      return "min_t";      break;
-    case Type::max_t:      return "max_t";      break;
-    case Type::avg_t:      return "avg_t";      break;
-    case Type::stats_t:    return "stats_t";    break;
-    case Type::kstack_t:   return "kstack";   break;
-    case Type::ustack_t:   return "ustack";   break;
-    case Type::string:   return "string";   break;
-    case Type::ksym_t:     return "ksym_t";     break;
-    case Type::usym_t:     return "usym_t";     break;
-    case Type::username: return "username"; break;
-    case Type::inet:     return "inet";     break;
-    case Type::stack_mode:return "stack_mode";break;
-    case Type::array:    return "array";    break;
-    case Type::buffer:   return "buffer";   break;
-    case Type::tuple:    return "tuple";    break;
-    case Type::timestamp:return "timestamp";break;
-    case Type::mac_address: return "mac_address"; break;
-    case Type::cgroup_path_t: return "cgroup_path_t"; break;
-    case Type::strerror_t: return "strerror_t"; break;
+    case Type::none:           return "none";           break;
+    case Type::voidtype:       return "void";           break;
+    case Type::integer:        return "int";            break;
+    case Type::pointer:        return "pointer";        break;
+    case Type::record:         return "record";         break;
+    case Type::hist_t:         return "hist_t";         break;
+    case Type::lhist_t:        return "lhist_t";        break;
+    case Type::tseries_t:      return "tseries_t";      break;
+    case Type::count_t:        return "count_t";        break;
+    case Type::sum_t:          return "sum_t";          break;
+    case Type::min_t:          return "min_t";          break;
+    case Type::max_t:          return "max_t";          break;
+    case Type::avg_t:          return "avg_t";          break;
+    case Type::stats_t:        return "stats_t";        break;
+    case Type::kstack_t:       return "kstack";         break;
+    case Type::ustack_t:       return "ustack";         break;
+    case Type::string:         return "string";         break;
+    case Type::ksym_t:         return "ksym_t";         break;
+    case Type::usym_t:         return "usym_t";         break;
+    case Type::username:       return "username";       break;
+    case Type::inet:           return "inet";           break;
+    case Type::stack_mode:     return "stack_mode";     break;
+    case Type::array:          return "array";          break;
+    case Type::buffer:         return "buffer";         break;
+    case Type::tuple:          return "tuple";          break;
+    case Type::timestamp:      return "timestamp";      break;
+    case Type::mac_address:    return "mac_address";    break;
+    case Type::cgroup_path_t:  return "cgroup_path_t";  break;
+    case Type::strerror_t:     return "strerror_t";     break;
     case Type::timestamp_mode: return "timestamp_mode"; break;
-    case Type::boolean:     return "bool";     break;
+    case Type::boolean:        return "bool";           break;
+    case Type::extern_t:       return "extern";         break;
       // clang-format on
   }
 
+  LOG(BUG) << "Unknown type: " << static_cast<int>(t);
   return {}; // unreached
 }
 
@@ -486,6 +490,13 @@ SizedType CreateStrerror()
 SizedType CreateTimestampMode()
 {
   return { Type::timestamp_mode, 0 };
+}
+
+SizedType CreateExtern(btf::AnyType &&type)
+{
+  SizedType t = { Type::extern_t, 0 };
+  t.extern_type_name_ = name;
+  return t;
 }
 
 bool SizedType::IsSigned() const
