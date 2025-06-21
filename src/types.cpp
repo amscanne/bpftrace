@@ -91,6 +91,8 @@ std::string typestr(const SizedType &type, bool debug)
     case Type::voidtype:
     case Type::boolean:
       return typestr(type.GetTy());
+    case Type::extern_t:
+      return "extern " + type.ExternTypeName();
   }
 
   __builtin_unreachable();
@@ -230,6 +232,7 @@ std::string typestr(Type t)
     case Type::strerror_t: return "strerror_t"; break;
     case Type::timestamp_mode: return "timestamp_mode"; break;
     case Type::boolean:     return "bool";     break;
+    case Type::extern_t: return "extern"; break;
       // clang-format on
   }
 
@@ -486,6 +489,13 @@ SizedType CreateStrerror()
 SizedType CreateTimestampMode()
 {
   return { Type::timestamp_mode, 0 };
+}
+
+SizedType CreateExtern(const std::string &name)
+{
+  SizedType t = { Type::extern_t, 0 };
+  t.extern_type_name_ = name;
+  return t;
 }
 
 bool SizedType::IsSigned() const
