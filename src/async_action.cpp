@@ -70,11 +70,19 @@ void AsyncHandlers::print_non_map(const void *data)
   const SizedType &ty = bpftrace.resources.non_map_print_args.at(
       print->print_id);
 
-  std::vector<uint8_t> bytes;
-  for (size_t i = 0; i < ty.GetSize(); ++i)
-    bytes.emplace_back(print->content[i]);
-
-  out.value(bpftrace, ty, bytes);
+  if (ty.IsExternTy()) {
+    // In the future, this can be done just once for all types required by the
+    // resources. For now, just instantiate the type here.
+    stdlib::Value val(data, sz);
+    const auto &name = ty.ExternTypeName();
+    auto ptr = stdlib::Stdlib::type_factories[name](bpfbytecode);
+    ptr->output(val);
+  } else {
+    std::vector<uint8_t> bytes;
+    for (size_t i = 0; i < ty.GetSize(); ++i)
+      bytes.emplace_back(print->content[i]);
+    out.value(bpftrace, ty, bytes);
+  }
 }
 
 void AsyncHandlers::print_map(const void *data)

@@ -39,7 +39,7 @@ public:
   void join(const void *data);
   void time(const void *data);
   void helper_error(const void *data);
-  void print_non_map(const void *data);
+  void print_non_map(const void *data, size_t n);
   void print_map(const void *data);
   void zero_map(const void *data);
   void clear_map(const void *data);
