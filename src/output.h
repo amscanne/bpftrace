@@ -32,6 +32,27 @@ enum class MessageType {
 
 std::ostream &operator<<(std::ostream &out, MessageType type);
 
+// Value defines basic values that may be output.
+//
+// These are used for externally-defined primitives, and the
+// backend needs to be able to support marshalling them.
+class Value {
+public:
+  using Variant = std::variant<
+    bool,
+    int64_t,
+    uint64_t,
+    double,
+    std::string,
+    std::vector<Value>,
+    std::map<std::string, Value>>;
+ 
+  template <typename T>
+  Value (T t) : variant(t) {};
+
+  const Variant variant;
+};
+
 // Abstract class (interface) for output
 // Provides default implementation of some methods for formatting map and
 // non-map values into strings.
