@@ -1,7 +1,10 @@
 #pragma once
-#include "types.h"
+
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
+
+#include "output/output.h"
+#include "types.h"
 
 namespace libbpf {
 #include "libbpf/bpf.h"
@@ -12,7 +15,6 @@ namespace bpftrace {
 struct HistogramArgs {
   long bits = -1;
   bool scalar = true;
-
   bool operator==(const HistogramArgs &other)
   {
     return bits == other.bits && scalar == other.scalar;

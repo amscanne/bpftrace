@@ -28,7 +28,6 @@ add_library(runtime STATIC
   format_string.cpp
   globalvars.cpp
   log.cpp
-  output.cpp
   probe_matcher.cpp
   probe_types.cpp
   procmon.cpp
@@ -36,6 +35,7 @@ add_library(runtime STATIC
   run_bpftrace.cpp
   usdt.cpp
   pcap_writer.cpp
+  types_format.cpp
   ksyms.cpp
   usyms.cpp
   ${BFD_DISASM_SRC}
@@ -219,6 +219,7 @@ add_subdirectory(arch)
 add_subdirectory(ast)
 add_subdirectory(cxxdemangler)
 add_subdirectory(debugfs)
+add_subdirectory(output)
 add_subdirectory(stdlib)
 add_subdirectory(tracefs)
 add_subdirectory(util)

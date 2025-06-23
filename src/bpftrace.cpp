@@ -1022,23 +1022,65 @@ int BPFtrace::print_maps(Output &out)
   return 0;
 }
 
-int BPFtrace::print_map(Output &out,
-                        const BpfMap &map,
-                        uint32_t top,
-                        uint32_t div)
+Result<> BPFtrace::print_map(Output &out,
+                             const BpfMap &map,
+                             uint32_t top,
+                             uint32_t div)
 {
   const auto &map_info = resources.maps_info.at(map.name());
   const auto &value_type = map_info.value_type;
-  if (value_type.IsHistTy() || value_type.IsLhistTy())
-    return print_map_hist(out, map, top, div);
+  if (value_type.IsHistTy() || value_type.IsLhistTy()) {
+    // A hist-map adds an extra 8 bytes onto the end of its key for storing
+    // the bucket number. e.g. A map defined as:
+    //
+    //  @x[1, 2] = @hist(3);
+    //
+    // Would actually be stored with the key:
+    //  [1, 2, 3]
+    uint64_t nvalues = map.is_per_cpu_type() ? ncpus_ : 1;
+    const auto &map_info = resources.maps_info.at(map.name());
+
+    auto values_by_key = map.collect_histogram_data(map_info, nvalues);
+    if (!values_by_key) {
+      return values_by_key.takeError();
+    }
+
+    // Sort based on sum of counts in all buckets.
+    std::vector<std::pair<std::vector<uint8_t>, uint64_t>> total_counts_by_key;
+    for (auto &map_elem : *values_by_key) {
+      int64_t sum = 0;
+      for (unsigned long i : map_elem.second) {
+        sum += i;
+      }
+      total_counts_by_key.emplace_back(map_elem.first, sum);
+    }
+    std::ranges::sort(total_counts_by_key,
+                      [&](auto &a, auto &b) { return a.second < b.second; });
+    if (div == 0)
+      div = 1;
+    if (total_counts_by_key.empty())
+      return OK();
+
+    Histogram hist;
+
+    out_ << R"({"type": ")" << MessageType::hist << R"(", "data": {)";
+    out_ << "\"" << json_escape(map.name()) << "\": ";
+    if (!map_info.is_scalar)
+      out_ << "{";
+
+    map_hist_contents(
+        bpftrace, map, top, div, values_by_key, total_counts_by_key);
+
+    if (!map_info.is_scalar)
+      out_ << "}";
+    out_ << "}}" << std::endl;
+  }
 
   uint64_t nvalues = map.is_per_cpu_type() ? ncpus_ : 1;
   auto values_by_key = map.collect_elements(nvalues);
 
   if (!values_by_key) {
-    LOG(ERROR) << "Failed to collect key-value pairs: "
-               << values_by_key.takeError();
-    return -1;
+    return values_by_key.takeError();
   }
 
   if (value_type.IsCountTy() || value_type.IsSumTy() || value_type.IsIntTy()) {
@@ -1054,29 +1096,25 @@ int BPFtrace::print_map(Output &out,
                                util::reduce_value<uint64_t>(b.second, nvalues);
                       });
   } else if (value_type.IsMinTy() || value_type.IsMaxTy()) {
-    std::ranges::sort(*values_by_key,
-
-                      [&](auto &a, auto &b) {
-                        return util::min_max_value<uint64_t>(
-                                   a.second, nvalues, value_type.IsMaxTy()) <
-                               util::min_max_value<uint64_t>(
-                                   b.second, nvalues, value_type.IsMaxTy());
-                      });
+    std::ranges::sort(*values_by_key, [&](auto &a, auto &b) {
+      return util::min_max_value<uint64_t>(a.second,
+                                           nvalues,
+                                           value_type.IsMaxTy()) <
+             util::min_max_value<uint64_t>(b.second,
+                                           nvalues,
+                                           value_type.IsMaxTy());
+    });
   } else if (value_type.IsAvgTy() || value_type.IsStatsTy()) {
     if (value_type.IsSigned()) {
-      std::ranges::sort(*values_by_key,
-
-                        [&](auto &a, auto &b) {
-                          return util::avg_value<int64_t>(a.second, nvalues) <
-                                 util::avg_value<int64_t>(b.second, nvalues);
-                        });
+      std::ranges::sort(*values_by_key, [&](auto &a, auto &b) {
+        return util::avg_value<int64_t>(a.second, nvalues) <
+               util::avg_value<int64_t>(b.second, nvalues);
+      });
     } else {
-      std::ranges::sort(*values_by_key,
-
-                        [&](auto &a, auto &b) {
-                          return util::avg_value<uint64_t>(a.second, nvalues) <
-                                 util::avg_value<uint64_t>(b.second, nvalues);
-                        });
+      std::ranges::sort(*values_by_key, [&](auto &a, auto &b) {
+        return util::avg_value<uint64_t>(a.second, nvalues) <
+               util::avg_value<uint64_t>(b.second, nvalues);
+      });
     }
   } else {
     sort_by_key(map_info.key_type, *values_by_key);
@@ -1086,8 +1124,17 @@ int BPFtrace::print_map(Output &out,
     div = 1;
 
   if (value_type.IsAvgTy() || value_type.IsStatsTy()) {
-    out.map_stats(*this, map, top, div, *values_by_key);
-    return 0;
+    // out.map_stats
+    out_ << R"({"type": ")" << MessageType::stats << R"(", "data": {)";
+    out_ << "\"" << json_escape(map.name()) << "\": ";
+    if (!map_info.is_scalar)
+      out_ << "{";
+
+    map_stats_contents(bpftrace, map, top, div, values_by_key);
+
+    if (!map_info.is_scalar)
+      out_ << "}";
+    out_ << "}}" << std::endl;
   }
 
   out.map(*this, map, top, div, *values_by_key);
@@ -1099,38 +1146,6 @@ int BPFtrace::print_map_hist(Output &out,
                              uint32_t top,
                              uint32_t div)
 {
-  // A hist-map adds an extra 8 bytes onto the end of its key for storing
-  // the bucket number.
-  // e.g. A map defined as: @x[1, 2] = @hist(3);
-  // would actually be stored with the key: [1, 2, 3]
-
-  uint64_t nvalues = map.is_per_cpu_type() ? ncpus_ : 1;
-  const auto &map_info = resources.maps_info.at(map.name());
-  auto values_by_key = map.collect_histogram_data(map_info, nvalues);
-
-  if (!values_by_key) {
-    LOG(ERROR) << "Failed to collect histogram data: "
-               << values_by_key.takeError();
-    return -1;
-  }
-
-  // Sort based on sum of counts in all buckets
-  std::vector<std::pair<std::vector<uint8_t>, uint64_t>> total_counts_by_key;
-  for (auto &map_elem : *values_by_key) {
-    int64_t sum = 0;
-    for (unsigned long i : map_elem.second) {
-      sum += i;
-    }
-    total_counts_by_key.emplace_back(map_elem.first, sum);
-  }
-  std::ranges::sort(total_counts_by_key,
-
-                    [&](auto &a, auto &b) { return a.second < b.second; });
-
-  if (div == 0)
-    div = 1;
-  out.map_hist(*this, map, top, div, *values_by_key, total_counts_by_key);
-  return 0;
 }
 
 std::optional<std::string> BPFtrace::get_watchpoint_binary_path() const

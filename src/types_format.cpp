@@ -1,6 +1,4 @@
 #include <algorithm>
-#include <bpf/libbpf.h>
-#include <iomanip>
 #include <string>
 
 #include "ast/async_event_types.h"
@@ -8,6 +6,7 @@
 #include "log.h"
 #include "output.h"
 #include "required_resources.h"
+#include "types_format.h"
 #include "util/format.h"
 #include "util/stats.h"
 
@@ -19,86 +18,11 @@ const char *bpf_func_name[] = { __BPF_FUNC_MAPPER(__BPF_NAME_FN) };
 
 namespace bpftrace {
 
-namespace {
-bool is_quoted_type(const SizedType &ty)
-{
-  switch (ty.GetTy()) {
-    case Type::buffer:
-    case Type::cgroup_path_t:
-    case Type::inet:
-    case Type::kstack_t:
-    case Type::ksym_t:
-    case Type::none:
-    case Type::strerror_t:
-    case Type::string:
-    case Type::timestamp:
-    case Type::username:
-    case Type::ustack_t:
-    case Type::usym_t:
-      return true;
-    case Type::array:
-    case Type::avg_t:
-    case Type::count_t:
-    case Type::hist_t:
-    case Type::integer:
-    case Type::lhist_t:
-    case Type::mac_address:
-    case Type::max_t:
-    case Type::min_t:
-    case Type::pointer:
-    case Type::record:
-    case Type::stack_mode:
-    case Type::stats_t:
-    case Type::sum_t:
-    case Type::timestamp_mode:
-    case Type::tuple:
-    case Type::voidtype:
-      return false;
-  }
-  return false;
-}
-} // namespace
+char TypeFormatError::ID;
 
-std::ostream &operator<<(std::ostream &out, MessageType type)
+void TypeFormatError::log(llvm::raw_ostream &OS) const
 {
-  switch (type) {
-    case MessageType::map:
-      out << "map";
-      break;
-    case MessageType::value:
-      out << "value";
-      break;
-    case MessageType::hist:
-      out << "hist";
-      break;
-    case MessageType::stats:
-      out << "stats";
-      break;
-    case MessageType::printf:
-      out << "printf";
-      break;
-    case MessageType::time:
-      out << "time";
-      break;
-    case MessageType::cat:
-      out << "cat";
-      break;
-    case MessageType::join:
-      out << "join";
-      break;
-    case MessageType::syscall:
-      out << "syscall";
-      break;
-    case MessageType::attached_probes:
-      out << "attached_probes";
-      break;
-    case MessageType::lost_events:
-      out << "lost_events";
-      break;
-    default:
-      out << "?";
-  }
-  return out;
+  OS << "unable to convert type: " << typestr(ty_);
 }
 
 // Translate the index into the starting value for the corresponding interval.
@@ -112,8 +36,7 @@ std::ostream &operator<<(std::ostream &out, MessageType type)
 // - starting value is S * N = 128
 // - the last 2 bits 11 indicate the third interval so the
 //   starting value is 128 + 32*3 = 224
-
-std::string TextOutput::hist_index_label(uint32_t index, uint32_t k)
+static std::string hist_index_label(uint32_t index, uint32_t k)
 {
   const uint32_t n = (1 << k);
   const uint32_t interval = index & (n - 1);
@@ -131,7 +54,7 @@ std::string TextOutput::hist_index_label(uint32_t index, uint32_t k)
   return label.str();
 }
 
-std::string TextOutput::lhist_index_label(int number, int step)
+static std::string lhist_index_label(int number, int step)
 {
   constexpr int kilo = 1024;
   constexpr int mega = 1024 * 1024;
@@ -154,10 +77,10 @@ std::string TextOutput::lhist_index_label(int number, int step)
   return label.str();
 }
 
-void Output::hist_prepare(const std::vector<uint64_t> &values,
-                          int &min_index,
-                          int &max_index,
-                          int &max_value) const
+static void hist_prepare(const std::vector<uint64_t> &values,
+                         int &min_index,
+                         int &max_index,
+                         int &max_value)
 {
   min_index = -1;
   max_index = -1;
@@ -174,15 +97,15 @@ void Output::hist_prepare(const std::vector<uint64_t> &values,
   }
 }
 
-void Output::lhist_prepare(const std::vector<uint64_t> &values,
-                           int min,
-                           int max,
-                           int step,
-                           int &max_index,
-                           int &max_value,
-                           int &buckets,
-                           int &start_value,
-                           int &end_value) const
+static void lhist_prepare(const std::vector<uint64_t> &values,
+                          int min,
+                          int max,
+                          int step,
+                          int &max_index,
+                          int &max_value,
+                          int &buckets,
+                          int &start_value,
+                          int &end_value)
 {
   max_index = -1;
   max_value = 0;
@@ -216,33 +139,11 @@ void Output::lhist_prepare(const std::vector<uint64_t> &values,
   }
 }
 
-std::string Output::get_helper_error_msg(int func_id, int retcode) const
-{
-  std::string msg;
-  if (func_id == libbpf::BPF_FUNC_map_update_elem && retcode == -E2BIG) {
-    msg = "Map full; can't update element. Try increasing max_map_keys config "
-          "or manually setting the max entries in a map declaration e.g. `let "
-          "@a = hash(5000)`";
-  } else if (func_id == libbpf::BPF_FUNC_map_delete_elem &&
-             retcode == -ENOENT) {
-    msg = "Can't delete map element because it does not exist.";
-  }
-  // bpftrace sets the return code to 0 for map_lookup_elem failures
-  // which is why we're not also checking the retcode
-  else if (func_id == libbpf::BPF_FUNC_map_lookup_elem) {
-    msg = "Can't lookup map element because it does not exist.";
-  } else {
-    msg = strerror(-retcode);
-  }
-  return msg;
-}
-
-std::string Output::value_to_str(BPFtrace &bpftrace,
-                                 const SizedType &type,
-                                 const std::vector<uint8_t> &value,
-                                 bool is_per_cpu,
-                                 uint32_t div,
-                                 bool is_map_key) const
+Result<output::Value> format(BPFtrace &bpftrace,
+                             const SizedType &type,
+                             const std::vector<uint8_t> &value,
+                             bool is_per_cpu,
+                             uint32_t div)
 {
   uint32_t nvalues = is_per_cpu ? bpftrace.ncpus_ : 1;
   switch (type.GetTy()) {
@@ -288,49 +189,65 @@ std::string Output::value_to_str(BPFtrace &bpftrace,
     }
     case Type::string: {
       const auto *p = reinterpret_cast<const char *>(value.data());
-      return { p, strnlen(p, type.GetSize()) };
+      return std::string(p, strnlen(p, type.GetSize()));
     }
     case Type::array: {
       size_t elem_size = type.GetElementTy()->GetSize();
-      std::vector<std::string> elems;
+      std::vector<output::Value> elems;
       for (size_t i = 0; i < type.GetNumElements(); i++) {
         std::vector<uint8_t> elem_data(value.begin() + i * elem_size,
                                        value.begin() + (i + 1) * elem_size);
-        elems.push_back(value_to_str(bpftrace,
-                                     *type.GetElementTy(),
-                                     elem_data,
-                                     is_per_cpu,
-                                     div,
-                                     is_map_key));
+        auto val = format(
+            bpftrace, *type.GetElementTy(), elem_data, is_per_cpu, div);
+        if (!val) {
+          return val.takeError();
+        }
+        if (!std::holds_alternative<output::Primitive>(val->variant)) {
+          return make_error<TypeFormatError>(type);
+        }
+        elems.emplace_back(
+            std::move(std::get<output::Primitive>(val->variant)));
       }
-      return array_to_str(elems);
+      return elems;
     }
     case Type::record: {
-      std::vector<std::string> elems;
+      std::map<std::string, output::Primitive> fields;
       for (auto &field : type.GetFields()) {
         std::vector<uint8_t> elem_data(value.begin() + field.offset,
                                        value.begin() + field.offset +
                                            field.type.GetSize());
-        elems.push_back(field_to_str(
-            field.name,
-            value_to_str(
-                bpftrace, field.type, elem_data, is_per_cpu, div, is_map_key)));
+        auto val = format(bpftrace, field.type, elem_data, is_per_cpu, div);
+        if (!val) {
+          return val.takeError();
+        }
+        if (!std::holds_alternative<output::Primitive>(val->variant)) {
+          return make_error<TypeFormatError>(type);
+        }
+        fields.emplace(field.name,
+                       std::move(std::get<output::Primitive>(val->variant)));
       }
-      return struct_to_str(elems);
+      return fields;
     }
     case Type::tuple: {
-      std::vector<std::string> elems;
+      std::vector<output::Primitive> elems;
       for (auto &field : type.GetFields()) {
         std::vector<uint8_t> elem_data(value.begin() + field.offset,
                                        value.begin() + field.offset +
                                            field.type.GetSize());
-        elems.push_back(value_to_str(
-            bpftrace, field.type, elem_data, is_per_cpu, div, false));
+        auto val = format(
+            bpftrace, field.type, elem_data, is_per_cpu, div, false);
+        if (!val) {
+          return val.takeError();
+        }
+        if (!std::holds_alternative<output::Primitive>(val->variant)) {
+          return make_error<TypeFormatError>(type);
+        }
+        elems.push_back(std::get<output::Primitive>(val->variant));
       }
-      return tuple_to_str(elems, false);
+      return elems;
     }
     case Type::count_t: {
-      return std::to_string(util::reduce_value<uint64_t>(value, nvalues) / div);
+      return util::reduce_value<uint64_t>(value, nvalues) / div;
     }
     case Type::avg_t: {
       // on this code path, avg is calculated in the kernel while
@@ -338,9 +255,9 @@ std::string Output::value_to_str(BPFtrace &bpftrace,
       // which shouldn't call this
       assert(!is_per_cpu);
       if (type.IsSigned()) {
-        return std::to_string(util::read_data<int64_t>(value.data()) / div);
+        return util::read_data<int64_t>(value.data()) / div;
       }
-      return std::to_string(util::read_data<uint64_t>(value.data()) / div);
+      return util::read_data<uint64_t>(value.data()) / div;
     }
     case Type::integer: {
       auto sign = type.IsSigned();
@@ -348,53 +265,48 @@ std::string Output::value_to_str(BPFtrace &bpftrace,
           // clang-format off
           case 64:
             if (sign)
-              return std::to_string(util::reduce_value<int64_t>(value, nvalues) / static_cast<int64_t>(div));
-            return std::to_string(util::reduce_value<uint64_t>(value, nvalues) / div);
+              return util::reduce_value<int64_t>(value, nvalues) / static_cast<int64_t>(div);
+            return util::reduce_value<uint64_t>(value, nvalues) / div;
           case 32:
             if (sign)
               return std::to_string(
                   util::reduce_value<int32_t>(value, nvalues) / static_cast<int32_t>(div));
-            return std::to_string(util::reduce_value<uint32_t>(value, nvalues) / div);
+            return util::reduce_value<uint32_t>(value, nvalues) / div;
           case 16:
             if (sign)
-              return std::to_string(
-                  util::reduce_value<int16_t>(value, nvalues) / static_cast<int16_t>(div));
-            return std::to_string(util::reduce_value<uint16_t>(value, nvalues) / div);
+              return 
+                  util::reduce_value<int16_t>(value, nvalues) / static_cast<int16_t>(div);
+            return util::reduce_value<uint16_t>(value, nvalues) / div;
           case 8:
             if (sign)
-              return std::to_string(
-                  util::reduce_value<int8_t>(value, nvalues) / static_cast<int8_t>(div));
-            return std::to_string(util::reduce_value<uint8_t>(value, nvalues) / div);
-            // clang-format on
+              return 
+                  util::reduce_value<int8_t>(value, nvalues) / static_cast<int8_t>(div);
+            return util::reduce_value<uint8_t>(value, nvalues) / div;
+          // clang-format on
         default:
-          LOG(BUG) << "value_to_str: Invalid int bitwidth: "
-                   << type.GetIntBitWidth() << "provided";
-          return {};
+          // This type cannot be handled.
+          return make_error<TypeFormatError>(type);
       }
     }
     case Type::sum_t: {
       if (type.IsSigned())
-        return std::to_string(util::reduce_value<int64_t>(value, nvalues) /
-                              div);
-
-      return std::to_string(util::reduce_value<uint64_t>(value, nvalues) / div);
+        return util::reduce_value<int64_t>(value, nvalues) / div;
+      return util::reduce_value<uint64_t>(value, nvalues) / div;
     }
     case Type::max_t:
     case Type::min_t: {
       if (is_per_cpu) {
         if (type.IsSigned()) {
-          return std::to_string(
-              util::min_max_value<int64_t>(value, nvalues, type.IsMaxTy()) /
-              div);
+          return util::min_max_value<int64_t>(value, nvalues, type.IsMaxTy()) /
+                 div;
         }
-        return std::to_string(
-            util::min_max_value<uint64_t>(value, nvalues, type.IsMaxTy()) /
-            div);
+        return util::min_max_value<uint64_t>(value, nvalues, type.IsMaxTy()) /
+               div;
       }
       if (type.IsSigned()) {
-        return std::to_string(util::read_data<int64_t>(value.data()) / div);
+        return util::read_data<int64_t>(value.data()) / div;
       }
-      return std::to_string(util::read_data<uint64_t>(value.data()) / div);
+      return util::read_data<uint64_t>(value.data()) / div;
     }
     case Type::timestamp: {
       return bpftrace.resolve_timestamp(
@@ -416,125 +328,57 @@ std::string Output::value_to_str(BPFtrace &bpftrace,
     case Type::strerror_t: {
       return strerror(util::read_data<uint64_t>(value.data()));
     }
-    case Type::none: {
-      return "";
-    }
-    case Type::voidtype:
-    case Type::hist_t:
-    case Type::lhist_t:
-    case Type::stack_mode:
-    case Type::pointer:
-    case Type::stats_t:
-    case Type::timestamp_mode: {
-      LOG(BUG) << "Invalid value type: " << type;
-    }
+    default:
+      return make_error<TypeFormatError>(type);
   }
-  return "";
 }
 
-std::string Output::map_key_str(BPFtrace &bpftrace,
-                                const SizedType &arg,
-                                const std::vector<uint8_t> &data) const
-{
-  std::ostringstream ptr;
-  switch (arg.GetTy()) {
-    case Type::integer:
-    case Type::kstack_t:
-    case Type::ustack_t:
-    case Type::timestamp:
-    case Type::ksym_t:
-    case Type::usym_t:
-    case Type::inet:
-    case Type::username:
-    case Type::string:
-    case Type::buffer:
-    case Type::pointer:
-    case Type::array:
-    case Type::mac_address:
-    case Type::record:
-    case Type::count_t:
-    case Type::avg_t:
-    case Type::max_t:
-    case Type::min_t:
-    case Type::sum_t:
-      return value_to_str(bpftrace, arg, data, false, 1, true);
-    case Type::tuple: {
-      std::vector<std::string> elems;
-      for (auto &field : arg.GetFields()) {
-        std::vector<uint8_t> elem_data(data.begin() + field.offset,
-                                       data.begin() + field.offset +
-                                           field.type.GetSize());
-        elems.push_back(
-            value_to_str(bpftrace, field.type, elem_data, false, 1, true));
-      }
-      return tuple_to_str(elems, true);
-    }
-    case Type::cgroup_path_t:
-    case Type::strerror_t:
-    case Type::hist_t:
-    case Type::lhist_t:
-    case Type::none:
-    case Type::stack_mode:
-    case Type::stats_t:
-    case Type::timestamp_mode:
-    case Type::voidtype:
-      LOG(BUG) << "Invalid mapkey argument type: " << arg;
-  }
-  return "";
-}
-
-std::string Output::array_to_str(const std::vector<std::string> &elems) const
-{
-  return "[" + util::str_join(elems, ",") + "]";
-}
-
-std::string Output::struct_to_str(const std::vector<std::string> &elems) const
-{
-  return "{ " + util::str_join(elems, ", ") + " }";
-}
-
-void Output::map_contents(
+static Result<output::Value> map_contents(
     BPFtrace &bpftrace,
     const BpfMap &map,
     uint32_t top,
     uint32_t div,
     const std::vector<std::pair<std::vector<uint8_t>, std::vector<uint8_t>>>
-        &values_by_key) const
+        &values_by_key)
 {
+  std::map<output::Primitive, output::Value> rval;
   uint32_t i = 0;
   size_t total = values_by_key.size();
-  const auto &map_type = bpftrace.resources.maps_info.at(map.name()).value_type;
+  const auto &map_info = bpftrace.resources.maps_info.at(map.name());
+  const auto &key_type = map_info.key_type;
+  const auto &value_type = map_info.value_type;
 
-  bool first = true;
   for (const auto &pair : values_by_key) {
-    auto key = pair.first;
-    auto value = pair.second;
+    auto &key_data = pair.first;
+    auto &value_data = pair.second;
 
     if (top) {
       if (total > top && i++ < (total - top))
         continue;
     }
-
-    if (first)
-      first = false;
-    else
-      map_elem_delim(map_type);
-
-    auto key_str = map_key_to_str(bpftrace, map, key);
-    auto value_str = value_to_str(
-        bpftrace, map_type, value, map.is_per_cpu_type(), div);
-    map_key_val(map_type, key_str, value_str);
+    auto key_res = format(
+        bpftrace, key_type, key_data, map.is_per_cpu_type(), div);
+    if (!key_res) {
+      return key_res.takeError();
+    }
+    auto value_res = format(
+        bpftrace, value_type, value_data, map.is_per_cpu_type(), div);
+    if (!value_res) {
+      return value_res.takeError();
+    }
+    rval.emplace(std::move(*key_res), std::move(*value_res));
   }
+  return rval;
 }
 
-void Output::map_hist_contents(
+static Result<output::Value> map_hist_contents(
     BPFtrace &bpftrace,
     const BpfMap &map,
     uint32_t top,
     uint32_t div,
     const std::map<std::vector<uint8_t>, std::vector<uint64_t>> &values_by_key,
     const std::vector<std::pair<std::vector<uint8_t>, uint64_t>>
-        &total_counts_by_key) const
+        &total_counts_by_key)
 {
   uint32_t i = 0;
   const auto &map_info = bpftrace.resources.maps_info.at(map.name());
@@ -570,13 +414,13 @@ void Output::map_hist_contents(
   }
 }
 
-void Output::map_stats_contents(
+static Result<output::Value> map_stats_contents(
     BPFtrace &bpftrace,
     const BpfMap &map,
     uint32_t top,
     uint32_t div,
     const std::vector<std::pair<std::vector<uint8_t>, std::vector<uint8_t>>>
-        &values_by_key) const
+        &values_by_key)
 {
   const auto &map_type = bpftrace.resources.maps_info.at(map.name()).value_type;
   uint32_t i = 0;
@@ -626,18 +470,6 @@ void Output::map_stats_contents(
 
     map_key_val(map_type, key_str, value_str);
   }
-}
-
-void TextOutput::map(
-    BPFtrace &bpftrace,
-    const BpfMap &map,
-    uint32_t top,
-    uint32_t div,
-    const std::vector<std::pair<std::vector<uint8_t>, std::vector<uint8_t>>>
-        &values_by_key) const
-{
-  map_contents(bpftrace, map, top, div, values_by_key);
-  out_ << std::endl;
 }
 
 std::string TextOutput::hist_to_str(const std::vector<uint64_t> &values,
@@ -728,39 +560,6 @@ std::string TextOutput::lhist_to_str(const std::vector<uint64_t> &values,
   return res.str();
 }
 
-void TextOutput::map_hist(
-    BPFtrace &bpftrace,
-    const BpfMap &map,
-    uint32_t top,
-    uint32_t div,
-    const std::map<std::vector<uint8_t>, std::vector<uint64_t>> &values_by_key,
-    const std::vector<std::pair<std::vector<uint8_t>, uint64_t>>
-        &total_counts_by_key) const
-{
-  map_hist_contents(
-      bpftrace, map, top, div, values_by_key, total_counts_by_key);
-  out_ << std::endl;
-}
-
-void TextOutput::map_stats(
-    BPFtrace &bpftrace,
-    const BpfMap &map,
-    uint32_t top,
-    uint32_t div,
-    const std::vector<std::pair<std::vector<uint8_t>, std::vector<uint8_t>>>
-        &values_by_key) const
-{
-  map_stats_contents(bpftrace, map, top, div, values_by_key);
-  out_ << std::endl << std::endl;
-}
-
-void TextOutput::value(BPFtrace &bpftrace,
-                       const SizedType &ty,
-                       std::vector<uint8_t> &value) const
-{
-  out_ << value_to_str(bpftrace, ty, value, false, 1) << std::endl;
-}
-
 std::string TextOutput::value_to_str(BPFtrace &bpftrace,
                                      const SizedType &type,
                                      const std::vector<uint8_t> &value,
@@ -818,26 +617,16 @@ std::string TextOutput::value_to_str(BPFtrace &bpftrace,
   };
 }
 
-void TextOutput::message(MessageType type __attribute__((unused)),
-                         const std::string &msg,
-                         bool nl) const
-{
-  out_ << msg;
-  if (nl)
-    out_ << std::endl;
-}
-
-void TextOutput::lost_events(uint64_t lost) const
-{
-  out_ << "Lost " << lost << " events" << std::endl;
-}
-
-void TextOutput::attached_probes(uint64_t num_probes) const
-{
-  if (num_probes == 1)
-    out_ << "Attached " << num_probes << " probe" << std::endl;
-  else
-    out_ << "Attached " << num_probes << " probes" << std::endl;
+switch (m.type) {
+  case Message::Type::lost_events:
+    out_ << "Lost " << lost << " events" << std::endl;
+    break;
+  case Message::Type::attached_probes:
+    if (num_probes == 1)
+      out_ << "Attached " << num_probes << " probe" << std::endl;
+    else
+      out_ << "Attached " << num_probes << " probes" << std::endl;
+    break;
 }
 
 void TextOutput::helper_error(int retcode, const HelperErrorInfo &info) const
@@ -849,21 +638,6 @@ void TextOutput::helper_error(int retcode, const HelperErrorInfo &info) const
       << get_helper_error_msg(info.func_id, retcode)
       << "\nAdditional Info - helper: " << libbpf::bpf_func_name[info.func_id]
       << ", retcode: " << retcode;
-}
-
-std::string TextOutput::field_to_str(const std::string &name,
-                                     const std::string &value) const
-{
-  return "." + name + " = " + value;
-}
-
-std::string TextOutput::tuple_to_str(const std::vector<std::string> &elems,
-                                     bool is_map_key) const
-{
-  if (!is_map_key) {
-    return "(" + util::str_join(elems, ", ") + ")";
-  }
-  return util::str_join(elems, ", ");
 }
 
 std::string TextOutput::map_key_to_str(BPFtrace &bpftrace,
@@ -906,67 +680,40 @@ std::string TextOutput::key_value_pairs_to_str(
   return util::str_join(elems, ", ");
 }
 
-std::string JsonOutput::json_escape(const std::string &str) const
+static void json_emit(std::ostream &out, const std::string &s)
 {
-  std::ostringstream escaped;
-  for (const char &c : str) {
+  for (const char c : s) {
     switch (c) {
       case '"':
-        escaped << "\\\"";
+        out << "\\\"";
         break;
 
       case '\\':
-        escaped << "\\\\";
+        out << "\\\\";
         break;
 
       case '\n':
-        escaped << "\\n";
+        out << "\\n";
         break;
 
       case '\r':
-        escaped << "\\r";
+        out << "\\r";
         break;
 
       case '\t':
-        escaped << "\\t";
+        out << "\\t";
         break;
 
       default:
         // c always >= '\x00'
         if (c <= '\x1f') {
-          escaped << "\\u" << std::hex << std::setw(4) << std::setfill('0')
-                  << static_cast<int>(c);
+          out << "\\u" << std::hex << std::setw(4) << std::setfill('0')
+              << static_cast<int>(c);
         } else {
-          escaped << c;
+          out << c;
         }
     }
   }
-  return escaped.str();
-}
-
-void JsonOutput::map(
-    BPFtrace &bpftrace,
-    const BpfMap &map,
-    uint32_t top,
-    uint32_t div,
-    const std::vector<std::pair<std::vector<uint8_t>, std::vector<uint8_t>>>
-        &values_by_key) const
-{
-  if (values_by_key.empty())
-    return;
-
-  const auto &map_info = bpftrace.resources.maps_info.at(map.name());
-
-  out_ << R"({"type": ")" << MessageType::map << R"(", "data": {)";
-  out_ << "\"" << json_escape(map.name()) << "\": ";
-  if (!map_info.is_scalar)
-    out_ << "{";
-
-  map_contents(bpftrace, map, top, div, values_by_key);
-
-  if (!map_info.is_scalar)
-    out_ << "}";
-  out_ << "}}" << std::endl;
 }
 
 std::string JsonOutput::hist_to_str(const std::vector<uint64_t> &values,
@@ -1104,128 +851,6 @@ void JsonOutput::map_stats(
   if (!map_info.is_scalar)
     out_ << "}";
   out_ << "}}" << std::endl;
-}
-
-void JsonOutput::value(BPFtrace &bpftrace,
-                       const SizedType &ty,
-                       std::vector<uint8_t> &value) const
-{
-  out_ << R"({"type": ")" << MessageType::value << R"(", "data": )"
-       << value_to_str(bpftrace, ty, value, false, 1, false) << "}"
-       << std::endl;
-}
-
-void JsonOutput::message(MessageType type,
-                         const std::string &msg,
-                         bool nl __attribute__((unused))) const
-{
-  out_ << R"({"type": ")" << type << R"(", "data": ")" << json_escape(msg)
-       << "\"}" << std::endl;
-}
-
-void JsonOutput::message(MessageType type,
-                         const std::string &field,
-                         uint64_t value) const
-{
-  out_ << R"({"type": ")" << type << R"(", "data": )" << "{\"" << field
-       << "\": " << value << "}" << "}" << std::endl;
-}
-
-void JsonOutput::lost_events(uint64_t lost) const
-{
-  message(MessageType::lost_events, "events", lost);
-}
-
-void JsonOutput::attached_probes(uint64_t num_probes) const
-{
-  message(MessageType::attached_probes, "probes", num_probes);
-}
-
-void JsonOutput::helper_error(int retcode, const HelperErrorInfo &info) const
-{
-  out_ << R"({"type": "helper_error", "msg": ")"
-       << get_helper_error_msg(info.func_id, retcode) << R"(", "helper": ")"
-       << libbpf::bpf_func_name[info.func_id] << R"(", "retcode": )" << retcode
-       << R"(, "filename": ")" << info.filename << R"(", "line": )" << info.line
-       << R"(, "col": )" << info.column << "}" << std::endl;
-}
-
-std::string JsonOutput::field_to_str(const std::string &name,
-                                     const std::string &value) const
-{
-  return "\"" + name + "\": " + value;
-}
-
-std::string JsonOutput::tuple_to_str(const std::vector<std::string> &elems,
-                                     bool is_map_key) const
-{
-  if (!is_map_key) {
-    return "[" + util::str_join(elems, ",") + "]";
-  }
-  return util::str_join(elems, ",");
-}
-
-std::string JsonOutput::value_to_str(BPFtrace &bpftrace,
-                                     const SizedType &type,
-                                     const std::vector<uint8_t> &value,
-                                     bool is_per_cpu,
-                                     uint32_t div,
-                                     bool is_map_key) const
-{
-  std::string str;
-
-  switch (type.GetTy()) {
-    case Type::pointer:
-      str = std::to_string(util::read_data<uint64_t>(value.data()));
-      break;
-    default:
-      str = Output::value_to_str(
-          bpftrace, type, value, is_per_cpu, div, is_map_key);
-  };
-
-  if (is_quoted_type(type)) {
-    if (is_map_key) {
-      return json_escape(str);
-    } else {
-      return "\"" + json_escape(str) + "\"";
-    }
-  }
-
-  return str;
-}
-
-std::string JsonOutput::map_key_to_str(BPFtrace &bpftrace,
-                                       const BpfMap &map,
-                                       const std::vector<uint8_t> &key) const
-{
-  const auto &map_info = bpftrace.resources.maps_info.at(map.name());
-  if (map_info.is_scalar)
-    return "";
-
-  return "\"" + json_escape(map_key_str(bpftrace, map_info.key_type, key)) +
-         "\"";
-}
-
-void JsonOutput::map_key_val(const SizedType &map_type __attribute__((unused)),
-                             const std::string &key,
-                             const std::string &val) const
-{
-  out_ << (key.empty() ? val : key + ": " + val);
-}
-
-void JsonOutput::map_elem_delim(const SizedType &map
-                                __attribute__((unused))) const
-{
-  out_ << ", ";
-}
-
-std::string JsonOutput::key_value_pairs_to_str(
-    std::vector<std::pair<std::string, std::string>> &keyvals) const
-{
-  std::vector<std::string> elems;
-  for (auto &e : keyvals)
-    elems.push_back("\"" + e.first + "\": " + e.second);
-  return "{" + util::str_join(elems, ", ") + "}";
 }
 
 } // namespace bpftrace
