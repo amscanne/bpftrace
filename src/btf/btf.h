@@ -483,7 +483,7 @@ public:
   FunctionProto(HandleRef &&handle, uint32_t type_id)
       : Type<FunctionProto, BTF_KIND_FUNC_PROTO>(std::move(handle), type_id) {};
 
-  Result<std::map<std::string, ValueType>> argument_types() const;
+  Result<std::vector<std::pair<std::string, ValueType>>> argument_types() const;
   Result<ValueType> return_type() const;
 
 private:

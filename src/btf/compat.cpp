@@ -3,6 +3,13 @@
 
 namespace bpftrace::btf {
 
+char CompatTypeError::ID;
+
+void CompatTypeError::log(llvm::raw_ostream &OS) const
+{
+  OS << msg_;
+}
+
 Result<SizedType> getCompatType([[maybe_unused]] const Void &type)
 {
   return CreateVoid();

@@ -125,6 +125,15 @@ Result<Integer> Integer::add(HandleRef handle,
   return Integer(std::move(handle), v);
 }
 
+size_t Integer::bytes() const
+{
+  // N.B. There is no good public API for this, we have to reach in and read by
+  // the type structure itself for this. This has an encoding and a bit size,
+  // which should always be a multiple of eight.
+  __u32 bits = *(reinterpret_cast<const __u32 *>(btf_type()) + 1) & 0xfff;
+  return (bits + 7) / 8;
+}
+
 Result<Pointer> Pointer::add(HandleRef handle, const AnyType &type)
 {
   auto v = btf__add_ptr(handle->btf_library(), type.type_id());
@@ -508,9 +517,10 @@ Result<FunctionProto> FunctionProto::add(
   return FunctionProto(std::move(handle), v);
 }
 
-Result<std::map<std::string, ValueType>> FunctionProto::argument_types() const
+Result<std::vector<std::pair<std::string, ValueType>>> FunctionProto::
+    argument_types() const
 {
-  std::map<std::string, ValueType> result;
+  std::vector<std::pair<std::string, ValueType>> result;
   const auto *t = btf_type();
   auto *params = btf_params(t);
   auto vlen = btf_vlen(t);
@@ -519,9 +529,9 @@ Result<std::map<std::string, ValueType>> FunctionProto::argument_types() const
     if (!v) {
       return v.takeError();
     }
-    result.emplace(std::string(
-                       btf__name_by_offset(btf_library(), params[i].name_off)),
-                   std::move(*v));
+    result.emplace_back(std::string(btf__name_by_offset(btf_library(),
+                                                        params[i].name_off)),
+                        std::move(*v));
   }
   return result;
 }
