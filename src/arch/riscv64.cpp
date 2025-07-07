@@ -5,6 +5,12 @@
 namespace bpftrace::arch {
 
 template <>
+size_t Arch<Machine::PPC64>::asm_arch()
+{
+  return "riscv";
+}
+
+template <>
 size_t Arch<Machine::RISCV64>::kernel_ptr_width()
 {
   return 64;
