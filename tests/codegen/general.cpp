@@ -63,6 +63,7 @@ kprobe:f
                 .add(ast::CreateLLVMInitPass())
                 .add(ast::CreateClangBuildPass())
                 .add(ast::CreateTypeSystemPass())
+                .add(ast::CreateMapSugarPass())
                 .add(ast::CreateSemanticPass())
                 .add(ast::CreateResourcePass())
                 .add(ast::AllCompilePasses())
@@ -114,6 +115,7 @@ kprobe:f { 1; } kprobe:d { 1; }
                 .add(ast::CreateLLVMInitPass())
                 .add(ast::CreateClangBuildPass())
                 .add(ast::CreateTypeSystemPass())
+                .add(ast::CreateMapSugarPass())
                 .add(ast::CreateSemanticPass())
                 .add(ast::AllCompilePasses())
                 .run();

@@ -23,6 +23,7 @@ void test(BPFtrace &bpftrace, const std::string &input, int expected_result = 0)
                 .put(bpftrace)
                 .put(no_types)
                 .add(ast::AllParsePasses())
+                .add(ast::CreateMapSugarPass())
                 .add(ast::CreateSemanticPass())
                 .add(ast::CreateReturnPathPass())
                 .run();

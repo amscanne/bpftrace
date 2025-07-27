@@ -2,7 +2,9 @@
 
 #include "ast/ast.h"
 #include "ast/passes/map_sugar.h"
+#include "ast/passes/type_system.h"
 #include "ast/visitor.h"
+#include "btf/btf.h"
 
 namespace bpftrace::ast {
 
@@ -10,7 +12,8 @@ namespace {
 
 class MapDefaultKey : public Visitor<MapDefaultKey> {
 public:
-  explicit MapDefaultKey(ASTContext &ast) : ast_(ast) {};
+  explicit MapDefaultKey(ASTContext &ast, TypeMetadata &type_metadata)
+      : ast_(ast), type_metadata_(type_metadata) {};
 
   using Visitor<MapDefaultKey>::visit;
   void visit(Call &call);
@@ -30,6 +33,7 @@ public:
 
 private:
   ASTContext &ast_;
+  TypeMetadata &type_metadata_;
 };
 
 class MapFunctionAliases : public Visitor<MapFunctionAliases> {
@@ -162,6 +166,26 @@ void MapDefaultKey::checkCall(Map &map, bool indexed, Call &call)
 
 void MapDefaultKey::visit(Call &call)
 {
+  // If this is a C function, then we treat it special. We don't rewrite any
+  // map arguments that are passed, and allow them to exist as pointers. This
+  // also applies to scalar maps.
+  auto fn = type_metadata_.global.lookup<btf::Function>(call.func);
+  if (fn && (fn->linkage() == btf::Function::Linkage::Extern ||
+             fn->linkage() == btf::Function::Linkage::Global)) {
+    for (auto &arg : call.vargs) {
+      if (arg.is<Map>()) {
+        // Don't expand this argument, as it is being passed to a C interop
+        // function. It also does not count as setting the map as scalar or
+        // not, which is a property that exists independently of this call. If
+        // the user actually wants to *read* the map, they will need to do so
+        // in C itself, or just write `(@foo)`.
+        continue;
+      }
+      visit(arg);
+    }
+    return;
+  }
+
   // Skip the first argument in these cases. This allows the argument to be
   // *either* a pure map, or a map access. Later passes will figure out what to
   // do with this, as they may have parametric behavior (as with print).
@@ -291,10 +315,10 @@ void MapAssignmentCheck::visit(Call &call)
 
 Pass CreateMapSugarPass()
 {
-  auto fn = [](ASTContext &ast) -> MapMetadata {
+  auto fn = [](ASTContext &ast, TypeMetadata &types) -> MapMetadata {
     MapFunctionAliases aliases;
     aliases.visit(ast.root);
-    MapDefaultKey defaults(ast);
+    MapDefaultKey defaults(ast, types);
     defaults.visit(ast.root);
     if (!ast.diagnostics().ok()) {
       // No consistent defaults.

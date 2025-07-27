@@ -28,6 +28,7 @@ void test(BPFtrace &bpftrace,
                 .put(no_types)
                 .add(ast::AllParsePasses())
                 .add(ast::CreateNamedParamsPass())
+                .add(ast::CreateMapSugarPass())
                 .add(ast::CreateSemanticPass())
                 .add(ast::CreateResourcePass())
                 .run();

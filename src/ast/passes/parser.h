@@ -40,7 +40,6 @@ inline std::vector<Pass> AllParsePasses(
   passes.emplace_back(CreateFieldAnalyserPass());
   passes.emplace_back(CreateClangParsePass(std::move(extra_flags)));
   passes.emplace_back(CreateCMacroExpansionPass());
-  passes.emplace_back(CreateMapSugarPass());
   return passes;
 }
 

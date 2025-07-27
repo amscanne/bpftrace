@@ -331,6 +331,7 @@ void CreateDynamicPasses(std::function<void(ast::Pass&& pass)> add)
   add(ast::CreateNamedParamsPass());
   add(ast::CreateClangBuildPass());
   add(ast::CreateTypeSystemPass());
+  add(ast::CreateMapSugarPass());
   add(ast::CreateSemanticPass());
   add(ast::CreateResourcePass());
   add(ast::CreateRecursionCheckPass());
@@ -344,6 +345,7 @@ void CreateAotPasses(std::function<void(ast::Pass&& pass)> add)
   add(ast::CreateNamedParamsPass());
   add(ast::CreateClangBuildPass());
   add(ast::CreateTypeSystemPass());
+  add(ast::CreateMapSugarPass());
   add(ast::CreateSemanticPass());
   add(ast::CreateResourcePass());
   add(ast::CreateRecursionCheckPass());

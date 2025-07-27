@@ -2144,9 +2144,9 @@ ScopedExpr CodegenLLVM::visit(Offsetof &offof)
 
 ScopedExpr CodegenLLVM::visit([[maybe_unused]] Map &map)
 {
-  // This is not currently used in code generation. Code is generated either
-  // via `MapAccess` for reads or via `AssignMapStatement` for writes.
-  return ScopedExpr();
+  // Any raw map accesses will use only the literal map pointer. When left
+  // behind by desugaring, they *must* be references to C functions.
+  return ScopedExpr(b_.GetMapVar(map.ident));
 }
 
 ScopedExpr CodegenLLVM::visit(Variable &var)

@@ -22,6 +22,7 @@ BpfBytecode codegen(const std::string &input)
                 .add(ast::CreateLLVMInitPass())
                 .add(ast::CreateClangBuildPass())
                 .add(ast::CreateTypeSystemPass())
+                .add(ast::CreateMapSugarPass())
                 .add(ast::CreateSemanticPass())
                 .add(ast::AllCompilePasses())
                 .run();
