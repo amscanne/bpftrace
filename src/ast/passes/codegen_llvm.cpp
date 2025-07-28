@@ -48,7 +48,10 @@
 #include "ast/passes/codegen_llvm.h"
 #include "ast/passes/link.h"
 #include "ast/passes/named_param.h"
+<<<<<<< HEAD
 #include "ast/passes/probe_expansion.h"
+=======
+>>>>>>> 23d96f0c (ast: remove lookaside state)
 #include "ast/signal_bt.h"
 #include "ast/visitor.h"
 #include "async_action.h"
@@ -2806,7 +2809,12 @@ ScopedExpr CodegenLLVM::visit(TupleAccess &acc)
 
 ScopedExpr CodegenLLVM::visit(MapAccess &acc)
 {
+<<<<<<< HEAD
   if (named_param_defaults_.defaults.contains(acc.map->ident)) {
+=======
+  if (named_param_defaults_.defaults.find(acc.map->ident) !=
+      named_param_defaults_.defaults.end()) {
+>>>>>>> 23d96f0c (ast: remove lookaside state)
     if (acc.map->value_type.IsStringTy()) {
       const auto max_strlen = bpftrace_.config_->max_strlen;
       Value *np_alloc = b_.CreateGetStrAllocation(acc.map->ident, acc.loc);

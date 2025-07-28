@@ -3113,7 +3113,8 @@ void SemanticAnalyser::visit(MapAccess &acc)
   } else {
     // If there is no record of any assignment after the first pass
     // then it's safe to say this map is undefined.
-    bool read_only = named_param_defaults_.defaults.contains(acc.map->ident);
+    bool read_only = named_param_defaults_.defaults.find(acc.map->ident) !=
+                     named_param_defaults_.defaults.end();
     if (!is_first_pass() && !read_only) {
       acc.addError() << "Undefined map: " << acc.map->ident;
     }
