@@ -10,6 +10,7 @@
 #include "ast/async_event_types.h"
 #include "ast/context.h"
 #include "ast/helpers.h"
+#include "ast/passes/fold_literals.h"
 #include "ast/passes/map_sugar.h"
 #include "ast/passes/named_param.h"
 #include "ast/passes/semantic_analyser.h"
@@ -56,13 +57,22 @@ public:
   {
     num_unresolved_++;
   }
+  void add_unresolved_branch(If *if_node)
+  {
+    unresolved_branches_.push_back(if_node);
+  }
   void reset_num_unresolved()
   {
     num_unresolved_ = 0;
+    unresolved_branches_.clear();
   }
   int get_num_unresolved() const
   {
     return num_unresolved_;
+  }
+  const std::vector<If *> &get_unresolved_branches()
+  {
+    return unresolved_branches_;
   }
   int get_num_passes() const
   {
@@ -76,6 +86,7 @@ public:
 private:
   bool is_final_pass_ = false;
   int num_unresolved_ = 0;
+  std::vector<If *> unresolved_branches_;
   int num_passes_ = 1;
 };
 
@@ -141,6 +152,7 @@ public:
   void visit(Call &call);
   void visit(Sizeof &szof);
   void visit(Offsetof &offof);
+  void visit(Typeof &typeof);
   void visit(Map &map);
   void visit(MapDeclStatement &decl);
   void visit(Variable &var);
@@ -156,6 +168,7 @@ public:
   void visit(MapAccess &acc);
   void visit(Cast &cast);
   void visit(Tuple &tuple);
+  void visit(Expression &expr);
   void visit(ExprStatement &expr);
   void visit(AssignMapStatement &assignment);
   void visit(AssignVarStatement &assignment);
@@ -621,6 +634,12 @@ static const std::map<std::string, call_spec> CALL_SPEC = {
       .max_args=1,
       .arg_types={
         arg_type_spec{ .type=Type::pointer }, // struct sock *
+      } } },
+  { "fail",
+    { .min_args=1,
+      .max_args=1,
+      .arg_types={
+        arg_type_spec{ .type=Type::string, .literal=true },
       } } },
 };
 // clang-format on
@@ -1875,6 +1894,10 @@ If you're seeing errors, try clamping the string sizes. For example:
       return;
     }
     call.return_type = CreateUInt64();
+  } else if (call.func == "fail") {
+    // This is basically a static_assert failure. It will halt the compilation.
+    // We expect to hit this path only when using the `typeof` folds.
+    call.addError() << call.vargs[0].as<String>()->value;
   } else {
     // Check here if this corresponds to an external function. We convert the
     // external type metadata into the internal `SizedType` representation and
@@ -2013,6 +2036,14 @@ void SemanticAnalyser::visit(Offsetof &offof)
         record = record.GetField(field).type;
       }
     }
+  }
+}
+
+void SemanticAnalyser::visit(Typeof &typeof)
+{
+  Visitor<SemanticAnalyser>::visit(typeof);
+  if (std::holds_alternative<SizedType>(typeof.record)) {
+    resolve_struct_type(std::get<SizedType>(typeof.record), typeof);
   }
 }
 
@@ -2657,14 +2688,39 @@ void SemanticAnalyser::visit(Ternary &ternary)
 
 void SemanticAnalyser::visit(If &if_node)
 {
+  // In order to evaluate literals and resolved type operators, we need to fold
+  // the condition. This is because passes that are always `false` are exempted
+  // from making sense in the type system. If after folding the condition still
+  // has unresolved `typeof` operators, then we are not able to visit yet.
+  // These branches are also not allowed to contain information necessary to
+  // resolve types, that is a cycle in the dependency graph, the `if` condition
+  // must be resolvable first. If the condition *is* resolvable and is a
+  // constant, then we prune the dead code paths and will never use them for
+  // semantic analysis.
   visit(if_node.cond);
+  fold(ctx_, bpftrace_, if_node.cond);
+  CollectNodes<Typeof> typeofs;
+  typeofs.visit(if_node.cond);
+  if (typeofs.nodes().size() > 0) {
+    pass_tracker_.add_unresolved_branch(&if_node);
+    return; // Skip visiting this `if` for now.
+  }
+  if (auto *b = if_node.cond.as<Boolean>()) {
+    if (b->value) {
+      if_node.else_block->stmts.clear();
+    } else {
+      if_node.if_block->stmts.clear();
+    }
+  }
 
+  // Check the type of the condition.
   if (is_final_pass()) {
     const Type &cond = if_node.cond.type().GetTy();
     if (cond != Type::integer && cond != Type::pointer && cond != Type::boolean)
       if_node.addError() << "Invalid condition in if(): " << cond;
   }
 
+  // Visit the actual blocks.
   visit(if_node.if_block);
   visit(if_node.else_block);
 }
@@ -2696,12 +2752,13 @@ void SemanticAnalyser::visit(Jump &jump)
         visit(jump.return_value);
       }
       if (auto *subprog = dynamic_cast<Subprog *>(top_level_node_)) {
-        if ((subprog->return_type.IsVoidTy() !=
-             !jump.return_value.has_value()) ||
-            (jump.return_value.has_value() &&
-             jump.return_value->type() != subprog->return_type)) {
+        const auto &ty = subprog->return_type->type();
+        if (is_final_pass() && !ty.IsNoneTy() &&
+            (ty.IsVoidTy() != !jump.return_value.has_value() ||
+             (jump.return_value.has_value() &&
+              jump.return_value->type() != ty))) {
           jump.addError() << "Function " << subprog->name << " is of type "
-                          << subprog->return_type << ", cannot return "
+                          << ty << ", cannot return "
                           << (jump.return_value.has_value()
                                   ? jump.return_value->type()
                                   : CreateVoid());
@@ -3114,64 +3171,50 @@ static std::unordered_map<std::string_view, std::string_view>
 void SemanticAnalyser::visit(Cast &cast)
 {
   visit(cast.expr);
+  visit(cast.typeof);
 
-  // cast type is synthesised in parser, if it is a struct, it needs resolving
-  resolve_struct_type(cast.cast_type, cast);
+  const auto &ty = cast.type();
+  if (ty.IsNoneTy()) {
+    pass_tracker_.inc_num_unresolved();
+    if (is_final_pass()) {
+      cast.addError() << "Incomplete cast, unknown type";
+    }
+    return; // Revisit next cycle.
+  }
 
   auto rhs = cast.expr.type();
   if (rhs.IsRecordTy()) {
     cast.addError() << "Cannot cast from struct type \"" << cast.expr.type()
                     << "\"";
   } else if (rhs.IsNoneTy()) {
-    cast.addError() << "Cannot cast from \"" << cast.expr.type() << "\" type";
+    if (is_final_pass()) {
+      cast.addError() << "Cannot cast from \"" << cast.expr.type() << "\" type";
+    } else {
+      return; // Revisit later.
+    }
   }
 
-  if (!cast.cast_type.IsIntTy() && !cast.cast_type.IsPtrTy() &&
-      !cast.cast_type.IsBoolTy() &&
-      (!cast.cast_type.IsPtrTy() || cast.cast_type.GetElementTy()->IsIntTy() ||
-       cast.cast_type.GetElementTy()->IsRecordTy()) &&
+  if (!ty.IsIntTy() && !ty.IsPtrTy() && !ty.IsBoolTy() &&
+      (!ty.IsPtrTy() || ty.GetElementTy()->IsIntTy() ||
+       ty.GetElementTy()->IsRecordTy()) &&
       // we support casting integers to int arrays
-      !(cast.cast_type.IsArrayTy() &&
-        cast.cast_type.GetElementTy()->IsBoolTy()) &&
-      !(cast.cast_type.IsArrayTy() &&
-        cast.cast_type.GetElementTy()->IsIntTy())) {
+      !(ty.IsArrayTy() && ty.GetElementTy()->IsBoolTy()) &&
+      !(ty.IsArrayTy() && ty.GetElementTy()->IsIntTy())) {
     auto &err = cast.addError();
-    err << "Cannot cast to \"" << cast.cast_type << "\"";
-    if (auto it = KNOWN_TYPE_ALIASES.find(cast.cast_type.GetName());
+    err << "Cannot cast to \"" << ty << "\"";
+    if (auto it = KNOWN_TYPE_ALIASES.find(ty.GetName());
         it != KNOWN_TYPE_ALIASES.end()) {
       err.addHint() << "Did you mean \"" << it->second << "\"?";
     }
   }
 
-  if (cast.cast_type.IsArrayTy()) {
-    if (cast.cast_type.GetNumElements() == 0) {
-      if (cast.cast_type.GetElementTy()->GetSize() == 0)
-        cast.addError() << "Could not determine size of the array";
-      else {
-        if (rhs.GetSize() % cast.cast_type.GetElementTy()->GetSize() != 0) {
-          cast.addError() << "Cannot determine array size: the element size is "
-                             "incompatible with the cast integer size";
-        }
-
-        // cast to unsized array (e.g. int8[]), determine size from RHS
-        auto num_elems = rhs.GetSize() /
-                         cast.cast_type.GetElementTy()->GetSize();
-        cast.cast_type = CreateArray(num_elems, *cast.cast_type.GetElementTy());
-      }
-    }
-
-    if (rhs.IsIntTy() || rhs.IsBoolTy())
-      cast.cast_type.is_internal = true;
-  }
-
-  if (cast.cast_type.IsEnumTy()) {
-    if (!c_definitions_.enum_defs.contains(cast.cast_type.GetName())) {
-      cast.addError() << "Unknown enum: " << cast.cast_type.GetName();
+  if (ty.IsEnumTy()) {
+    if (!c_definitions_.enum_defs.contains(ty.GetName())) {
+      cast.addError() << "Unknown enum: " << ty.GetName();
     } else {
       if (auto *integer = cast.expr.as<Integer>()) {
-        if (!c_definitions_.enum_defs[cast.cast_type.GetName()].contains(
-                integer->value)) {
-          cast.addError() << "Enum: " << cast.cast_type.GetName()
+        if (!c_definitions_.enum_defs[ty.GetName()].contains(integer->value)) {
+          cast.addError() << "Enum: " << ty.GetName()
                           << " doesn't contain a variant value of "
                           << integer->value;
         }
@@ -3179,40 +3222,21 @@ void SemanticAnalyser::visit(Cast &cast)
     }
   }
 
-  if (cast.cast_type.IsBoolTy() && !rhs.IsIntTy() && !rhs.IsStringTy() &&
-      !rhs.IsPtrTy() && !rhs.IsCastableMapTy()) {
+  if (ty.IsBoolTy() && !rhs.IsIntTy() && !rhs.IsStringTy() && !rhs.IsPtrTy() &&
+      !rhs.IsCastableMapTy()) {
     if (is_final_pass()) {
-      cast.addError() << "Cannot cast from \"" << rhs << "\" to \""
-                      << cast.cast_type << "\"";
+      cast.addError() << "Cannot cast from \"" << rhs << "\" to \"" << ty
+                      << "\"";
     }
   }
 
-  if ((cast.cast_type.IsIntTy() && !rhs.IsIntTy() && !rhs.IsPtrTy() &&
-       !rhs.IsBoolTy() && !rhs.IsCtxAccess() && !rhs.IsArrayTy() &&
-       !rhs.IsCastableMapTy()) ||
+  if ((ty.IsIntTy() && !rhs.IsIntTy() && !rhs.IsPtrTy() && !rhs.IsBoolTy() &&
+       !rhs.IsCtxAccess() && !rhs.IsArrayTy() && !rhs.IsCastableMapTy()) ||
       // casting from/to int arrays must respect the size
-      (cast.cast_type.IsArrayTy() &&
-       (!rhs.IsBoolTy() || cast.cast_type.GetSize() != rhs.GetSize()) &&
-       (!rhs.IsIntTy() || cast.cast_type.GetSize() != rhs.GetSize())) ||
-      (rhs.IsArrayTy() && (!cast.cast_type.IsIntTy() ||
-                           cast.cast_type.GetSize() != rhs.GetSize()))) {
-    cast.addError() << "Cannot cast from \"" << rhs << "\" to \""
-                    << cast.cast_type << "\"";
-  }
-
-  if (cast.expr.type().IsCtxAccess() && !cast.cast_type.IsIntTy())
-    cast.cast_type.MarkCtxAccess();
-  cast.cast_type.SetAS(cast.expr.type().GetAS());
-  // case : begin { @foo = (struct Foo)0; }
-  // case : profile:hz:99 $task = (struct task_struct *)curtask.
-  if (cast.cast_type.GetAS() == AddrSpace::none) {
-    if (auto *probe = dynamic_cast<Probe *>(top_level_node_)) {
-      ProbeType type = single_provider_type(probe);
-      cast.cast_type.SetAS(find_addrspace(type));
-    } else {
-      // Assume kernel space for data in subprogs
-      cast.cast_type.SetAS(AddrSpace::kernel);
-    }
+      (ty.IsArrayTy() && (!rhs.IsBoolTy() || ty.GetSize() != rhs.GetSize()) &&
+       (!rhs.IsIntTy() || ty.GetSize() != rhs.GetSize())) ||
+      (rhs.IsArrayTy() && (!ty.IsIntTy() || ty.GetSize() != rhs.GetSize()))) {
+    cast.addError() << "Cannot cast from \"" << rhs << "\" to \"" << ty << "\"";
   }
 }
 
@@ -3235,6 +3259,28 @@ void SemanticAnalyser::visit(Tuple &tuple)
   }
 
   tuple.tuple_type = CreateTuple(Struct::CreateTuple(elements));
+}
+
+void SemanticAnalyser::visit(Expression &expr)
+{
+  Visitor<SemanticAnalyser>::visit(expr);
+
+  // Semantic analysis will replace type comparison operations with literal
+  // booleans. In some cases these may be re-folded (see `If`).
+  if (auto *typecmp = expr.as<TypeCmp>()) {
+    if (!typecmp->first->type().IsNoneTy() &&
+        !typecmp->second->type().IsNoneTy()) {
+      if (typecmp->first->type() == typecmp->second->type()) {
+        expr.value = ctx_.make_node<Boolean>(true, Location(typecmp->loc));
+      } else {
+        expr.value = ctx_.make_node<Boolean>(false, Location(typecmp->loc));
+      }
+    } else if (is_final_pass()) {
+      // During the final pass, we don't let any unresolved `typeof` operators
+      // to remain in the graph for obvious reasons.
+      typecmp->addError() << "Invalid type for `typeof`: no type available";
+    }
+  }
 }
 
 void SemanticAnalyser::visit(ExprStatement &expr)
@@ -3278,7 +3324,9 @@ void SemanticAnalyser::visit(AssignMapStatement &assignment)
   // @y`
   const bool map_contains_int = map_type_before && map_type_before->IsIntTy();
   if (map_contains_int && assignment.expr.type().IsCastableMapTy()) {
-    assignment.expr = ctx_.make_node<Cast>(*map_type_before,
+    auto *typeof = ctx_.make_node<Typeof>(*map_type_before,
+                                          Location(assignment.loc));
+    assignment.expr = ctx_.make_node<Cast>(typeof,
                                            assignment.expr,
                                            Location(assignment.loc));
   }
@@ -3386,7 +3434,9 @@ void SemanticAnalyser::visit(AssignVarStatement &assignment)
   }
 
   if (assignment.expr.type().IsCastableMapTy()) {
-    assignment.expr = ctx_.make_node<Cast>(CreateInt64(),
+    auto *typeof = ctx_.make_node<Typeof>(CreateInt64(),
+                                          Location(assignment.loc));
+    assignment.expr = ctx_.make_node<Cast>(typeof,
                                            assignment.expr,
                                            Location(assignment.loc));
   }
@@ -3439,10 +3489,12 @@ void SemanticAnalyser::visit(AssignVarStatement &assignment)
                 << storedTy << "'";
           } else {
             assignTy = storedTy;
-            assignment.expr = ctx_.make_node<Cast>(
+            auto *typeof = ctx_.make_node<Typeof>(
                 CreateInteger(storedTy.GetSize() * 8, true),
-                assignment.expr,
                 Location(assignment.loc));
+            assignment.expr = ctx_.make_node<Cast>(typeof,
+                                                   assignment.expr,
+                                                   Location(assignment.loc));
             visit(assignment.expr);
           }
         }
@@ -3458,10 +3510,12 @@ void SemanticAnalyser::visit(AssignVarStatement &assignment)
         }
         if (can_fit) {
           assignTy = storedTy;
-          assignment.expr = ctx_.make_node<Cast>(
+          auto *typeof = ctx_.make_node<Typeof>(
               CreateInteger(storedTy.GetSize() * 8, storedTy.IsSigned()),
-              assignment.expr,
               Location(assignment.loc));
+          assignment.expr = ctx_.make_node<Cast>(typeof,
+                                                 assignment.expr,
+                                                 Location(assignment.loc));
           visit(assignment.expr);
         } else {
           assignment.addError()
@@ -3539,12 +3593,21 @@ void SemanticAnalyser::visit(AssignVarStatement &assignment)
 
 void SemanticAnalyser::visit(VarDeclStatement &decl)
 {
+  visit(decl.typeof);
   const std::string &var_ident = decl.var->ident;
 
-  if (decl.type && !IsValidVarDeclType(*decl.type)) {
-    decl.addError() << "Invalid variable declaration type: " << *decl.type;
-  } else if (decl.type && decl.var->var_type.IsNoneTy()) {
-    decl.var->var_type = *decl.type;
+  if (decl.typeof) {
+    const auto &ty = decl.typeof->type();
+    if (!ty.IsNoneTy()) {
+      if (!IsValidVarDeclType(ty)) {
+        decl.addError() << "Invalid variable declaration type: " << ty;
+      } else {
+        decl.var->var_type = ty;
+      }
+    } else if (is_final_pass()) {
+      // We couldn't resolve that specific type by now.
+      decl.addError() << "Type cannot be resolved: still none";
+    }
   }
 
   // Only checking on the first pass for cases like this:
@@ -3935,14 +3998,46 @@ void SemanticAnalyser::visit(Probe &probe)
 
 void SemanticAnalyser::visit(Subprog &subprog)
 {
+  // Note that we visit the subprogram and process arguments *after*
+  // constructing the stack with the variable states. This is because the
+  // arguments, etc. may have types defined in terms of the arguments
+  // themselves. We already handle detecting circular dependencies.
   scope_stack_.push_back(&subprog);
   top_level_node_ = &subprog;
   for (SubprogArg *arg : subprog.args) {
-    variables_[scope_stack_.back()].insert(
-        { arg->name,
-          { .type = arg->type, .can_resize = true, .was_assigned = true } });
+    const auto &ty = arg->typeof->type();
+    auto &var = variables_[scope_stack_.back()]
+                    .emplace(arg->var->ident,
+                             variable{ .type = ty,
+                                       .can_resize = true,
+                                       .was_assigned = true })
+                    .first->second;
+    var.type = ty; // Override in case it has changed.
   }
-  Visitor<SemanticAnalyser>::visit(subprog);
+
+  // Validate that arguments are set.
+  visit(subprog.args);
+  for (SubprogArg *arg : subprog.args) {
+    if (arg->typeof->type().IsNoneTy()) {
+      pass_tracker_.inc_num_unresolved();
+      if (is_final_pass()) {
+        arg->addError() << "Unable to resolve argument type.";
+      }
+    }
+  }
+
+  // Visit all statements.
+  visit(subprog.stmts);
+
+  // Validate that the return type is valid.
+  visit(subprog.return_type);
+  if (subprog.return_type->type().IsNoneTy()) {
+    pass_tracker_.inc_num_unresolved();
+    if (is_final_pass()) {
+      subprog.return_type->addError()
+          << "Unable to resolve suitable return type.";
+    }
+  }
   scope_stack_.pop_back();
 }
 
@@ -3950,22 +4045,27 @@ int SemanticAnalyser::analyse()
 {
   std::string errors;
 
-  int last_num_unresolved = 0;
+  auto last_num_unresolved = std::numeric_limits<int>::max();
+  auto last_unresolved_branches = pass_tracker_.get_unresolved_branches();
+
   // Multiple passes to handle variables being used before they are defined
   while (ctx_.diagnostics().ok()) {
     pass_tracker_.reset_num_unresolved();
-
     visit(ctx_.root);
-
     if (is_final_pass()) {
       return pass_tracker_.get_num_passes();
     }
 
-    int num_unresolved = pass_tracker_.get_num_unresolved();
+    auto num_unresolved = pass_tracker_.get_num_unresolved();
+    auto unresolved_branches = pass_tracker_.get_unresolved_branches();
 
-    if (num_unresolved > 0 &&
-        (last_num_unresolved == 0 || num_unresolved < last_num_unresolved)) {
-      // If we're making progress, keep making passes
+    if (unresolved_branches != last_unresolved_branches) {
+      // While we have unresolved branches that are changing, we need to reset
+      // our unresolved number since it may increase.
+      last_unresolved_branches = std::move(unresolved_branches);
+      last_num_unresolved = std::numeric_limits<int>::max();
+    } else if (num_unresolved > 0 && num_unresolved < last_num_unresolved) {
+      // If we're making progress, keep making passes.
       last_num_unresolved = num_unresolved;
     } else {
       pass_tracker_.mark_final_pass();

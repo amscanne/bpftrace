@@ -4298,9 +4298,6 @@ TEST_F(SemanticAnalyserTest, subprog_buildin_disallowed)
 stdin:1:25-29: ERROR: Builtin func not supported outside probe
 fn f(): int64 { return func; }
                         ~~~~
-stdin:1:18-29: ERROR: Function f is of type int64, cannot return none
-fn f(): int64 { return func; }
-                 ~~~~~~~~~~~
 )" });
 }
 
@@ -5576,6 +5573,105 @@ TEST_F(SemanticAnalyserTest, printf_str_conversion)
   test("kprobe:f { $x = (uint8*)0; printf(\"%s\", $x) }");
   test("kprobe:f { $x = (1, 1); printf(\"%s\", $x) }");
   test(R"(kprobe:f { $x = "foo"; printf("%s", $x) })");
+}
+
+TEST_F(SemanticAnalyserTest, typeof_decls)
+{
+  test("kprobe:f { $x = (uint8)1; let $y : typeof($x); $y = 2; }");
+  test("kprobe:f { $x = \"foo\"; let $y : typeof($x); $y = \"bar\"; }");
+
+  // These types should be enforced.
+  test(R"(kprobe:f { $x = (uint8)1; let $y : typeof($x); $y = "foo"; })",
+       Error{ R"(
+stdin:1:49-59: ERROR: Type mismatch for $y: trying to assign value of type 'string' when variable already has a type 'uint8'
+kprobe:f { $x = (uint8)1; let $y : typeof($x); $y = "foo"; }
+                                                ~~~~~~~~~~
+)" });
+  test(R"(kprobe:f { $x = "foo"; let $y : typeof($x); $y = 2; })", Error{ R"(
+stdin:1:46-52: ERROR: Type mismatch for $y: trying to assign value of type 'int64' when variable already has a type 'string'
+kprobe:f { $x = "foo"; let $y : typeof($x); $y = 2; }
+                                             ~~~~~~
+)" });
+  test(R"(kprobe:f { $x = "foo"; let $y : typeof($x); $y = "bazz"; })",
+       Error{ R"(
+stdin:1:46-57: ERROR: Type mismatch for $y: trying to assign value of type 'string' when variable already has a type 'string'
+kprobe:f { $x = "foo"; let $y : typeof($x); $y = "bazz"; }
+                                             ~~~~~~~~~~~
+)" });
+
+  // But ordering should not matter, as long as the scope is the same.
+  test("kprobe:f { let $x; let $y : typeof($x); $y = 2; $x = (uint8)1; }");
+  test("kprobe:f { let $x; let $y : typeof($x); $y = \"bar\"; $x = \"foo\"; }");
+}
+
+TEST_F(SemanticAnalyserTest, typeof_subprog)
+{
+  // Basic subprogram arguments can be defined relatively.
+  test("fn foo($x : int64, $y : typeof($x)) : int64 { return 0; }");
+  test("fn foo($x : typeof($y), $y : int64) : int64 { return 0; }");
+  test("fn foo($x : typeof($y), $y : int64) : typeof($x) { return 0; }");
+  test("fn foo($x : typeof($y), $y : int64) : typeof($y) { return 0; }");
+
+  // But we can't define using non-existent variables.
+  test("fn foo($x : int64, $y : typeof($z)) : int64 { return 0; }", Error{ R"(
+stdin:1:26-36: ERROR: Undefined or undeclared variable: $z
+fn foo($x : int64, $y : typeof($z)) : int64 { return 0; }
+                         ~~~~~~~~~~
+)" });
+  test("fn foo($x : int64, $y : int64) : typeof($z) { return 0; }", Error{ R"(
+stdin:1:36-46: ERROR: Undefined or undeclared variable: $z
+fn foo($x : int64, $y : int64) : typeof($z) { return 0; }
+                                   ~~~~~~~~~~
+)" });
+}
+
+TEST_F(SemanticAnalyserTest, typeof_casts)
+{
+  // Legal casts are still legal.
+  test(R"(kprobe:f { $x = (uint8)1; $y = (typeof($x))10; })");
+  test(R"(kprobe:f { $x = (void*)0; $y = (typeof($x))1; })");
+
+  // Overflow & signed warnings still apply.
+  test(R"(kprobe:f { $x = (uint8)1; $y = (typeof($x))256; })");
+  test(R"(kprobe:f { $x = (uint8)1; $y = (typeof($x))-1; })");
+
+  // Illegal casts are still illegal.
+  test(
+      R"(struct foo { int x; } kprobe:f { $x = (struct foo*)0; $y = (typeof(*$x))0; })",
+      Error{ R"(
+stdin:1:61-74: ERROR: Cannot cast to "struct foo"
+struct foo { int x; } kprobe:f { $x = (struct foo*)0; $y = (typeof(*$x))0; }
+                                                            ~~~~~~~~~~~~~
+)" });
+}
+
+TEST_F(SemanticAnalyserTest, typeof_if_constexpr)
+{
+  // We should be able to selectively analyze specific branches. Only the
+  // correct type branch will be chosen, and we will not encounted a type error
+  // for the other branch.
+  test(
+      R"(kprobe:f { $x = 1; if (typeof($x) == typeof("abc")) { $x = "foo"; } else { $x = 2; } })");
+  test(
+      R"(kprobe:f { $x = "xyz"; if (typeof($x) == typeof("abc")) { $x = "foo"; } else { $x = 2; } })");
+}
+
+TEST_F(SemanticAnalyserTest, fail)
+{
+  test(R"(kprobe:f { fail("always fail"); })", Error{ R"(
+stdin:1:12-31: ERROR: always fail
+kprobe:f { fail("always fail"); }
+           ~~~~~~~~~~~~~~~~~~~
+)" });
+  test(
+      R"(kprobe:f { $x = 1; if (typeof($x) != typeof(1)) { fail("only integers"); } })");
+  test(
+      R"(kprobe:f { $x = 1; if (typeof($x) == typeof(1)) { fail("no integers"); } })",
+      Error{ R"(
+stdin:1:51-70: ERROR: no integers
+kprobe:f { $x = 1; if (typeof($x) == typeof(1)) { fail("no integers"); } }
+                                                  ~~~~~~~~~~~~~~~~~~~
+)" });
 }
 
 } // namespace bpftrace::test::semantic_analyser
