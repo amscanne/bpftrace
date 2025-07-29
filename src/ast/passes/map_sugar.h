@@ -8,14 +8,21 @@ namespace bpftrace::ast {
 
 // MapMetadata contains metadata related to the sugared maps.
 //
-// For now, this is whether they are used as scalars. In the future, this may
-// be used as the basis for `MapInfo`, which can be propagated and used by
-// passes, rather than being mutated within the BPFtrace object.
+// This indicates whether the map is a scalar, and includes a list to the known
+// key expressions and value expressions after desugaring.
 class MapMetadata : public ast::State<"map-metadata"> {
 public:
+  struct Info {
+    bool scalar;
+    std::vector<Expression *> key_exprs;
+    std::vector<Expression *> value_exprs;
+  };
   std::unordered_map<std::string, bool> scalar;
+  std::unordered_map<std::string, Expression *> key_types;
+  std::unordered_map<std::string, Expression *> value_types;
 };
 
 Pass CreateMapSugarPass();
+Pass CreateMapPercpuPass();
 
 } // namespace bpftrace::ast

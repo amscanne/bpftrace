@@ -31,6 +31,7 @@ inline std::vector<Pass> AllParsePasses(
   passes.emplace_back(CreateResolveImportsPass(std::move(import_paths)));
   passes.emplace_back(CreateImportScriptsPass());
   passes.emplace_back(CreateUnstableFeaturePass());
+  passes.emplace_back(CreateMapSugarPass());
   passes.emplace_back(CreateMacroExpansionPass());
   passes.emplace_back(CreateDeprecatedPass());
   passes.emplace_back(CreateParseAttachpointsPass());
@@ -40,7 +41,6 @@ inline std::vector<Pass> AllParsePasses(
   passes.emplace_back(CreateFieldAnalyserPass());
   passes.emplace_back(CreateClangParsePass(std::move(extra_flags)));
   passes.emplace_back(CreateCMacroExpansionPass());
-  passes.emplace_back(CreateMapSugarPass());
   return passes;
 }
 

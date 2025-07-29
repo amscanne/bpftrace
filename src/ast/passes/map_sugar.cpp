@@ -55,6 +55,10 @@ public:
   void visit(Call &call);
 };
 
+class MapPercpuCheck : public Visitor<MapAssignmentCheck> {
+public:
+};
+
 } // namespace
 
 // These are special functions which are part of the map API, and operate
