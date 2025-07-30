@@ -16,3 +16,15 @@ macro assert($cond, $msg) {
 macro ppid($task) {
     $task->real_parent->pid
 }
+
+// Force a compile-time check.
+//
+// :param (literal) $v: The boolean value, must evaluate as a literal
+// :param (string) $msg: The message to emit, must be a string literal
+macro static_assert($v, $msg) {
+  if (typeof($v) != typeof(true)) {
+    fail("unable to evaluate compile-time assert");
+  } else if (!$v) {
+    fail($msg);
+  }
+}
