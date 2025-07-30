@@ -182,6 +182,9 @@ public:
   void visit(BlockExpr &block_expr);
   void visit(Subprog &subprog);
 
+  std::optional<size_t> const_value(Sizeof &szof);
+  std::optional<size_t> const_value(Offsetof &offof);
+
 private:
   ASTContext &ctx_;
   PassTracker pass_tracker_;
@@ -2006,12 +2009,49 @@ If you're seeing errors, try clamping the string sizes. For example:
   }
 }
 
+std::optional<size_t> SemanticAnalyser::const_value(Sizeof &szof)
+{
+  SizedType record;
+  if (std::holds_alternative<SizedType>(szof.record)) {
+    record = std::get<SizedType>(szof.record);
+  } else {
+    record = std::get<Expression>(szof.record).type();
+  }
+  if (record.IsNoneTy()) {
+    return std::nullopt;
+  }
+  return record.GetSize();
+}
+
 void SemanticAnalyser::visit(Sizeof &szof)
 {
   Visitor<SemanticAnalyser>::visit(szof);
   if (std::holds_alternative<SizedType>(szof.record)) {
     resolve_struct_type(std::get<SizedType>(szof.record), szof);
   }
+
+  if (is_final_pass() && !const_value(szof)) {
+    szof.addError() << "sizeof not resolved, is type complete?";
+  }
+}
+
+std::optional<size_t> SemanticAnalyser::const_value(Offsetof &offof)
+{
+  size_t offset = 0;
+  SizedType record;
+  if (std::holds_alternative<SizedType>(offof.record)) {
+    record = std::get<SizedType>(offof.record);
+  } else {
+    record = std::get<Expression>(offof.record).type();
+  }
+  if (record.IsNoneTy()) {
+    return std::nullopt;
+  }
+  for (const auto &field : offof.field) {
+    offset += record.GetField(field).offset;
+    record = record.GetField(field).type;
+  }
+  return offset;
 }
 
 void SemanticAnalyser::visit(Offsetof &offof)
@@ -2036,6 +2076,10 @@ void SemanticAnalyser::visit(Offsetof &offof)
         record = record.GetField(field).type;
       }
     }
+  }
+
+  if (is_final_pass() && !const_value(offof)) {
+    offof.addError() << "offsetof not resolved, is type complete?";
   }
 }
 
@@ -3279,6 +3323,16 @@ void SemanticAnalyser::visit(Expression &expr)
       // During the final pass, we don't let any unresolved `typeof` operators
       // to remain in the graph for obvious reasons.
       typecmp->addError() << "Invalid type for `typeof`: no type available";
+    }
+  } else if (auto *szof = expr.as<Sizeof>()) {
+    auto v = const_value(*szof);
+    if (v) {
+      expr.value = ctx_.make_node<Integer>(*v, Location(szof->loc));
+    }
+  } else if (auto *offof = expr.as<Offsetof>()) {
+    auto v = const_value(*offof);
+    if (v) {
+      expr.value = ctx_.make_node<Integer>(*v, Location(szof->loc));
     }
   }
 }
