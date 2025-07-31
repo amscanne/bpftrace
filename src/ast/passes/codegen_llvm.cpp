@@ -5334,10 +5334,10 @@ Pass CreateCompilePass(
                       });
 }
 
-Pass CreateLinkBitcodePass()
+Pass CreateLinkBPFBitcodePass()
 {
   return Pass::create(
-      "LinkBitcode", [](BitcodeModules &bm, CompiledModule &cm) -> Result<> {
+      "LinkBitcode", [](BPFBitcode &bm, CompiledModule &cm) -> Result<> {
         for (auto &mod : bm.modules) {
           // Make a copy of the module, to ensure this is not modifying the
           // original. The link step must consume the module below.

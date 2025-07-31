@@ -20,7 +20,7 @@ Pass CreateExternObjectPass()
 {
   return Pass::create("extern", [](Imports &imports) {
     BpfExternObjects result;
-    for (const auto &[name, obj] : imports.objects) {
+    for (const auto &[name, obj] : imports.bpf_objects) {
       result.objects.emplace_back(obj.path);
     }
     return result;

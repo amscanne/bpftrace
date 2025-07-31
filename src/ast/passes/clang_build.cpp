@@ -37,12 +37,14 @@ void ClangBuildError::log(llvm::raw_ostream &OS) const
   OS << msg_;
 }
 
-static Result<> build(CompileContext &ctx,
-                      const std::string &name,
-                      LoadedObject &obj,
-                      const llvm::MemoryBufferRef &vmlinux_h,
-                      Imports &imports,
-                      BitcodeModules &result)
+static Result<> build(
+    CompileContext &ctx,
+    const std::string &name,
+    LoadedObject &obj,
+    const std::map<std::string, llvm::MemoryBufferRef> &fixed_headers,
+    Imports &imports,
+    Bitcode &result,
+    bool bpf)
 {
   llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> vfs(
       new llvm::vfs::InMemoryFileSystem());
@@ -72,7 +74,9 @@ static Result<> build(CompileContext &ctx,
                  0,
                  llvm::MemoryBuffer::getMemBufferCopy(other.data(), name));
   }
-  vfs->addFileNoOwn("include/vmlinux.h", 0, vmlinux_h);
+  for (const auto &[name, ref] : fixed_headers) {
+    vfs->addFileNoOwn("include/" + name, 0, ref);
+  }
 
   // Create the diagnostic options and client. We emit the error to
   // a string, which we can then capture and associate with the import.
@@ -113,7 +117,9 @@ static Result<> build(CompileContext &ctx,
   clang::CompilerInvocation::CreateFromArgs(*inv,
                                             llvm::ArrayRef<const char *>(args),
                                             *diags);
-  inv->getTargetOpts().Triple = "bpf";
+  if (bpf) {
+    inv->getTargetOpts().Triple = "bpf";
+  }
 #if LLVM_VERSION_MAJOR <= 16
   inv->getCodeGenOpts().setDebugInfo(clang::codegenoptions::FullDebugInfo);
 #else
@@ -163,34 +169,56 @@ static Result<> build(CompileContext &ctx,
   return OK();
 }
 
-ast::Pass CreateClangBuildPass()
+ast::Pass CreateClangBuildBPFPass()
 {
   return ast::Pass::create(
-      "ClangBuilder",
+      "ClangBPFBuilder",
       [](BPFtrace &bpftrace,
          CompileContext &ctx,
-         ast::Imports &imports) -> Result<BitcodeModules> {
-        BitcodeModules result;
+         ast::Imports &imports) -> Result<BPFBitcode> {
+        BPFBitcode result;
 
         // Nothing to do? Return directly.
-        if (imports.c_sources.empty()) {
+        if (imports.bpf_sources.empty()) {
           return result;
         }
 
         // Construct our kernel headers. This is a rather expensive operation,
         // so we ensure that we do this only once for all files.
+        std::map<std::string, llvm::MemoryBufferRef> fixed_headers;
         std::string vmlinux_h = bpftrace.btf_->c_def();
+        fixed_headers["vmlinux.h"] = llvm::MemoryBufferRef(
+            llvm::StringRef(vmlinux_h), "vmlinux.h");
 
         // For each of the source files in the imports, we
         // build it and turn it into a bitcode file.
-        for (auto &[name, obj] : imports.c_sources) {
-          auto ok = build(ctx,
-                          name,
-                          obj,
-                          llvm::MemoryBufferRef(llvm::StringRef(vmlinux_h),
-                                                "vmlinux.h"),
-                          imports,
-                          result);
+        for (auto &[name, obj] : imports.bpf_sources) {
+          auto ok = build(ctx, name, obj, fixed_headers, imports, result, true);
+          if (!ok) {
+            return ok.takeError();
+          }
+        }
+
+        return result;
+      });
+}
+
+ast::Pass CreateClangBuildHostPass()
+{
+  return ast::Pass::create(
+      "ClangHostBuilder",
+      [](CompileContext &ctx, ast::Imports &imports) -> Result<HostBitcode> {
+        HostBitcode result;
+
+        // Nothing to do? Return directly.
+        if (imports.host_sources.empty()) {
+          return result;
+        }
+
+        // For each of the source files in the imports, we
+        // build it and turn it into a bitcode file.
+        for (auto &[name, obj] : imports.host_sources) {
+          auto ok = build(ctx, name, obj, {}, imports, result, false);
           if (!ok) {
             return ok.takeError();
           }

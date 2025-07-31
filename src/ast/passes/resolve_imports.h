@@ -69,9 +69,10 @@ public:
 // for loaded dynamic plugins, and the BPF objects for any binary blobs.
 class Imports : public ast::State<"imports"> {
 public:
-  std::map<std::string, LoadedObject> c_sources;
   std::map<std::string, LoadedObject> c_headers;
-  std::map<std::string, ExternalObject> objects;
+  std::map<std::string, LoadedObject> bpf_sources;
+  std::map<std::string, ExternalObject> bpf_objects;
+  std::map<std::string, LoadedObject> host_sources;
   std::map<std::string, ScriptObject> scripts;
 
   // Public import call.

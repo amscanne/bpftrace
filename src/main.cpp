@@ -328,7 +328,8 @@ void CreateDynamicPasses(std::function<void(ast::Pass&& pass)> add)
 {
   add(ast::CreateFoldLiteralsPass());
   add(ast::CreatePidFilterPass());
-  add(ast::CreateClangBuildPass());
+  add(ast::CreateClangBuildBPFPass());
+  add(ast::CreateClangBuildHostPass());
   add(ast::CreateTypeSystemPass());
   add(ast::CreateSemanticPass());
   add(ast::CreateResourcePass());
@@ -340,7 +341,8 @@ void CreateAotPasses(std::function<void(ast::Pass&& pass)> add)
 {
   add(ast::CreatePortabilityPass());
   add(ast::CreateFoldLiteralsPass());
-  add(ast::CreateClangBuildPass());
+  add(ast::CreateClangBuildBPFPass());
+  add(ast::CreateClangBuildHostPass());
   add(ast::CreateTypeSystemPass());
   add(ast::CreateSemanticPass());
   add(ast::CreateResourcePass());
@@ -920,7 +922,7 @@ int main(int argc, char* argv[])
     pm.add(ast::CreateDumpTypesPass(std::cout));
   }
   pm.add(ast::CreateCompilePass());
-  pm.add(ast::CreateLinkBitcodePass());
+  pm.add(ast::CreateLinkBPFBitcodePass());
   if (bt_debug.contains(DebugStage::Codegen)) {
     pm.add(ast::Pass::create("dump-ir-prefix", [&] {
       std::cout << "LLVM IR before optimization\n";
