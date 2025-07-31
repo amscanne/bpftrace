@@ -1,0 +1,592 @@
+#!/usr/bin/env python3
+"""
+Simple bpftrace Python package for transpiling Python functions to bpftrace.
+
+Provides a decorator-based API with map objects that can be shared between
+Python and bpftrace code.
+"""
+
+import ast
+import inspect
+import os
+import subprocess
+import tempfile
+import time
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Optional, Union
+
+# Try to import native extensions, fall back to pure Python if not available
+try:
+    import _bpftrace_native
+
+    HAS_NATIVE = True
+except ImportError:
+    HAS_NATIVE = False
+
+
+class ArrayMap:
+    """
+    Represents a bpftrace array map that can be accessed from both Python and bpftrace.
+    Uses native implementation if available, falls back to pure Python.
+    """
+
+    def __init__(self, size: int, name: Optional[str] = None):
+        self.size = size
+        self.name = name or f"array_{id(self)}"
+
+        # Use native implementation if available
+        if HAS_NATIVE:
+            self._native = _bpftrace_native.NativeArrayMap(size, self.name)
+            self.name = self._native.name()  # Use the name from native implementation
+        else:
+            self._local_data = {}
+
+    def __setitem__(self, key: int, value: Union[int, str]):
+        """Set a value in the map."""
+        if HAS_NATIVE:
+            self._native[key] = int(value)  # Convert to int for native
+        else:
+            self._local_data[key] = value
+
+    def __getitem__(self, key: int):
+        """Get a value from the map."""
+        if HAS_NATIVE:
+            return self._native[key]
+        else:
+            return self._local_data.get(key, 0)
+
+    def get(self, key: int, default: int = 0):
+        """Get a value from the map with a default."""
+        if HAS_NATIVE:
+            return self._native.get(key, default)
+        else:
+            return self._local_data.get(key, default)
+
+    def to_bpftrace_declaration(self) -> str:
+        """Generate bpftrace map declaration."""
+        if HAS_NATIVE:
+            return self._native.to_bpftrace_declaration()
+        else:
+            return f"@{self.name}[int64] = int64;"
+
+
+class HashMap:
+    """
+    Represents a bpftrace hash map.
+    Uses native implementation if available, falls back to pure Python.
+    """
+
+    def __init__(self, name: Optional[str] = None):
+        self.name = name or f"hash_{id(self)}"
+
+        # Use native implementation if available
+        if HAS_NATIVE:
+            self._native = _bpftrace_native.NativeHashMap(self.name)
+            self.name = self._native.name()  # Use the name from native implementation
+        else:
+            self._local_data = {}
+
+    def __setitem__(self, key: Union[int, str], value: Union[int, str]):
+        if HAS_NATIVE:
+            if isinstance(key, int):
+                self._native.__setitem__(key, int(value))
+            else:
+                self._native.__setitem__(str(key), int(value))
+        else:
+            self._local_data[key] = value
+
+    def __getitem__(self, key: Union[int, str]):
+        if HAS_NATIVE:
+            if isinstance(key, int):
+                return self._native.__getitem__(key)
+            else:
+                return self._native.__getitem__(str(key))
+        else:
+            return self._local_data.get(key, 0)
+
+    def get(self, key: Union[int, str], default: Union[int, str] = 0):
+        if HAS_NATIVE:
+            return self._native.get(str(key), int(default))
+        else:
+            return self._local_data.get(key, default)
+
+    def to_bpftrace_declaration(self) -> str:
+        if HAS_NATIVE:
+            return self._native.to_bpftrace_declaration()
+        else:
+            return f"@{self.name}[int64] = int64;"
+
+
+@dataclass
+class ProbeFunction:
+    """Represents a function decorated with a bpftrace probe."""
+
+    func: Callable
+    probe_type: str
+    probe_target: str
+    bpftrace_code: Optional[str] = None
+    captured_globals: Optional[Dict[str, Any]] = None
+
+
+class BpftraceTranspiler:
+    """
+    Simple transpiler that converts Python functions to bpftrace code.
+    """
+
+    def __init__(self):
+        self.maps = {}
+        self.probe_functions = []
+        self._bpftrace_process = None
+
+    def register_map(self, map_obj: Union[ArrayMap, HashMap]):
+        """Register a map object for use in bpftrace code."""
+        self.maps[map_obj.name] = map_obj
+
+    def transpile_function(
+        self,
+        func: Callable,
+        probe_type: str,
+        probe_target: str,
+        captured_globals: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """
+        Transpile a Python function to bpftrace code.
+
+        Args:
+            func: Python function to transpile
+            probe_type: Type of probe (kprobe, uprobe, tracepoint, etc.)
+            probe_target: Target for the probe
+            captured_globals: Dictionary of global variables captured at decoration time
+
+        Returns:
+            Generated bpftrace code
+        """
+        # Store captured globals for use during conversion
+        self.current_globals = captured_globals or {}
+
+        # Get function source and analyze it
+        source = inspect.getsource(func)
+        tree = ast.parse(source)
+
+        # Generate bpftrace code
+        lines = []
+
+        # Add probe header
+        if probe_type == "kprobe":
+            lines.append(f"kprobe:{probe_target}")
+        elif probe_type == "uprobe":
+            lines.append(f"uprobe:{probe_target}")
+        elif probe_type == "tracepoint":
+            lines.append(f"tracepoint:{probe_target}")
+        else:
+            lines.append("BEGIN")
+
+        lines.append("{")
+
+        # Convert function body
+        func_body = self._convert_function_body(tree, func)
+        for line in func_body:
+            lines.append(f"    {line}")
+
+        lines.append("}")
+
+        return "\n".join(lines)
+
+    def _convert_function_body(self, tree: ast.AST, func: Callable) -> list:
+        """Convert Python function body to bpftrace statements."""
+        lines = []
+
+        # Find the function definition
+        func_def = None
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == func.__name__:
+                func_def = node
+                break
+
+        if not func_def:
+            return ['printf("Function not found\\n");']
+
+        # Convert each statement in the function body (skip docstrings)
+        for stmt in func_def.body:
+            # Skip docstring (first statement if it's a string constant)
+            if (
+                isinstance(stmt, ast.Expr)
+                and isinstance(stmt.value, ast.Constant)
+                and isinstance(stmt.value.value, str)
+            ):
+                continue
+
+            converted = self._convert_statement(stmt)
+            if converted:
+                lines.extend(converted)
+
+        return lines if lines else ['printf("Function executed\\n");']
+
+    def _convert_statement(self, stmt: ast.AST) -> list:
+        """Convert a Python statement to bpftrace code."""
+        if isinstance(stmt, ast.Assign):
+            return self._convert_assignment(stmt)
+        elif isinstance(stmt, ast.If):
+            return self._convert_if_statement(stmt)
+        elif isinstance(stmt, ast.For):
+            return self._convert_for_loop(stmt)
+        elif isinstance(stmt, ast.While):
+            return self._convert_while_loop(stmt)
+        elif isinstance(stmt, ast.Expr):
+            return self._convert_expression_statement(stmt)
+        else:
+            return [f"// TODO: Convert {type(stmt).__name__}"]
+
+    def _convert_assignment(self, stmt: ast.Assign) -> list:
+        """Convert assignment statement."""
+        lines = []
+
+        for target in stmt.targets:
+            if isinstance(target, ast.Subscript):
+                # Handle map assignment like x[4] = 3
+                if isinstance(target.value, ast.Name):
+                    map_name = target.value.id
+                    key = self._convert_expression(target.slice)
+                    value = self._convert_expression(stmt.value)
+                    lines.append(f"@{map_name}[{key}] = {value};")
+            elif isinstance(target, ast.Name):
+                # Handle variable assignment
+                var_name = target.id
+                value = self._convert_expression(stmt.value)
+                lines.append(f"${var_name} = {value};")
+
+        return lines
+
+    def _convert_if_statement(self, stmt: ast.If) -> list:
+        """Convert if statement."""
+        condition = self._convert_expression(stmt.test)
+        lines = [f"if ({condition}) {{"]
+
+        for body_stmt in stmt.body:
+            body_lines = self._convert_statement(body_stmt)
+            for line in body_lines:
+                lines.append(f"    {line}")
+
+        if stmt.orelse:
+            lines.append("} else {")
+            for else_stmt in stmt.orelse:
+                else_lines = self._convert_statement(else_stmt)
+                for line in else_lines:
+                    lines.append(f"    {line}")
+
+        lines.append("}")
+        return lines
+
+    def _convert_for_loop(self, stmt: ast.For) -> list:
+        """Convert for loop (simplified)."""
+        if isinstance(stmt.iter, ast.Call) and isinstance(stmt.iter.func, ast.Name):
+            if stmt.iter.func.id == "range":
+                # Handle range() loops
+                var_name = stmt.target.id if isinstance(stmt.target, ast.Name) else "i"
+
+                if len(stmt.iter.args) == 1:
+                    # range(n)
+                    end = self._convert_expression(stmt.iter.args[0])
+                    lines = [f"${var_name} = 0;", f"while (${var_name} < {end}) {{"]
+                elif len(stmt.iter.args) == 2:
+                    # range(start, end)
+                    start = self._convert_expression(stmt.iter.args[0])
+                    end = self._convert_expression(stmt.iter.args[1])
+                    lines = [
+                        f"${var_name} = {start};",
+                        f"while (${var_name} < {end}) {{",
+                    ]
+                else:
+                    lines = ["// TODO: Complex range() not supported"]
+
+                # Convert loop body
+                for body_stmt in stmt.body:
+                    body_lines = self._convert_statement(body_stmt)
+                    for line in body_lines:
+                        lines.append(f"    {line}")
+
+                # Add increment and close
+                lines.append(f"    ${var_name}++;")
+                lines.append("}")
+
+                return lines
+
+        return ["// TODO: Complex for loop not supported"]
+
+    def _convert_while_loop(self, stmt: ast.While) -> list:
+        """Convert while loop."""
+        condition = self._convert_expression(stmt.test)
+        lines = [f"while ({condition}) {{"]
+
+        for body_stmt in stmt.body:
+            body_lines = self._convert_statement(body_stmt)
+            for line in body_lines:
+                lines.append(f"    {line}")
+
+        lines.append("}")
+        return lines
+
+    def _convert_expression_statement(self, stmt: ast.Expr) -> list:
+        """Convert expression statement (like function calls)."""
+        if isinstance(stmt.value, ast.Call):
+            if isinstance(stmt.value.func, ast.Name):
+                func_name = stmt.value.func.id
+                if func_name == "print":
+                    # Convert print() to printf()
+                    if stmt.value.args:
+                        arg = self._convert_expression(stmt.value.args[0])
+                        return [f'printf("%s\\n", {arg});']
+                    else:
+                        return ['printf("\\n");']
+
+        return [f"// TODO: Convert expression {ast.unparse(stmt.value)}"]
+
+    def _convert_expression(self, expr: ast.AST) -> str:
+        """Convert Python expression to bpftrace expression."""
+        if isinstance(expr, ast.Constant):
+            if isinstance(expr.value, str):
+                return f'"{expr.value}"'
+            else:
+                return str(expr.value)
+        elif isinstance(expr, ast.Name):
+            # Check if this is a reference to a captured global constant
+            var_name = expr.id
+            if hasattr(self, "current_globals") and var_name in self.current_globals:
+                value = self.current_globals[var_name]
+                # If it's a simple constant, inline it directly
+                if isinstance(value, (int, float, str, bool)):
+                    if isinstance(value, str):
+                        return f'"{value}"'
+                    elif isinstance(value, bool):
+                        return "1" if value else "0"
+                    else:
+                        return str(value)
+                # For maps, keep the reference
+                elif isinstance(value, (ArrayMap, HashMap)):
+                    return f"@{var_name}"
+
+            # Default to variable reference
+            return f"${var_name}"
+        elif isinstance(expr, ast.BinOp):
+            left = self._convert_expression(expr.left)
+            right = self._convert_expression(expr.right)
+            op_map = {
+                ast.Add: "+",
+                ast.Sub: "-",
+                ast.Mult: "*",
+                ast.Div: "/",
+                ast.Mod: "%",
+            }
+            op = op_map.get(type(expr.op), "+")
+            return f"({left} {op} {right})"
+        elif isinstance(expr, ast.Compare):
+            left = self._convert_expression(expr.left)
+            if expr.ops and expr.comparators:
+                op_map = {
+                    ast.Eq: "==",
+                    ast.NotEq: "!=",
+                    ast.Lt: "<",
+                    ast.LtE: "<=",
+                    ast.Gt: ">",
+                    ast.GtE: ">=",
+                }
+                op = op_map.get(type(expr.ops[0]), "==")
+                right = self._convert_expression(expr.comparators[0])
+                return f"({left} {op} {right})"
+        elif isinstance(expr, ast.Subscript):
+            # Handle map access like x[4]
+            if isinstance(expr.value, ast.Name):
+                map_name = expr.value.id
+                key = self._convert_expression(expr.slice)
+                return f"@{map_name}[{key}]"
+
+        # Fallback: try to unparse the expression
+        try:
+            return ast.unparse(expr)
+        except:
+            return "0"
+
+    def generate_full_bpftrace_script(self) -> str:
+        """Generate complete bpftrace script with all probes and maps."""
+        lines = ["#!/usr/bin/env bpftrace", ""]
+
+        # Add map declarations
+        for map_obj in self.maps.values():
+            lines.append(map_obj.to_bpftrace_declaration())
+
+        if self.maps:
+            lines.append("")
+
+        # Add probe functions
+        for probe_func in self.probe_functions:
+            if probe_func.bpftrace_code:
+                lines.append(probe_func.bpftrace_code)
+                lines.append("")
+
+        # Add END block for cleanup
+        lines.extend(["END", "{", "    // Script ended", "}"])
+
+        return "\n".join(lines)
+
+
+# Global transpiler instance
+_transpiler = BpftraceTranspiler()
+
+
+def kprobe(target: str):
+    """Decorator for kprobe functions."""
+
+    def decorator(func: Callable):
+        # Capture the global scope at decoration time
+        captured_globals = func.__globals__.copy()
+
+        bpftrace_code = _transpiler.transpile_function(
+            func, "kprobe", target, captured_globals
+        )
+        probe_func = ProbeFunction(
+            func, "kprobe", target, bpftrace_code, captured_globals
+        )
+        _transpiler.probe_functions.append(probe_func)
+        return func
+
+    return decorator
+
+
+def uprobe(target: str):
+    """Decorator for uprobe functions."""
+
+    def decorator(func: Callable):
+        # Capture the global scope at decoration time
+        captured_globals = func.__globals__.copy()
+
+        bpftrace_code = _transpiler.transpile_function(
+            func, "uprobe", target, captured_globals
+        )
+        probe_func = ProbeFunction(
+            func, "uprobe", target, bpftrace_code, captured_globals
+        )
+        _transpiler.probe_functions.append(probe_func)
+        return func
+
+    return decorator
+
+
+def tracepoint(target: str):
+    """Decorator for tracepoint functions."""
+
+    def decorator(func: Callable):
+        # Capture the global scope at decoration time
+        captured_globals = func.__globals__.copy()
+
+        bpftrace_code = _transpiler.transpile_function(
+            func, "tracepoint", target, captured_globals
+        )
+        probe_func = ProbeFunction(
+            func, "tracepoint", target, bpftrace_code, captured_globals
+        )
+        _transpiler.probe_functions.append(probe_func)
+        return func
+
+    return decorator
+
+
+def start():
+    """Start the bpftrace script with all registered probes."""
+    # Register all maps
+    for map_obj in [ArrayMap, HashMap]:
+        # This is a bit of a hack - in practice you'd track map instances
+        pass
+
+    # Generate the complete script
+    script = _transpiler.generate_full_bpftrace_script()
+
+    print("Generated bpftrace script:")
+    print("=" * 50)
+    print(script)
+    print("=" * 50)
+
+    # Write to temporary file and execute
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".bt", delete=False) as f:
+        f.write(script)
+        temp_file = f.name
+
+    try:
+        print(f"Running bpftrace script: {temp_file}")
+        # In practice, you'd run this and manage the process
+        # subprocess.run(['bpftrace', temp_file])
+        print("(Script execution simulated - would run: bpftrace", temp_file, ")")
+    finally:
+        os.unlink(temp_file)
+
+
+# Auto-register maps when they're created and try to infer variable names
+original_array_map_init = ArrayMap.__init__
+original_hash_map_init = HashMap.__init__
+
+
+def _patched_array_map_init(self, size: int, name: Optional[str] = None):
+    # Try to infer the variable name from the calling context
+    if name is None:
+        import inspect
+
+        frame = inspect.currentframe()
+        try:
+            # Get the calling frame
+            caller_frame = frame.f_back
+            if caller_frame:
+                # Look for assignment in the caller's locals
+                caller_locals = caller_frame.f_locals
+                caller_globals = caller_frame.f_globals
+
+                # This is a simple heuristic - in practice you might want more sophisticated name detection
+                for var_name, var_value in caller_locals.items():
+                    if var_value is self:
+                        name = var_name
+                        break
+
+                if name is None:
+                    for var_name, var_value in caller_globals.items():
+                        if var_value is self:
+                            name = var_name
+                            break
+        finally:
+            del frame
+
+    original_array_map_init(self, size, name)
+    _transpiler.register_map(self)
+
+
+def _patched_hash_map_init(self, name: Optional[str] = None):
+    # Try to infer the variable name from the calling context
+    if name is None:
+        import inspect
+
+        frame = inspect.currentframe()
+        try:
+            # Get the calling frame
+            caller_frame = frame.f_back
+            if caller_frame:
+                # Look for assignment in the caller's locals
+                caller_locals = caller_frame.f_locals
+                caller_globals = caller_frame.f_globals
+
+                # This is a simple heuristic
+                for var_name, var_value in caller_locals.items():
+                    if var_value is self:
+                        name = var_name
+                        break
+
+                if name is None:
+                    for var_name, var_value in caller_globals.items():
+                        if var_value is self:
+                            name = var_name
+                            break
+        finally:
+            del frame
+
+    original_hash_map_init(self, name)
+    _transpiler.register_map(self)
+
+
+ArrayMap.__init__ = _patched_array_map_init
+HashMap.__init__ = _patched_hash_map_init

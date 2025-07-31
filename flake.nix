@@ -157,6 +157,7 @@
                   pkgs.gcc
                   pkgs.ninja
                   pkgs.pkg-config
+                  pkgs.python3
                 ];
 
                 buildInputs = [
@@ -179,12 +180,16 @@
                   pkgs.pahole
                   pkgs.xxd
                   pkgs.zlib
+                  # Python development headers
+                  pkgs.python3.dev
+                  pkgs.python3Packages.pybind11
                 ];
 
                 # Release flags
                 cmakeFlags = [
                   "-DCMAKE_BUILD_TYPE=Release"
                   "-DENABLE_SYSTEMD=1"
+                  "-DBUILD_PYTHON_BINDINGS=ON"
                 ];
 
                 # Technically not needed cuz package name matches mainProgram, but

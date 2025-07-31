@@ -1,0 +1,5 @@
+# No external dependencies. required - uses only Python standard library
+# Development dependencies (optional):
+# pytest>=6.0
+# black>=21.0
+# flake8>=3.8
