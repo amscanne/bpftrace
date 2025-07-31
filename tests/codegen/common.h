@@ -83,7 +83,7 @@ static void test(BPFtrace &bpftrace,
                 .add(ast::CreateMapSugarPass())
                 .add(ast::CreateNamedParamsPass())
                 .add(ast::CreateLLVMInitPass())
-                .add(ast::CreateClangBuildPass())
+                .add(ast::CreateClangBuildBPFPass())
                 .add(ast::CreateTypeSystemPass())
                 .add(ast::CreateSemanticPass())
                 .add(ast::CreateRecursionCheckPass())

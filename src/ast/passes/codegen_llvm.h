@@ -36,7 +36,7 @@ Pass CreateCompilePass();
 
 // Links any external bitcode into the module. This must follow the compile
 // pass, and should proceed any verification, optimization or external linking.
-Pass CreateLinkBitcodePass();
+Pass CreateLinkBPFBitcodePass();
 
 // Dumps `CompiledModule` to the given stream.
 Pass CreateDumpIRPass(std::ostream &out);
@@ -67,7 +67,7 @@ inline std::vector<Pass> AllCompilePasses()
 {
   std::vector<Pass> passes;
   passes.emplace_back(CreateCompilePass());
-  passes.emplace_back(CreateLinkBitcodePass());
+  passes.emplace_back(CreateLinkBPFBitcodePass());
   passes.emplace_back(CreateVerifyPass());
   passes.emplace_back(CreateOptimizePass());
   passes.emplace_back(CreateObjectPass());

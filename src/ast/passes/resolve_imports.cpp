@@ -199,12 +199,16 @@ Result<OK> Imports::import_any(Node &node,
     // Import any support file-based extensions.
     if (path.extension() == ".bt") {
       return import_script(node, *this, name, path, paths, scripts);
-    } else if (path.extension() == ".c" && path.stem().extension() == ".bpf") {
-      return import_c(node, name, path, c_sources);
+    } else if (path.extension() == ".c") {
+      if (path.stem().extension() == ".bpf") {
+        return import_c(node, name, path, bpf_sources);
+      } else {
+        return import_c(node, name, path, host_sources);
+      }
     } else if (path.extension() == ".h") {
       return import_c(node, name, path, c_headers);
     } else if (path.extension() == ".o" && path.stem().extension() == ".bpf") {
-      return import_object(node, name, path, objects);
+      return import_object(node, name, path, bpf_objects);
     } else if (!ignore_unknown) {
       node.addError() << "unknown import type: " << path.filename();
     }
@@ -223,8 +227,12 @@ Result<OK> Imports::import_any(Node &node,
   if (path.extension() == ".bt") {
     return import_script(
         node, *this, name, std::string(data), paths, scripts, true);
-  } else if (path.extension() == ".c" && path.stem().extension() == ".bpf") {
-    return import_c(node, name, data, c_sources);
+  } else if (path.extension() == ".c") {
+    if (path.stem().extension() == ".bpf") {
+      return import_c(node, name, data, bpf_sources);
+    } else {
+      return import_c(node, name, data, host_sources);
+    }
   } else if (path.extension() == ".h") {
     return import_c(node, name, data, c_headers);
   } else if (!ignore_unknown) {

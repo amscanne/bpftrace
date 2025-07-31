@@ -7,11 +7,14 @@
 
 namespace bpftrace::ast {
 
-class BitcodeModules : public State<"bitcode"> {
+class Bitcode {
 public:
   std::vector<std::unique_ptr<llvm::Module>> modules;
   std::vector<std::string> objects;
 };
+
+class BPFBitcode : public State<"bpf-bitcode">, public Bitcode {};
+class HostBitcode : public State<"host-bitcode">, public Bitcode {};
 
 class ClangBuildError : public ErrorInfo<ClangBuildError> {
 public:
@@ -23,6 +26,7 @@ private:
   std::string msg_;
 };
 
-ast::Pass CreateClangBuildPass();
+ast::Pass CreateClangBuildBPFPass();
+ast::Pass CreateClangBuildHostPass();
 
 } // namespace bpftrace::ast

@@ -9,7 +9,7 @@ namespace bpftrace::test::type_system {
 TEST(TypeSystemTest, basic)
 {
   // Use our synthetic BTF as the object.
-  ast::BitcodeModules modules;
+  ast::BPFBitcode modules;
   modules.objects.emplace_back(reinterpret_cast<const char *>(btf_data),
                                sizeof(btf_data));
 

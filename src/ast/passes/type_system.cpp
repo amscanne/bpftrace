@@ -8,7 +8,7 @@ namespace bpftrace::ast {
 
 Pass CreateTypeSystemPass()
 {
-  auto fn = [](BitcodeModules &bm) -> Result<TypeMetadata> {
+  auto fn = [](BPFBitcode &bm) -> Result<TypeMetadata> {
     TypeMetadata result;
 
     // For now, we simply build a single type system that covers all the
