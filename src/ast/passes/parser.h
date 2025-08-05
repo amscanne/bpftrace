@@ -37,13 +37,13 @@ inline std::vector<Pass> AllParsePasses(
   passes.emplace_back(CreateImportExternalScriptsPass());
   passes.emplace_back(CreateUnstableFeaturePass());
   passes.emplace_back(CreateImportInternalScriptsPass());
-  passes.emplace_back(CreateMacroExpansionPass());
   passes.emplace_back(CreateDeprecatedPass());
   passes.emplace_back(CreateParseAttachpointsPass());
-  passes.emplace_back(CreateUSDTImportPass()); // Import USDT stdlib if needed
   passes.emplace_back(CreateParseBTFPass());
   passes.emplace_back(CreateProbeExpansionPass());
   passes.emplace_back(CreateParseTracepointFormatPass());
+  passes.emplace_back(CreateUSDTImportPass()); // Import USDT stdlib if needed
+  passes.emplace_back(CreateMacroExpansionPass());
   passes.emplace_back(CreateFieldAnalyserPass());
   passes.emplace_back(CreateClangParsePass(std::move(extra_flags)));
   passes.emplace_back(CreateCMacroExpansionPass());

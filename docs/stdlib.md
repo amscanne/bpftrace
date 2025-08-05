@@ -1115,6 +1115,13 @@ See the address-spaces section for more information on address-spaces.
 The pointer type is left unchanged.
 
 
+### usdt_arg
+
+Returns the argument of an USDT probe at the given index
+
+:param (int64) $x: The index of the argument to return
+
+
 ### usermode
 - `uint8 usermode()`
 - `uint8 usermode`
@@ -1234,6 +1241,14 @@ uprobe:/bin/bash:readline
  * readline
  */
 ```
+
+
+### zero
+- `void zero(map m)`
+
+**async**
+
+Set all values (for all keys) in the map to zero.
 
 
 ## Map Value Functions
