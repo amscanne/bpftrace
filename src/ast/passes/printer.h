@@ -23,6 +23,7 @@ public:
   void visit(Identifier &identifier);
   void visit(Builtin &builtin);
   void visit(Call &call);
+  void visit(Apply &apply);
   void visit(Sizeof &szof);
   void visit(Offsetof &offof);
   void visit(Map &map);

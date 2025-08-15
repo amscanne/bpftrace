@@ -73,6 +73,12 @@ public:
   {
     return visitImpl(call.vargs);
   }
+  R visit(Apply &apply)
+  {
+    visitImpl(apply.func);
+    visitImpl(apply.expr);
+    return default_value();
+  }
   R visit(Sizeof &szof)
   {
     return visitImpl(szof.record);

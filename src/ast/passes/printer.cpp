@@ -109,6 +109,17 @@ void Printer::visit(Call &call)
   --depth_;
 }
 
+void Printer::visit(Apply &apply)
+{
+  std::string indent(depth_, ' ');
+  out_ << indent << "apply" << std::endl;
+
+  ++depth_;
+  visit(apply.func);
+  visit(apply.expr);
+  --depth_;
+}
+
 void Printer::visit(Sizeof &szof)
 {
   std::string indent(depth_, ' ');

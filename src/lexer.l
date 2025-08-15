@@ -53,6 +53,7 @@ builtin_type    void|(u)?(min|max|sum|avg|stats)_t|count_t|probe_t|username_t|lh
 sized_type      inet|buffer
 subprog         fn
 macro           macro
+apply           apply
 
 /* escape sequences in strings */
 hex_esc  (x|X)[0-9a-fA-F]{1,2}
@@ -92,6 +93,7 @@ oct_esc  [0-7]{1,3}
 {builtin}               { return Parser::make_BUILTIN(yytext, driver.loc); }
 {subprog}               { return Parser::make_SUBPROG(yytext, driver.loc); }
 {macro}                 { return Parser::make_MACRO(yytext, driver.loc); }
+{apply}                 { return Parser::make_APPLY(yytext, driver.loc); }
 {int}|{hex}|{exponent}  {
                           // Note that we have no unsigned integers in the lexer, these
                           // are purely derived as a result of folding constants.

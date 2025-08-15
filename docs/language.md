@@ -1,6 +1,10 @@
 # The bpftrace Language
 
-The `bpftrace` (`bt`) language is inspired by the D language used by `dtrace` and uses the same program structure.
+The `bpftrace` (`bt`) language was originally inspired by the D language used
+by `dtrace` and uses some of the same program structure. It has also taken
+significant influence from `C` (and other systems programming languages, such
+as rust), as most users of `bpftrace` are `C` programmers.
+
 Each script consists of a [Preamble](#preamble) and one or more [Action Blocks](#action-blocks).
 
 ```

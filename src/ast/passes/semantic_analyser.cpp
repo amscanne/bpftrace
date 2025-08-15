@@ -12,6 +12,7 @@
 #include "ast/context.h"
 #include "ast/helpers.h"
 #include "ast/passes/fold_literals.h"
+#include "ast/passes/macro_expansion.h"
 #include "ast/passes/map_sugar.h"
 #include "ast/passes/named_param.h"
 #include "ast/passes/semantic_analyser.h"
@@ -120,6 +121,7 @@ public:
                             MapMetadata &map_metadata,
                             NamedParamDefaults &named_param_defaults,
                             TypeMetadata &type_metadata,
+                            MacroRegistry &macros,
                             bool has_child = true,
                             bool listing = false)
       : ctx_(ctx),
@@ -128,6 +130,7 @@ public:
         map_metadata_(map_metadata),
         named_param_defaults_(named_param_defaults),
         type_metadata_(type_metadata),
+        macros_(macros),
         listing_(listing),
         has_child_(has_child)
   {
@@ -182,6 +185,7 @@ private:
   MapMetadata &map_metadata_;
   NamedParamDefaults &named_param_defaults_;
   TypeMetadata &type_metadata_;
+  MacroRegistry &macros_;
   bool listing_;
 
   bool is_final_pass() const;
@@ -189,6 +193,7 @@ private:
 
   std::optional<size_t> check(Sizeof &szof);
   std::optional<size_t> check(Offsetof &offof);
+  std::optional<Expression> check(Apply &apply);
 
   [[nodiscard]] bool check_arg(const Call &call,
                                size_t index,
@@ -272,6 +277,9 @@ private:
   std::map<std::string, SizedType> map_val_;
   std::map<std::string, SizedType> map_key_;
   std::map<std::string, libbpf::bpf_map_type> bpf_map_type_;
+
+  // Used to determine recursion limits with macros.
+  uint64_t macro_depth_ = 0;
 
   uint32_t loop_depth_ = 0;
   bool has_begin_probe_ = false;
@@ -2826,6 +2834,58 @@ void SemanticAnalyser::visit(While &while_block)
   loop_depth_--;
 }
 
+std::optional<Expression> SemanticAnalyser::check(Apply &apply)
+{
+  // Ensure that the arguments are valid.
+  visit(apply.func);
+  visit(apply.expr);
+
+  // We need a string, ensure that after resolution, folding, etc. the function
+  // expression is a string. This allows us to dispatch to dynamic names based
+  // on the types provided, etc.
+  std::string func;
+  if (auto *s = apply.func.as<String>()) {
+    func = s->value;
+  } else {
+    apply.func.node().addError() << "Function must resolved to a string.";
+    return std::nullopt;
+  }
+
+  // If this element is not yet none, then it can't be expanded.
+  const auto &ty = apply.expr.type();
+  if (ty.IsNoneTy()) {
+    if (is_final_pass()) {
+      apply.addError() << "Unable to apply to none type.";
+    }
+    pass_tracker_.inc_num_unresolved();
+    return std::nullopt;
+  }
+
+  // If we are ready to apply, then we can construct our call.
+  std::vector<Expression> args;
+  if (auto *tuple = apply.expr.as<Tuple>()) {
+    // It is a literal tuple, and we pass through the expressions directly.
+    for (auto &elem : tuple->elems) {
+      args.push_back(clone(ctx_, elem, apply.expr.node().loc));
+    }
+  } else if (ty.IsTupleTy()) {
+    // It is a tuple-value, and we need to replace with TupleAccess operations.
+    for (ssize_t i = 0; i < ty.GetFieldCount(); i++) {
+      auto expr = clone(ctx_, apply.expr, apply.expr.node().loc);
+      auto *tuple_access = ctx_.make_node<TupleAccess>(expr,
+                                                       i,
+                                                       Location(apply.loc));
+      args.emplace_back(tuple_access);
+    }
+  } else {
+    // It is neither, just make the call directly.
+    args.push_back(apply.expr);
+  }
+
+  // Construct the call.
+  return ctx_.make_node<Call>(func, std::move(args), Location(apply.loc));
+}
+
 void SemanticAnalyser::visit(For &f)
 {
   if (f.iterable.is<Range>() && !bpftrace_.feature_->has_helper_loop()) {
@@ -3338,8 +3398,39 @@ void SemanticAnalyser::visit(Tuple &tuple)
 
 void SemanticAnalyser::visit(Expression &expr)
 {
-  // Visit and fold all other values.
-  Visitor<SemanticAnalyser>::visit(expr);
+  if (auto *apply = expr.as<Apply>()) {
+    auto repl = check(*apply);
+    if (repl) {
+      // Replace if necessary. At this point, it is legal to do late macro
+      // expansion again since they are not processed when they are found in
+      // `apply`, which requires semantic information.
+      expr.value = repl->value;
+      if (expand(ctx_, macros_, expr, macro_depth_ + 1)) {
+        if (macro_depth_ > bpftrace_.config_->max_apply_recursion) {
+          auto &err = expr.node().addError();
+          err << "Reached recursive expansion limit of "
+              << bpftrace_.config_->max_apply_recursion << ".";
+          err.addHint() << "This can be adjusted with the "
+                           "`max_apply_recursion` configuration.";
+          return;
+        }
+        // Fold immediately, as this may be required to remove some of the
+        // recursive paths. The way infinite recursion is avoided is by having
+        // literal evaluation or `typeof` folding.
+        fold(ctx_, expr);
+        // Re-visit the expression, with an increased macro recursion depth.
+        // The intent is to expand aggressive while we are able to.
+        macro_depth_++;
+        visit(expr);
+        macro_depth_--;
+      }
+    }
+  } else {
+    // Visit normally.
+    Visitor<SemanticAnalyser>::visit(expr);
+  }
+
+  // Fold all other values.
   fold(ctx_, expr);
 
   // Inline specific constant expressions.
@@ -4604,13 +4695,15 @@ Pass CreateSemanticPass(bool listing)
                       CDefinitions &c_definitions,
                       MapMetadata &mm,
                       NamedParamDefaults &named_param_defaults,
-                      TypeMetadata &types) {
+                      TypeMetadata &types,
+                      MacroRegistry &macros) {
     SemanticAnalyser semantics(ast,
                                b,
                                c_definitions,
                                mm,
                                named_param_defaults,
                                types,
+                               macros,
                                !b.cmd_.empty() || b.child_ != nullptr,
                                listing);
     semantics.analyse();

@@ -126,6 +126,7 @@ class String;
 class Identifier;
 class Builtin;
 class Call;
+class Apply;
 class Sizeof;
 class Offsetof;
 class Map;
@@ -152,6 +153,7 @@ class Expression : public VariantNode<Integer,
                                       Identifier,
                                       Builtin,
                                       Call,
+                                      Apply,
                                       Sizeof,
                                       Offsetof,
                                       Map,
@@ -403,8 +405,6 @@ public:
 
 class Call : public Node {
 public:
-  explicit Call(ASTContext &ctx, std::string func, Location &&loc)
-      : Node(ctx, std::move(loc)), func(std::move(func)) {};
   explicit Call(ASTContext &ctx,
                 std::string func,
                 ExpressionList &&vargs,
@@ -435,6 +435,30 @@ public:
   // correctly account for this.
   size_t injected_args = 0;
   bool ret_val_discarded = false;
+};
+
+class Apply : public Node {
+public:
+  explicit Apply(ASTContext &ctx,
+                 Expression func,
+                 Expression expr,
+                 Location &&loc)
+      : Node(ctx, std::move(loc)), func(func), expr(expr) {};
+  explicit Apply(ASTContext &ctx, const Apply &other, const Location &loc)
+      : Node(ctx, loc + other.loc),
+        func(clone(ctx, other.func, loc)),
+        expr(clone(ctx, other.expr, loc)) {};
+
+  const SizedType &type() const
+  {
+    // This will not have a type until the underlying expression and macro are
+    // fully resolved and expanded. This requires replacement of the expression.
+    static SizedType none = CreateNone();
+    return none;
+  }
+
+  Expression func;
+  Expression expr;
 };
 
 class Sizeof : public Node {
@@ -1321,29 +1345,35 @@ public:
   Macro(ASTContext &ctx,
         std::string name,
         ExpressionList &&vargs,
+        Identifier *varargs,
         BlockExpr *block_expr,
         Location &&loc)
       : Node(ctx, std::move(loc)),
         name(std::move(name)),
         vargs(std::move(vargs)),
+        varargs(varargs),
         block(block_expr) {};
   Macro(ASTContext &ctx,
         std::string name,
         ExpressionList &&vargs,
+        Identifier *varargs,
         Block *block,
         Location &&loc)
       : Node(ctx, std::move(loc)),
         name(std::move(name)),
         vargs(std::move(vargs)),
+        varargs(varargs),
         block(block) {};
   explicit Macro(ASTContext &ctx, const Macro &other, const Location &loc)
       : Node(ctx, loc + other.loc),
         name(other.name),
         vargs(clone(ctx, other.vargs, loc)),
+        varargs(clone(ctx, other.varargs, loc)),
         block(clone(ctx, other.block, loc)) {};
 
   std::string name;
   ExpressionList vargs;
+  Identifier *varargs = nullptr; // May be null.
   std::variant<BlockExpr *, Block *> block;
 };
 using MacroList = std::vector<Macro *>;
