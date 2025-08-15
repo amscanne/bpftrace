@@ -7,104 +7,119 @@
 #include "ast/passes/macro_expansion.h"
 #include "ast/visitor.h"
 #include "bpftrace.h"
-
 #include "log.h"
 
 namespace bpftrace::ast {
 
-std::unordered_map<std::string, Macro *> collect_macros(ASTContext &ast)
+MacroRegistry MacroRegistry::create(ASTContext &ast)
 {
-  std::unordered_map<std::string, Macro *> macros;
+  MacroRegistry registry;
   for (Macro *macro : ast.root->macros) {
-    if (macros.contains(macro->name)) {
-      macro->addError() << "Redifinition of macro: " << macro->name;
-      return macros;
+    // Note that it is possible to define conflicting macros in this way. For
+    // example, we could have:
+    //
+    //   macro foo($x, $y) {}
+    //   macro foo(...) {}
+    //
+    // However we explicitly allow this, as long as they are added in such a way
+    // that they will match with the most precise macros first. The newest macro
+    // definition must not match with any existing macro definition.
+    auto *existing = registry.lookup(macro->name, macro->vargs);
+    if (existing != nullptr) {
+      auto &err = macro->addError();
+      err << "Redefinition of existing macro.";
+      err.addContext(existing->loc) << "This is the original definition.";
+      continue; // Skip this macro.
     }
-
-    std::unordered_set<std::string> seen_mvars;
-    std::unordered_set<std::string> seen_mmaps;
-    for (const auto &arg : macro->vargs) {
-      if (auto *mvar = arg.as<Variable>()) {
-        auto inserted = seen_mvars.insert(mvar->ident);
-        if (!inserted.second) {
-          mvar->addError()
-              << "Variable for macro argument has already been used: "
-              << mvar->ident;
-          return macros;
-        }
-      } else if (auto *mmap = arg.as<Map>()) {
-        auto inserted = seen_mmaps.insert(mmap->ident);
-        if (!inserted.second) {
-          mmap->addError() << "Map for macro argument has already been used: "
-                           << mmap->ident;
-          return macros;
-        }
-      }
-    }
-
-    macros[macro->name] = macro;
+    // Add to the list matching this name.
+    registry.macros_[macro->name].emplace_back(macro);
   }
+  return registry;
+}
 
-  return macros;
+static bool matches(const Macro *macro, const std::vector<Expression> &args)
+{
+  if (macro->varargs && args.size() < macro->vargs.size() - 1) {
+    return false; // Insufficient arguments, even with empty last arg.
+  } else if (!macro->varargs && args.size() < macro->vargs.size()) {
+    return false; // Insufficient arguments, no varargs.
+  }
+  for (size_t i = 0; i < macro->vargs.size() && i < args.size(); i++) {
+    if ((macro->vargs[i].is<Map>() && !args[i].is<Map>()) ||
+        (macro->vargs[i].is<Variable>() && !args[i].is<Variable>())) {
+      return false; // Incompatible arguments.
+    }
+  }
+  if (args.size() > macro->vargs.size()) {
+    return macro->varargs; // Only okay if varargs is true.
+  }
+  return true; // It matches.
+}
+
+const Macro *MacroRegistry::lookup(const std::string &name,
+                                   const std::vector<Expression> &args) const
+{
+  const auto it = macros_.find(name);
+  if (it == macros_.end()) {
+    return nullptr; // Nothing with this name.
+  }
+  for (const auto *m : it->second) {
+    if (matches(m, args)) {
+      return m;
+    }
+  }
+  return nullptr; // Nothing matching.
 }
 
 class MacroExpander : public Visitor<MacroExpander> {
 public:
   MacroExpander(ASTContext &ast,
-                const std::unordered_map<std::string, Macro *> &macros,
-                std::string macro_name = "",
-                std::vector<std::string> &&macro_stack = {});
+                const MacroRegistry &registry,
+                std::vector<const Macro *> &stack,
+                int depth = 0)
+      : ast_(ast), registry_(registry), stack_(stack), depth_(depth) {};
 
   using Visitor<MacroExpander>::visit;
 
   void visit(AssignVarStatement &assignment);
   void visit(Variable &var);
-  void visit(VariableAddr &var_addr);
   void visit(VarDeclStatement &decl);
   void visit(Map &map);
   void visit(Expression &expr);
-  // We can't add extra params with default values to the standard `visit`
-  // because it then becomes ambiguous
-  void replace_macro_call(Expression &expr, bool block_ok = false);
   void visit(Statement &stmt);
 
-  std::optional<BlockExpr *> expand(Macro &macro, Call &call);
-  std::optional<BlockExpr *> expand(Macro &macro, Identifier &ident);
-  std::optional<BlockExpr *> make_block_expr(Macro &macro,
+  // We can't add extra params with default values to the standard `visit`
+  // because it then becomes ambiguous.
+  void replace_macro_call(Expression &expr, bool block_ok = false);
+
+  std::optional<BlockExpr *> expand(const Macro &macro, Call &call);
+  std::optional<BlockExpr *> expand(const Macro &macro, Identifier &ident);
+  std::optional<BlockExpr *> make_block_expr(const Macro &macro,
                                              StatementList &stmt_list,
                                              const Location &loc);
 
+  // Set when recursion is avoided.
+  bool skipped_recursion()
+  {
+    return skipped_recursion_;
+  }
+
 private:
   ASTContext &ast_;
-  const std::unordered_map<std::string, Macro *> &macros_;
-  const std::string macro_name_;
+  const MacroRegistry &registry_;
+  std::vector<const Macro *> stack_;
+  const int depth_;
+  bool skipped_recursion_ = false;
 
-  bool is_recursive_call(const std::string &macro_name, const Node &node);
+  bool is_top_level();
   std::string get_new_var_ident(std::string original_ident);
-  bool is_top_level()
-  {
-    return macro_stack_.empty();
-  }
 
   // Maps of macro map/var names -> callsite map/var names
   std::unordered_map<std::string, std::string> maps_;
   std::unordered_map<std::string, std::string> vars_;
   std::unordered_set<std::string> renamed_vars_;
   std::unordered_map<std::string, Expression> passed_exprs_;
-  const std::vector<std::string> macro_stack_;
 };
-
-MacroExpander::MacroExpander(
-    ASTContext &ast,
-    const std::unordered_map<std::string, Macro *> &macros,
-    std::string macro_name,
-    std::vector<std::string> &&macro_stack)
-    : ast_(ast),
-      macros_(macros),
-      macro_name_(std::move(macro_name)),
-      macro_stack_(std::move(macro_stack))
-{
-}
 
 void MacroExpander::visit(AssignVarStatement &assignment)
 {
@@ -115,7 +130,7 @@ void MacroExpander::visit(AssignVarStatement &assignment)
 
   auto *var = assignment.var();
 
-  // Don't rename any variable passed by reference
+  // Don't rename any variable passed by reference.
   if (!vars_.contains(var->ident)) {
     renamed_vars_.insert(var->ident);
   }
@@ -151,11 +166,6 @@ void MacroExpander::visit(Variable &var)
   }
 }
 
-void MacroExpander::visit(VariableAddr &var_addr)
-{
-  visit(var_addr.var);
-}
-
 void MacroExpander::visit(Map &map)
 {
   if (is_top_level()) {
@@ -168,23 +178,6 @@ void MacroExpander::visit(Map &map)
     map.addError() << "Unhygienic access to map: " << map.ident
                    << ". Maps must be passed into the macro as arguments.";
   }
-}
-
-bool MacroExpander::is_recursive_call(const std::string &macro_name,
-                                      const Node &node)
-{
-  for (size_t i = 0; i < macro_stack_.size(); ++i) {
-    if (macro_stack_.at(i) == macro_name) {
-      auto &err = node.addError();
-      err << "Recursive macro call detected. Call chain: ";
-      for (; i < macro_stack_.size(); ++i) {
-        err << macro_stack_.at(i) << " > ";
-      }
-      err << macro_name;
-      return true;
-    }
-  }
-  return false;
 }
 
 void MacroExpander::replace_macro_call(Expression &expr, bool block_ok)
@@ -203,49 +196,52 @@ void MacroExpander::replace_macro_call(Expression &expr, bool block_ok)
       expr = it->second;
       // Create a new expander because we're visiting an expression passed into
       // the macro so it's not part of the surounding macro code and therefore
-      // variables, maps, and idents in this expression shouldn't be modified or
-      // checked
-      MacroExpander expander(ast_, macros_);
+      // variables, maps, and idents in this expression shouldn't be modified.
+      MacroExpander expander(ast_, registry_, stack_, depth_);
       expander.visit(expr);
       return;
     }
   }
-
-  const std::string &name = ident ? ident->ident : call->func;
-
   if (call) {
-    for (auto &varg : call->vargs) {
-      visit(varg);
-    }
+    visit(call->vargs);
   }
 
-  if (auto it = macros_.find(name); it != macros_.end()) {
-    Macro *macro = it->second;
+  std::vector<Expression> empty;
+  const std::string &name = ident ? ident->ident : call->func;
+  const std::vector<Expression> &args = ident ? empty : call->vargs;
 
-    if (is_recursive_call(name, expr.node())) {
-      return;
-    }
+  auto macro = registry_.lookup(name, args);
+  if (macro == nullptr) {
+    // This is not a matching macro.
+    return;
+  }
+  if (std::find(stack_.begin(), stack_.end(), macro) != stack_.end()) {
+    // We cannot expand recursively at this time, however this may happen
+    // later. We leave this as is, and allow this to persist as either an
+    // ident or a call that has not been resolved and expanded.
+    skipped_recursion_ = true;
+    return;
+  }
 
-    if (std::holds_alternative<Block *>(macro->block) && !block_ok) {
-      auto &err = expr.node().addError();
-      err << "Macro '" << name
-          << "' expanded to a block instead of a block "
-             "expression. Try removing the semicolon from the "
-             "end of the last statement in the macro body.";
-      return;
-    }
+  // Ensure that this is a valid expression.
+  if (std::holds_alternative<Block *>(macro->block) && !block_ok) {
+    auto &err = expr.node().addError();
+    err << "Macro '" << name
+        << "' expanded to a block instead of a block "
+           "expression. Try removing the semicolon from the "
+           "end of the last statement in the macro body.";
+    return;
+  }
 
-    auto next_macro_stack = macro_stack_;
-    next_macro_stack.push_back(name);
-
-    auto r =
-        ident ? MacroExpander(ast_, macros_, name, std::move(next_macro_stack))
-                    .expand(*macro, *ident)
-              : MacroExpander(ast_, macros_, name, std::move(next_macro_stack))
-                    .expand(*macro, *call);
-    if (r) {
-      expr.value = *r;
-    }
+  // Expand this macro.
+  stack_.push_back(macro);
+  auto r = ident ? MacroExpander(ast_, registry_, stack_, depth_)
+                       .expand(*macro, *ident)
+                 : MacroExpander(ast_, registry_, stack_, depth_)
+                       .expand(*macro, *call);
+  stack_.pop_back();
+  if (r) {
+    expr.value = *r;
   }
 }
 
@@ -265,13 +261,23 @@ void MacroExpander::visit(Statement &stmt)
   replace_macro_call(expr_stmt->expr, true);
 }
 
+bool MacroExpander::is_top_level()
+{
+  return stack_.empty();
+}
+
 std::string MacroExpander::get_new_var_ident(std::string original_ident)
 {
-  return std::string("$$") + macro_name_ + std::string("_") + original_ident;
+  // This is a name like $$foo_0_x, where `x` is the original name,
+  // `foo` is the macro name, and `0` is the depth of the call.
+  assert(!is_top_level());
+  const auto *macro = stack_.back();
+  return std::string("$$") + macro->name + std::string("_") +
+         std::to_string(depth_) + "_" + original_ident;
 }
 
 std::optional<BlockExpr *> MacroExpander::make_block_expr(
-    Macro &macro,
+    const Macro &macro,
     StatementList &stmt_list,
     const Location &loc)
 {
@@ -310,81 +316,85 @@ std::optional<BlockExpr *> MacroExpander::make_block_expr(
   return std::nullopt;
 }
 
-std::optional<BlockExpr *> MacroExpander::expand(Macro &macro, Call &call)
+std::optional<BlockExpr *> MacroExpander::expand(const Macro &macro, Call &call)
 {
-  if (macro.vargs.size() != call.vargs.size()) {
-    call.addError() << "Call to macro has wrong number arguments. Expected: "
-                    << macro.vargs.size() << " but got " << call.vargs.size();
-    return std::nullopt;
+  // This will only match if the arguments are correct. If the macro accepts
+  // varargs, then we need to wrap the final arguments into a tuple
+  // expression.
+  //
+  // Note that this may be an empty tuple which is passed to the macro also.
+  if (macro.varargs) {
+    std::vector<Expression> tuple;
+    size_t norm_args = macro.vargs.size() - 1;
+    while (call.vargs.size() > norm_args) {
+      tuple.push_back(call.vargs.back());
+      call.vargs.pop_back();
+    }
+    std::reverse(tuple.begin(), tuple.end());
+    call.vargs.push_back(Expression(
+        ast_.make_node<Tuple>(std::move(tuple), Location(call.loc))));
   }
 
   StatementList stmt_list;
-
   for (size_t i = 0; i < macro.vargs.size(); i++) {
     if (auto *mident = macro.vargs.at(i).as<Identifier>()) {
       if (call.vargs.at(i).is<Variable>() || call.vargs.at(i).is<Map>()) {
         // Wrap variables and maps in a BlockExpr so their value is used
         // and they won't be mutated.
         passed_exprs_[mident->ident] = ast_.make_node<BlockExpr>(
-            StatementList({}),
-            clone(ast_, call.vargs.at(i), call.vargs.at(i).loc()),
-            Location(call.loc));
+            StatementList({}), call.vargs.at(i), Location(call.loc));
       } else {
-        passed_exprs_[mident->ident] = clone(ast_,
-                                             call.vargs.at(i),
-                                             call.vargs.at(i).loc());
+        passed_exprs_[mident->ident] = call.vargs.at(i);
       }
     } else if (auto *mvar = macro.vargs.at(i).as<Variable>()) {
-      if (auto *cvar = call.vargs.at(i).as<Variable>()) {
-        vars_[mvar->ident] = cvar->ident;
-      } else if (call.vargs.at(i).is<Map>()) {
-        call.addError()
-            << "Mismatched arg to macro call. Macro expects a variable for arg "
-            << mvar->ident << " but got a map.";
-      } else {
-        call.addError()
-            << "Mismatched arg to macro call. Macro expects a variable for arg "
-            << mvar->ident << " but got an expression.";
-      }
+      auto *cvar = call.vargs.at(i).as<Variable>();
+      assert(cvar != nullptr); // Required by lookup.
+      vars_[mvar->ident] = cvar->ident;
     } else if (auto *mmap = macro.vargs.at(i).as<Map>()) {
-      if (auto *cmap = call.vargs.at(i).as<Map>()) {
-        maps_[mmap->ident] = cmap->ident;
-      } else if (call.vargs.at(i).is<Variable>()) {
-        call.addError()
-            << "Mismatched arg to macro call. Macro expects a map for arg "
-            << mmap->ident << " but got a variable.";
-      } else {
-        call.addError()
-            << "Mismatched arg to macro call. Macro expects a map for arg "
-            << mmap->ident << " but got an expression.";
-      }
+      auto *cmap = call.vargs.at(i).as<Map>();
+      assert(cmap != nullptr); // Required by lookup.
+      maps_[mmap->ident] = cmap->ident;
     }
   }
 
   return make_block_expr(macro, stmt_list, call.loc);
 }
 
-std::optional<BlockExpr *> MacroExpander::expand(Macro &macro,
+std::optional<BlockExpr *> MacroExpander::expand(const Macro &macro,
                                                  Identifier &ident)
 {
-  if (!macro.vargs.empty()) {
-    ident.addError() << "Call to macro has no number arguments. Expected: "
-                     << macro.vargs.size();
-    return std::nullopt;
+  // It is possible that this is a vararg macro, in which case we must
+  // construct the empty tuple type that is passed here.
+  if (macro.varargs) {
+    auto *mident = macro.vargs.back().as<Identifier>();
+    assert(mident != nullptr);
+    passed_exprs_[mident->ident] = ast_.make_node<Tuple>(ExpressionList({}),
+                                                         Location(ident.loc));
   }
 
   StatementList stmt_list;
   return make_block_expr(macro, stmt_list, ident.loc);
 }
 
+bool expand(ASTContext &ast,
+            MacroRegistry &registry,
+            Expression &expr,
+            int depth)
+{
+  std::vector<const Macro *> stack;
+  MacroExpander expander(ast, registry, stack, depth);
+  expander.visit(expr);
+  return expander.skipped_recursion();
+}
+
 Pass CreateMacroExpansionPass()
 {
   auto fn = [](ASTContext &ast) {
-    auto macros = collect_macros(ast);
-    if (ast.diagnostics().ok()) {
-      MacroExpander expander(ast, macros);
-      expander.visit(ast.root);
-    }
+    auto macros = MacroRegistry::create(ast);
+    std::vector<const Macro *> stack;
+    MacroExpander expander(ast, macros, stack);
+    expander.visit(ast.root);
+    return macros;
   };
 
   return Pass::create("MacroExpansion", fn);
