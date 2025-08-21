@@ -645,16 +645,4 @@ std::set<std::string> ProbeMatcher::expand_probetype_userspace(
     return { probe_type };
 }
 
-void ProbeMatcher::list_structs(const std::string& search)
-{
-  auto structs = bpftrace_->btf_->get_all_structs();
-
-  std::string search_input = search;
-  // If verbose is on, structs will contain full definitions
-  if (bt_verbose)
-    search_input += " *{*}*";
-
-  for (const auto& match : get_matches_in_set(search_input, structs))
-    std::cout << match << std::endl;
-}
 } // namespace bpftrace
