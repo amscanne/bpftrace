@@ -31,6 +31,7 @@
 #include "ast/passes/printer.h"
 #include "ast/passes/probe_prune.h"
 #include "ast/passes/recursion_check.h"
+#include "ast/passes/register_providers.h"
 #include "ast/passes/resource_analyser.h"
 #include "ast/passes/semantic_analyser.h"
 #include "ast/passes/type_system.h"
@@ -675,21 +676,6 @@ bool is_colorize()
   }
 }
 
-static ast::ASTContext buildListProgram(const std::string& search)
-{
-  ast::ASTContext ast("listing", search);
-  auto* ap = ast.make_node<ast::AttachPoint>(search, true, location());
-  auto* probe = ast.make_node<ast::Probe>(ast::AttachPointList({ ap }),
-                                          nullptr,
-                                          location());
-  ast.root = ast.make_node<ast::Program>("",
-                                         nullptr,
-                                         ast::ImportList(),
-                                         ast::RootStatements({ probe }),
-                                         location());
-  return ast;
-}
-
 int main(int argc, char* argv[])
 {
   Log::get().set_colorize(is_colorize());
@@ -775,41 +761,26 @@ int main(int argc, char* argv[])
           << args.search << "\' as a search pattern.";
     }
 
-    bool is_search_a_type = is_type_name(args.search);
-
-    // To list tracepoints, we construct a synthetic AST and then expand the
-    // probe. The raw contents of the program are the initial search provided.
-    ast = buildListProgram(is_search_a_type ? FULL_SEARCH : args.search);
-    ast::CDefinitions no_c_defs; // No external C definitions may be used.
-    ast::TypeMetadata no_types;  // No external types may be used.
-
-    // Parse and expand all the attachpoints. We don't need to descend into
-    // the actual driver here, since we know that the program is already
-    // formed.
-    auto pmresult = ast::PassManager()
-                        .put(ast)
-                        .put(bpftrace)
-                        .put(no_c_defs)
-                        .put(no_types)
-                        .add(ast::CreateParseAttachpointsPass(args.listing))
-                        .add(CreateParseBTFPass())
-                        .add(ast::CreateMapSugarPass())
-                        .add(ast::CreateNamedParamsPass())
-                        .add(ast::CreateSemanticPass(args.listing))
-                        .run();
-
-    if (!pmresult) {
-      std::cerr << pmresult.takeError() << "\n";
-      return 2;
-    } else if (!ast.diagnostics().ok()) {
-      ast.diagnostics().emit(std::cerr);
-      return 1;
+    if (args.search.starts_with("struct ") ||
+        args.search.starts_with("union ") || args.search.starts_with("enum ")) {
+      LOG(WARNING) << "The search pattern provided looks vaguely like a type. "
+                      "Since types are determined by probes, type listing is "
+                      "no longer supported. You can see type information from "
+                      "the kernel directly by using:\n"
+                   << "  bpftool btf dump file /sys/kernel/btf/vmlinux format c"
     }
 
-    if (is_search_a_type) {
-      bpftrace.probe_matcher_->list_structs(args.search);
-    } else {
-      bpftrace.probe_matcher_->list_probes(ast.root);
+    // Registers all known providers and extract the registry.
+    auto ok = ast::PassManager().add(ast::CreateRegisterProvidersPass())).run();
+    if (!ok) {
+      // This should not fail.
+      LOG(BUG) << ok.takeError();
+    }
+
+    // List all matching probes.
+    auto& registry = ok->get<ProviderRegistry>();
+    for (const auto& str : registry.get_all_matching(args.search)) {
+      std::cout << str << std::endl;
     }
 
     return 0;
