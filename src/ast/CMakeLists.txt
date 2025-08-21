@@ -38,6 +38,7 @@ add_library(ast STATIC
   passes/probe_expansion.cpp
   passes/probe_prune.cpp
   passes/resource_analyser.cpp
+  passes/register_providers.cpp
   passes/semantic_analyser.cpp
   passes/simplify_types.cpp
   passes/codegen_llvm.cpp
