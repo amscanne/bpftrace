@@ -5,8 +5,6 @@
 #include <optional>
 #include <string>
 
-#include "btf.h"
-
 namespace bpftrace {
 
 #define DEFINE_HELPER_TEST(name, progtype)                                     \

@@ -20,13 +20,11 @@ add_dependencies(compiler_core parser)
 
 add_library(runtime STATIC
   async_action.cpp
-  attached_probe.cpp
   bpffeature.cpp
   bpftrace.cpp
   bpfbytecode.cpp
   bpfmap.cpp
   bpfprogram.cpp
-  btf.cpp
   child.cpp
   config.cpp
   disasm.cpp
@@ -36,7 +34,6 @@ add_library(runtime STATIC
   kernel_types.cpp
   log.cpp
   probe_matcher.cpp
-  probe_types.cpp
   procmon.cpp
   run_bpftrace.cpp
   usdt.cpp

@@ -19,7 +19,6 @@
 #include <unistd.h>
 #include <zlib.h>
 
-#include "btf.h"
 #include "debugfs/debugfs.h"
 #include "log.h"
 #include "tracefs/tracefs.h"

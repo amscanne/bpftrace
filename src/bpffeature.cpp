@@ -14,7 +14,6 @@
 #include <unistd.h>
 
 #include "bpf_assembler.h"
-#include "btf.h"
 #include "dwarf_parser.h"
 #include "tracefs/tracefs.h"
 #include "util/kernel.h"

@@ -54,6 +54,7 @@
 #include "globalvars.h"
 #include "log.h"
 #include "map_info.h"
+#include "providers/provider.h"
 #include "required_resources.h"
 #include "types.h"
 #include "util/bpf_names.h"
@@ -208,7 +209,7 @@ public:
                        CDefinitions &c_definitions,
                        NamedParamDefaults &named_param_defaults,
                        LLVMContext &llvm_ctx,
-                       ExpansionResult &expansions);
+                       ReducedAttachPoints &expansions);
 
   using Visitor<CodegenLLVM, ScopedExpr>::visit;
   ScopedExpr visit(Integer &integer);
@@ -251,7 +252,6 @@ public:
   std::unique_ptr<llvm::Module> compile();
 
 private:
-  int getNextIndexForProbe();
   ScopedExpr createLogicalAnd(Binop &binop);
   ScopedExpr createLogicalOr(Binop &binop);
 
@@ -281,6 +281,7 @@ private:
   void generate_global_vars(const RequiredResources &resources,
                             const ::bpftrace::Config &bpftrace_config);
 
+<<<<<<< HEAD
   // Generate a probe for `current_attach_point_`
   // This is used to progress state (eg. asyncids) in this class instance for
   // invalid probes that still need to be visited.
@@ -288,6 +289,8 @@ private:
                      const std::string &name,
                      FunctionType *func_type);
 
+=======
+>>>>>>> 72046fd7 (inprog)
   // Generate a probe and register it to the BPFtrace class.
   void add_probe(AttachPoint &ap, Probe &probe, FunctionType *func_type);
 
@@ -325,7 +328,6 @@ private:
   //
   // If null, return value will depend on current attach point (void in subprog)
   void createRet(Value *value = nullptr);
-  int getReturnValueForProbe(ProbeType probe_type);
 
   template <typename T>
   ScopedExpr getIntegerLiteral(size_t size, T value);
@@ -410,7 +412,7 @@ private:
   CDefinitions &c_definitions_;
   NamedParamDefaults &named_param_defaults_;
   LLVMContext &llvm_ctx_;
-  ExpansionResult &expansions_;
+  ReducedAttachPoints &expansions_;
   std::unique_ptr<Module> module_;
   AsyncIds async_ids_;
 
@@ -422,12 +424,11 @@ private:
     return module_->getDataLayout();
   }
 
+  int index_;
   Value *ctx_;
   llvm::DILocalScope *scope_ = nullptr;
   AttachPoint *current_attach_point_ = nullptr;
   std::string probefull_;
-  uint64_t probe_count_ = 0;
-  int next_probe_index_ = 1;
   bool inside_subprog_ = false;
 
   std::vector<Node *> scope_stack_;
@@ -463,7 +464,7 @@ CodegenLLVM::CodegenLLVM(ASTContext &ast,
                          CDefinitions &c_definitions,
                          NamedParamDefaults &named_param_defaults,
                          LLVMContext &llvm_ctx,
-                         ExpansionResult &expansions)
+                         ReducedAttachPoints &expansions)
     : ast_(ast),
       bpftrace_(bpftrace),
       c_definitions_(c_definitions),
@@ -742,64 +743,44 @@ ScopedExpr CodegenLLVM::visit(Builtin &builtin)
     b_.CreateMemsetBPF(buf, b_.getInt8(0), builtin.builtin_type.GetSize());
     b_.CreateGetCurrentComm(buf, builtin.builtin_type.GetSize(), builtin.loc);
     return ScopedExpr(buf, [this, buf]() { b_.CreateLifetimeEnd(buf); });
-  } else if (builtin.ident == "__builtin_func") {
-    // fentry/fexit probes do not have access to registers, so require use of
-    // the get_func_ip helper to get the instruction pointer.
-    //
-    // For [ku]retprobes, the IP register will not be pointing to the function
-    // we want to trace. It may point to a kernel trampoline, or it may point to
-    // the caller of the traced function, as it fires after the "ret"
-    // instruction has executed.
-    //
-    // The get_func_ip helper resolves these issues for us.
-    //
-    // But do not use the it for non-ret [ku]probes (which can be used with
-    // offsets), as the helper will fail for probes placed within a function
-    // (not at the entry).
-    Value *value = nullptr;
-    auto probe_type = probetype(current_attach_point_->provider);
-    if (probe_type == ProbeType::fentry || probe_type == ProbeType::fexit ||
-        probe_type == ProbeType::kretprobe ||
-        probe_type == ProbeType::uretprobe) {
-      value = b_.CreateGetFuncIp(ctx_, builtin.loc);
-    } else {
-      value = b_.CreateRegisterRead(ctx_, builtin.ident);
+  } else if (!builtin.ident.compare(0, 4, "sarg") &&
+             builtin.ident.size() == 5 && builtin.ident.at(4) >= '0' &&
+             builtin.ident.at(4) <= '9') {
+    auto sp_offset = arch::Host::register_to_pt_regs_offset(
+        arch::Host::sp_value());
+    if (!sp_offset) {
+      builtin.addError() << "no stack offset available";
+      return ScopedExpr(b_.getInt64(0));
     }
+    int arg_num = atoi(builtin.ident.substr(4).c_str());
+    Value *sp = b_.CreateRegisterRead(ctx_, sp_offset.value(), "reg_sp");
+    AllocaInst *dst = b_.CreateAllocaBPF(builtin.builtin_type, builtin.ident);
 
-    if (builtin.builtin_type.IsUsymTy()) {
-      value = b_.CreateUSym(value, get_probe_id(), builtin.loc);
-      return ScopedExpr(value,
-                        [this, value]() { b_.CreateLifetimeEnd(value); });
-    }
-    return ScopedExpr(value);
-  } else if (builtin.is_argx() || builtin.ident == "__builtin_retval") {
-    auto probe_type = probetype(current_attach_point_->provider);
+    // Pointer width is used when calculating the SP offset and the number of
+    // bytes to read from stack for each argument. We pass a pointer SizedType
+    // to CreateProbeRead to make sure it uses the correct read size while
+    // keeping builtin.type an int64.
+    size_t arg_width = b_.getPointerStorageTy()->getIntegerBitWidth() / 8;
+    SizedType arg_type = CreatePointer(CreateInt8(),
+                                       builtin.builtin_type.GetAS());
+    assert(builtin.builtin_type.GetSize() == arg_type.GetSize());
 
-    if (builtin.builtin_type.is_funcarg) {
-      return ScopedExpr(
-          b_.CreateKFuncArg(ctx_, builtin.builtin_type, builtin.ident));
-    }
-
-    Value *value = nullptr;
-    if (builtin.is_argx() && probe_type == ProbeType::rawtracepoint)
-      value = b_.CreateRawTracepointArg(ctx_, builtin.ident);
-    else
-      value = b_.CreateRegisterRead(ctx_, builtin.ident);
-
-    if (builtin.builtin_type.IsUsymTy()) {
-      value = b_.CreateUSym(value, get_probe_id(), builtin.loc);
-      return ScopedExpr(value,
-                        [this, value]() { b_.CreateLifetimeEnd(value); });
-    }
-    return ScopedExpr(value);
-
-  } else if (builtin.ident == "args" &&
-             probetype(current_attach_point_->provider) == ProbeType::uprobe) {
-    // uprobe args record is built on stack
-    return ScopedExpr(b_.CreateUprobeArgsRecord(ctx_, builtin.builtin_type));
-  } else if (builtin.ident == "args" || builtin.ident == "ctx") {
-    // ctx is undocumented builtin: for debugging.
-    return ScopedExpr(ctx_);
+    Value *src = b_.CreateAdd(sp,
+                              b_.getInt64((arg_num * arg_width) +
+                                          arch::Host::argument_stack_offset()));
+    b_.CreateProbeRead(dst, arg_type, src, builtin.loc);
+    Value *expr = b_.CreateLoad(b_.GetType(builtin.builtin_type), dst);
+    b_.CreateLifetimeEnd(dst);
+    return ScopedExpr(expr);
+  } else if (builtin.ident == "__builtin_probe") {
+    auto probe_str = probefull_;
+    probe_str.resize(builtin.builtin_type.GetSize() - 1);
+    auto *probe_var = llvm::dyn_cast<GlobalVariable>(module_->getOrInsertGlobal(
+        probe_str,
+        ArrayType::get(b_.getInt8Ty(), builtin.builtin_type.GetSize())));
+    probe_var->setInitializer(
+        ConstantDataArray::getString(module_->getContext(), probe_str));
+    return ScopedExpr(probe_var);
   } else if (builtin.ident == "__builtin_cpid") {
     pid_t cpid = bpftrace_.child_->pid();
     if (cpid < 1) {
@@ -1558,6 +1539,7 @@ ScopedExpr CodegenLLVM::visit(Call &call)
                                             offset.value(),
                                             call.func + "_" + reg_name));
   } else if (call.func == "printf") {
+#if 0
     // We overload printf call for iterator probe's seq_printf helper.
     if (!inside_subprog_ &&
         probetype(current_attach_point_->provider) == ProbeType::iter) {
@@ -1607,6 +1589,7 @@ ScopedExpr CodegenLLVM::visit(Call &call)
                          b_.getInt32(data_size),
                          call.loc);
       return ScopedExpr();
+<<<<<<< HEAD
 
     } else {
       auto found_id = bpftrace_.resources.printf_args_id_map.find(&call);
@@ -1622,6 +1605,7 @@ ScopedExpr CodegenLLVM::visit(Call &call)
       return ScopedExpr();
     }
   } else if (call.func == "errorf" || call.func == "warnf") {
+<<<<<<< HEAD
     auto found_id = bpftrace_.resources.printf_args_id_map.find(&call);
     if (found_id == bpftrace_.resources.printf_args_id_map.end()) {
       LOG(BUG) << "No id found for errorf/warnf call";
@@ -1632,6 +1616,31 @@ ScopedExpr CodegenLLVM::visit(Call &call)
         std::get<1>(bpftrace_.resources.printf_args[found_id->second]),
         call.func,
         async_action::AsyncAction::printf);
+=======
+=======
+  } else {
+#endif
+    auto async_id = async_ids_.printf();
+    createFormatStringCall(call,
+                           async_id,
+                           std::get<1>(
+                               bpftrace_.resources.printf_args[async_id]),
+                           "printf",
+                           async_action::AsyncAction::printf);
+    return ScopedExpr();
+#if 0
+  }
+#endif
+  } else if (call.func == "errorf") {
+>>>>>>> 72046fd7 (inprog)
+    auto async_id = async_ids_.printf();
+    createFormatStringCall(call,
+                           async_id,
+                           std::get<1>(
+                               bpftrace_.resources.printf_args[async_id]),
+                           call.func,
+                           async_action::AsyncAction::printf);
+>>>>>>> 27850968 (inprog)
     return ScopedExpr();
   } else if (call.func == "debugf") {
     auto found_id = bpftrace_.resources.bpf_print_fmts_id_map.find(&call);
@@ -2494,6 +2503,7 @@ ScopedExpr CodegenLLVM::visit(FieldAccess &acc)
   auto scoped_arg = visit(acc.expr);
 
   assert(type.IsRecordTy());
+<<<<<<< HEAD
 
   if (type.is_funcarg) {
     auto probe_type = probetype(current_attach_point_->provider);
@@ -2510,6 +2520,17 @@ ScopedExpr CodegenLLVM::visit(FieldAccess &acc)
                                          acc.field_type);
     }
   }
+=======
+  bool is_ctx = type.IsCtxAccess();
+
+  // This overwrites the stored type!
+  type = CreateRecord(cast_type, bpftrace_.structs.Lookup(cast_type));
+  if (is_ctx)
+    type.MarkCtxAccess();
+  // Restore the addrspace info
+  // struct MyStruct { const int* a; };  $s = (struct MyStruct *)arg0;  $s->a
+  type.SetAS(addrspace);
+>>>>>>> 72046fd7 (inprog)
 
   const auto &field = type.GetField(acc.field);
 
@@ -2900,12 +2921,10 @@ ScopedExpr CodegenLLVM::visit(AssignMapStatement &assignment)
   if (shouldBeInBpfMemoryAlready(expr_type)) {
     b_.CreateMemcpyBPF(value, expr, expr_type.GetSize());
   } else if (map_type.IsRecordTy() || map_type.IsArrayTy()) {
-    if (!expr_type.is_internal) {
-      // expr currently contains a pointer to the struct or array
-      // We now want to read the entire struct/array in so we can save it
-      b_.CreateProbeRead(
-          value, map_type, expr, assignment.loc, expr_type.GetAS());
-    }
+    // expr currently contains a pointer to the struct or array
+    // We now want to read the entire struct/array in so we can save it
+    b_.CreateProbeRead(
+        value, map_type, expr, assignment.loc, expr_type.GetAS());
   } else {
     b_.CreateStore(expr, value);
   }
@@ -3109,6 +3128,7 @@ ScopedExpr CodegenLLVM::visit(BlockExpr &block_expr)
   return value;
 }
 
+<<<<<<< HEAD
 void CodegenLLVM::generateProbe(Probe &probe,
                                 const std::string &name,
                                 FunctionType *func_type)
@@ -3161,6 +3181,8 @@ void CodegenLLVM::add_probe(AttachPoint &ap,
   current_attach_point_ = nullptr;
 }
 
+=======
+>>>>>>> 72046fd7 (inprog)
 ScopedExpr CodegenLLVM::visit(Subprog &subprog)
 {
   scope_stack_.push_back(&subprog);
@@ -3227,6 +3249,7 @@ void CodegenLLVM::createRet(Value *value)
       b_.CreateRet(b_.getInt64(ret_val));
     }
   }
+<<<<<<< HEAD
 }
 
 int CodegenLLVM::getReturnValueForProbe(ProbeType probe_type)
@@ -3264,14 +3287,37 @@ int CodegenLLVM::getReturnValueForProbe(ProbeType probe_type)
   }
   LOG(BUG) << "Unknown probetype";
   return 0;
+=======
+  b_.CreateRet(b_.getInt64(0));
+>>>>>>> 72046fd7 (inprog)
 }
 
 ScopedExpr CodegenLLVM::visit(Probe &probe)
 {
-  FunctionType *func_type = FunctionType::get(b_.getInt64Ty(),
-                                              { b_.getPtrTy() }, // ctx
-                                              false);
+  auto &[_, attach_points] = expansions_.attach_points[&probe];
+  if (attach_points.empty()) {
+    LOG(BUG) << "Attachpoints are empty during codegen?";
+  }
 
+  // Extract the common information for this probe.
+  btf::Types no_types;
+  const auto ctx_type = attach_points[0]->context_type(no_types);
+  const auto prog_type = attach_points[0]->prog_type();
+  const std::string func_name = "probe_" + std::to_string(index_++);
+
+  FunctionType *func_type = FunctionType::get(b_.getInt64Ty(),
+                                              { b_.GetType(ctx_type) }, // ctx
+                                              false);
+  auto *func = llvm::Function::Create(
+      func_type, llvm::Function::ExternalLinkage, func_name, module_.get());
+  func->setSection(util::get_section_name(func_name));
+  func->addFnAttr(Attribute::NoUnwind);
+  scope_ = debug_.createProbeDebugInfo(*func);
+  BasicBlock *entry = BasicBlock::Create(module_->getContext(), "entry", func);
+  b_.SetInsertPoint(entry);
+  ctx_ = func->arg_begin();
+
+<<<<<<< HEAD
   // We begin by saving state that gets changed by the codegen pass, so we
   // can restore it for the next pass (printf_id_, time_id_).
   async_ids_.create_reset_ids();
@@ -3282,6 +3328,11 @@ ScopedExpr CodegenLLVM::visit(Probe &probe)
   add_probe(*current_attach_point_, probe, func_type);
 
   current_attach_point_ = nullptr;
+=======
+  variables_.clear();
+  auto scoped_block = visit(*probe.block);
+
+>>>>>>> 72046fd7 (inprog)
   return ScopedExpr();
 }
 
@@ -3292,11 +3343,6 @@ ScopedExpr CodegenLLVM::visit(Program &program)
   for (Probe *probe : program.probes)
     visit(probe);
   return ScopedExpr();
-}
-
-int CodegenLLVM::getNextIndexForProbe()
-{
-  return next_probe_index_++;
 }
 
 ScopedExpr CodegenLLVM::getMapKey(Map &map, Expression &key_expr)
@@ -4894,6 +4940,7 @@ Pass CreateLLVMInitPass()
 
 Pass CreateCompilePass()
 {
+<<<<<<< HEAD
   return Pass::create("compile",
                       [](ASTContext &ast,
                          [[maybe_unused]] ControlFlowChecked &control_flow,
@@ -4910,6 +4957,30 @@ Pass CreateCompilePass()
                                          expansions);
                         return CompiledModule(llvm.compile());
                       });
+=======
+  return Pass::create(
+      "compile",
+      [usdt_helper](ASTContext &ast,
+                    [[maybe_unused]] ControlFlowChecked &control_flow,
+                    BPFtrace &bpftrace,
+                    CDefinitions &c_definitions,
+                    NamedParamDefaults &named_param_defaults,
+                    CompileContext &ctx,
+                    ReducedAttachPoints &expansions) mutable {
+        USDTHelper default_usdt;
+        if (!usdt_helper) {
+          usdt_helper = std::ref(default_usdt);
+        }
+        CodegenLLVM llvm(ast,
+                         bpftrace,
+                         c_definitions,
+                         named_param_defaults,
+                         *ctx.context,
+                         usdt_helper->get(),
+                         expansions);
+        return CompiledModule(llvm.compile());
+      });
+>>>>>>> 72046fd7 (inprog)
 }
 
 Pass CreateLinkBitcodePass()

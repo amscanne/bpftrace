@@ -18,7 +18,6 @@
 #include "ast/context.h"
 #include "ast/passes/resolve_imports.h"
 #include "bpftrace.h"
-#include "btf.h"
 #include "clang_parser.h"
 #include "log.h"
 #include "stdlib/stdlib.h"

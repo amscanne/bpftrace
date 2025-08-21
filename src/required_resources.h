@@ -5,12 +5,12 @@
 #include <ostream>
 #include <string>
 #include <tuple>
-#include <unordered_set>
 #include <vector>
 
 #include <cereal/access.hpp>
 #include <cereal/types/variant.hpp>
 
+#include "ast/ast.h"
 #include "ast/location.h"
 #include "format_string.h"
 #include "globalvars.h"
@@ -213,6 +213,7 @@ public:
   globalvars::GlobalVars global_vars;
   bool using_skboutput = false;
 
+<<<<<<< HEAD
   // Probe metadata
   //
   // Probe metadata that codegen creates. Ideally ResourceAnalyser pass should
@@ -232,6 +233,8 @@ public:
            watchpoint_probes.size();
   }
 
+=======
+>>>>>>> 72046fd7 (inprog)
   // List of probes using userspace symbol resolution
   std::unordered_set<const ast::Probe *> probes_using_usym;
 
@@ -252,6 +255,7 @@ private:
             probe_ids,
             maps_info,
             global_vars,
+<<<<<<< HEAD
             using_skboutput,
             probes,
             signal_probes,
@@ -259,6 +263,9 @@ private:
             end_probes,
             test_probes,
             benchmark_probes);
+=======
+            using_skboutput);
+>>>>>>> 72046fd7 (inprog)
   }
 };
 

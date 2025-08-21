@@ -207,18 +207,4 @@ bool StructManager::Has(const std::string &name) const
   return struct_map_.contains(name);
 }
 
-const Field *StructManager::GetProbeArg(const ast::Probe &probe,
-                                        const std::string &arg_name)
-{
-  auto type_name = probe.args_typename();
-  if (!type_name) {
-    return nullptr; // Ambiguous.
-  }
-  auto args = Lookup(*type_name).lock();
-  if (!args || !args->HasField(arg_name))
-    return nullptr;
-
-  return &args->GetField(arg_name);
-}
-
 } // namespace bpftrace

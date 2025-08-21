@@ -1,5 +1,11 @@
+<<<<<<< HEAD
 #include "ast/passes/ap_probe_expansion.h"
+=======
+<<<<<<< HEAD
+>>>>>>> 72046fd7 (inprog)
 #include "ast/passes/attachpoint_passes.h"
+=======
+>>>>>>> 0c4403e6 (inprog)
 #include "ast/passes/clang_build.h"
 #include "ast/passes/codegen_llvm.h"
 #include "ast/passes/control_flow_analyser.h"
@@ -41,7 +47,11 @@ void gen_bytecode(const std::string &input, std::stringstream &out)
                 .put(no_c_defs)
                 .put(no_imports)
                 .add(CreateParsePass())
+<<<<<<< HEAD
                 .add(ast::CreateParseAttachpointsPass())
+=======
+                .add(ast::CreateResolveImportsPass())
+>>>>>>> 72046fd7 (inprog)
                 .add(ast::CreateControlFlowPass())
                 .add(ast::CreateProbeAndApExpansionPass())
                 .add(ast::CreateMacroExpansionPass())

@@ -36,11 +36,9 @@
 
 #include "ast/context.h"
 #include "async_action.h"
-#include "attached_probe.h"
 #include "bpfmap.h"
 #include "bpfprogram.h"
 #include "bpftrace.h"
-#include "btf.h"
 #include "log.h"
 #include "output/capture.h"
 #include "output/discard.h"
@@ -117,6 +115,7 @@ BPFtrace::~BPFtrace()
   close_pcaps();
 }
 
+<<<<<<< HEAD
 Probe BPFtrace::generateWatchpointSetupProbe(const ast::AttachPoint &ap,
                                              const ast::Probe &probe)
 {
@@ -203,6 +202,8 @@ int BPFtrace::num_probes() const
   return resources.num_probes();
 }
 
+=======
+>>>>>>> 72046fd7 (inprog)
 void BPFtrace::request_finalize()
 {
   finalize_ = true;
@@ -1433,7 +1434,8 @@ std::unordered_set<std::string> BPFtrace::get_raw_tracepoint_modules(
 
 const std::optional<struct stat> &BPFtrace::get_pidns_self_stat() const
 {
-  static std::optional<struct stat> pidns = []() -> std::optional<struct stat> {
+  static std::optional<struct stat> pidns = []() -> std::optional<struct stat>
+  {
     struct stat s;
     if (::stat("/proc/self/ns/pid", &s)) {
       if (errno == ENOENT)
@@ -1443,7 +1445,8 @@ const std::optional<struct stat> &BPFtrace::get_pidns_self_stat() const
           std::strerror(errno));
     }
     return s;
-  }();
+  }
+  ();
 
   return pidns;
 }

@@ -20,7 +20,6 @@
 #include "ast/passes/resolve_imports.h"
 #include "ast/passes/unstable_feature.h"
 #include "ast/passes/usdt_arguments.h"
-#include "btf.h"
 #include "driver.h"
 
 namespace bpftrace::ast {
@@ -42,16 +41,20 @@ inline std::vector<Pass> AllParsePasses(
   passes.emplace_back(CreateImportExternalScriptsPass());
   passes.emplace_back(CreateUnstableFeaturePass());
   passes.emplace_back(CreateDeprecatedPass());
-  passes.emplace_back(CreateParseAttachpointsPass());
-  passes.emplace_back(CreateCheckAttachpointsPass());
+
+  // Probes are expanded early.
+  passes.emplace_back(CreateProbeExpansionPass());
+
+  // Any transformations that rely on conditional internal imports should be
+  // placed here, and should be careful not to rely on control flow analysis.
   passes.emplace_back(CreateUSDTImportPass());
   passes.emplace_back(CreateImportInternalScriptsPass());
   passes.emplace_back(CreateControlFlowPass());
   passes.emplace_back(CreateMacroExpansionPass());
-  passes.emplace_back(CreateParseBTFPass());
-  passes.emplace_back(CreateProbeAndApExpansionPass());
-  passes.emplace_back(CreateArgsResolverPass());
-  passes.emplace_back(CreateFieldAnalyserPass());
+
+  // Past this point, the AST should not generally grow and will have builtins
+  // replaced, simplifications applied, types filled in, etc.
+  passes.emplace_back(CreateBuiltinsPass());
   passes.emplace_back(CreateClangParsePass(std::move(extra_flags)));
   passes.emplace_back(CreateFoldLiteralsPass());
   passes.emplace_back(CreateBuiltinsPass());

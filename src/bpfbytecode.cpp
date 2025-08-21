@@ -1,14 +1,10 @@
-#include "bpfbytecode.h"
-
 #include <algorithm>
 #include <cstring>
-#include <stdexcept>
 
-#include "ast/passes/named_param.h"
+#include "bpfbytecode.h"
 #include "bpftrace.h"
 #include "globalvars.h"
 #include "log.h"
-#include "util/bpf_names.h"
 #include "util/exceptions.h"
 #include "util/wildcard.h"
 
@@ -41,6 +37,15 @@ static std::optional<std::string> get_global_var_section_name(
 
 BpfBytecode::BpfBytecode(std::span<const std::byte> elf)
 {
+  // Store the original ELF data for serialization
+  elf_data_.assign(elf.begin(), elf.end());
+
+  // Initialize from the ELF data
+  init();
+}
+
+void BpfBytecode::init()
+{
   int log_level = 0;
   // In debug mode, show full verifier log.
   // In verbose mode, only show verifier log for failures.
@@ -53,12 +58,18 @@ BpfBytecode::BpfBytecode(std::span<const std::byte> elf)
   opts.kernel_log_level = static_cast<__u32>(log_level);
 
   bpf_object_ = std::unique_ptr<struct bpf_object, bpf_object_deleter>(
-      bpf_object__open_mem(elf.data(), elf.size(), &opts));
+      bpf_object__open_mem(elf_data_.data(), elf_data_.size(), &opts));
   if (!bpf_object_)
     LOG(BUG) << "The produced ELF is not a valid BPF object: "
              << std::strerror(errno);
 
   const auto section_names = globalvars::get_section_names();
+
+  // Clear existing state in case this is called during deserialization
+  maps_.clear();
+  maps_by_id_.clear();
+  programs_.clear();
+  section_names_to_global_vars_map_.clear();
 
   // Discover maps
   struct bpf_map *m;
@@ -80,6 +91,7 @@ BpfBytecode::BpfBytecode(std::span<const std::byte> elf)
   }
 }
 
+<<<<<<< HEAD
 const BpfProgram &BpfBytecode::getProgramForProbe(const Probe &probe) const
 {
   auto prog = programs_.find(
@@ -97,6 +109,8 @@ BpfProgram &BpfBytecode::getProgramForProbe(const Probe &probe)
       const_cast<const BpfBytecode *>(this)->getProgramForProbe(probe));
 }
 
+=======
+>>>>>>> 72046fd7 (inprog)
 void BpfBytecode::update_global_vars(BPFtrace &bpftrace,
                                      globalvars::GlobalVarMap &&global_var_vals)
 {
@@ -274,7 +288,7 @@ void BpfBytecode::load_progs(const RequiredResources &resources,
   throw util::FatalUserException("Loading BPF object(s) failed.");
 }
 
-void BpfBytecode::prepare_progs(const std::vector<Probe> &probes,
+void BpfBytecode::prepare_progs(const std::vector<ast::Probe> &probes,
                                 const BTF &btf,
                                 BPFfeature &feature,
                                 const Config &config)

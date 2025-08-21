@@ -24,8 +24,6 @@
 #include "collect_nodes.h"
 #include "config.h"
 #include "log.h"
-#include "probe_matcher.h"
-#include "probe_types.h"
 #include "types.h"
 #include "usdt.h"
 #include "util/paths.h"
@@ -210,6 +208,7 @@ private:
   NamedParamDefaults &named_param_defaults_;
   TypeMetadata &type_metadata_;
   const MacroRegistry &macro_registry_;
+  ExpandedAttachPoints &attach_points_;
 
   bool is_final_pass() const;
   bool is_first_pass() const;
@@ -267,6 +266,7 @@ private:
   void resolve_struct_type(SizedType &type, Node &node);
 
   AddrSpace find_addrspace(ProbeType pt);
+  void builtin_args_tracepoint(AttachPoint *attach_point, Builtin &builtin);
 
   void binop_ptr(Binop &op);
   void binop_int(Binop &op);
@@ -817,62 +817,32 @@ AddrSpace SemanticAnalyser::find_addrspace(ProbeType pt)
   return {}; // unreached
 }
 
+void SemanticAnalyser::builtin_args_tracepoint(AttachPoint *attach_point,
+                                               Builtin &builtin)
+{
+  std::string tracepoint_struct = TracepointFormatParser::get_struct_name(
+      *attach_point);
+  builtin.builtin_type = CreateRecord(
+      tracepoint_struct, bpftrace_.structs.Lookup(tracepoint_struct));
+  builtin.builtin_type.SetAS(
+      attach_point->target == "syscalls" ? AddrSpace::user : AddrSpace::kernel);
+  builtin.builtin_type.MarkCtxAccess();
+  builtin.builtin_type.is_tparg = true;
+}
+
 void SemanticAnalyser::visit(Builtin &builtin)
 {
   if (builtin.ident == "ctx") {
     auto *probe = get_probe(builtin, builtin.ident);
     if (probe == nullptr)
       return;
-    ProbeType pt = probetype(probe->attach_points[0]->provider);
-    bpf_prog_type bt = progtype(pt);
-    std::string func = probe->attach_points[0]->func;
-
-    for (auto *attach_point : probe->attach_points) {
-      ProbeType pt = probetype(attach_point->provider);
-      bpf_prog_type bt2 = progtype(pt);
-      if (bt != bt2)
-        builtin.addError()
-            << "ctx cannot be used in different BPF program types: "
-            << progtypeName(bt) << " and " << progtypeName(bt2);
+    auto &[provider, attach_point] = expanded_probes_.attach_points[probe];
+    auto ctx_type = attach_point->context_type();
+    if (!ctx_type) {
+      builtin.addError() << ctx_type.takeError();
+      return;
     }
-    switch (bt) {
-      case BPF_PROG_TYPE_KPROBE: {
-        auto record = bpftrace_.structs.Lookup("struct pt_regs");
-        if (!record.expired()) {
-          builtin.builtin_type = CreatePointer(
-              CreateRecord("struct pt_regs", record), AddrSpace::kernel);
-          builtin.builtin_type.MarkCtxAccess();
-        } else {
-          builtin.builtin_type = CreatePointer(CreateNone());
-        }
-        break;
-      }
-      case BPF_PROG_TYPE_TRACEPOINT:
-        builtin.addError() << "Use args instead of ctx in tracepoint";
-        break;
-      case BPF_PROG_TYPE_PERF_EVENT:
-        builtin.builtin_type = CreatePointer(
-            CreateRecord("struct bpf_perf_event_data",
-                         bpftrace_.structs.Lookup(
-                             "struct bpf_perf_event_data")),
-            AddrSpace::kernel);
-        builtin.builtin_type.MarkCtxAccess();
-        break;
-      case BPF_PROG_TYPE_TRACING:
-        if (pt == ProbeType::iter) {
-          std::string type = "struct bpf_iter__" + func;
-          builtin.builtin_type = CreatePointer(
-              CreateRecord(type, bpftrace_.structs.Lookup(type)),
-              AddrSpace::kernel);
-          builtin.builtin_type.MarkCtxAccess();
-        } else {
-          builtin.addError() << "invalid program type";
-        }
-        break;
-      default:
-        builtin.addError() << "invalid program type";
-        break;
-    }
+    builtin.builtin_type = compat_type(*ctx_type);
   } else if (builtin.ident == "pid" || builtin.ident == "tid") {
     builtin.builtin_type = CreateUInt32();
   } else if (builtin.ident == "nsecs" || builtin.ident == "__builtin_elapsed" ||
@@ -890,31 +860,6 @@ void SemanticAnalyser::visit(Builtin &builtin)
         CreateRecord("struct task_struct",
                      bpftrace_.structs.Lookup("struct task_struct")),
         AddrSpace::kernel);
-  } else if (builtin.ident == "__builtin_retval") {
-    auto *probe = get_probe(builtin, builtin.ident);
-    if (probe == nullptr)
-      return;
-    ProbeType type = probe->get_probetype();
-
-    if (type == ProbeType::kretprobe || type == ProbeType::uretprobe) {
-      builtin.builtin_type = CreateUInt64();
-    } else if (type == ProbeType::fentry || type == ProbeType::fexit) {
-      const auto *arg = bpftrace_.structs.GetProbeArg(*probe,
-                                                      RETVAL_FIELD_NAME);
-      if (arg) {
-        builtin.builtin_type = arg->type;
-      } else
-        builtin.addError() << "Can't find a field " << RETVAL_FIELD_NAME;
-    } else {
-      builtin.addError()
-          << "The retval builtin can only be used with 'kretprobe' and "
-          << "'uretprobe' and 'fentry' probes"
-          << (type == ProbeType::tracepoint ? " (try to use args.ret instead)"
-                                            : "");
-    }
-    // For kretprobe, fentry, fexit -> AddrSpace::kernel
-    // For uretprobe -> AddrSpace::user
-    builtin.builtin_type.SetAS(find_addrspace(type));
   } else if (builtin.ident == "kstack") {
     builtin.builtin_type = CreateStack(
         true, StackType{ .mode = bpftrace_.config_->stack_mode });
@@ -955,28 +900,15 @@ void SemanticAnalyser::visit(Builtin &builtin)
                "using the 'probe' builtin instead.";
       }
     }
-  } else if (builtin.is_argx()) {
+  } else if (builtin.ident == "__builtin_probe") {
     auto *probe = get_probe(builtin, builtin.ident);
     if (probe == nullptr)
       return;
-    ProbeType pt = probetype(probe->attach_points[0]->provider);
-    AddrSpace addrspace = find_addrspace(pt);
-    int arg_num = atoi(builtin.ident.substr(3).c_str());
-    for (auto *attach_point : probe->attach_points) {
-      ProbeType type = probetype(attach_point->provider);
-      if (type != ProbeType::kprobe && type != ProbeType::uprobe &&
-          type != ProbeType::usdt && type != ProbeType::rawtracepoint)
-        builtin.addError() << "The " << builtin.ident
-                           << " builtin can only be used with "
-                           << "'kprobes', 'uprobes' and 'usdt' probes";
-      // argx in USDT probes doesn't need to check against arch::max_arg()
-      if (type != ProbeType::usdt &&
-          static_cast<size_t>(arg_num) >= arch::Host::arguments().size())
-        builtin.addError() << arch::Host::Machine << " doesn't support "
-                           << builtin.ident;
+    size_t str_size = 0;
+    for (AttachPoint *attach_point : probe->attach_points) {
+      str_size = std::max(str_size, attach_point->name().length());
     }
-    builtin.builtin_type = CreateUInt64();
-    builtin.builtin_type.SetAS(addrspace);
+    builtin.builtin_type = CreateString(str_size + 1);
   } else if (builtin.ident == "__builtin_username") {
     builtin.builtin_type = CreateUsername();
   } else if (builtin.ident == "__builtin_cpid") {
@@ -1398,6 +1330,7 @@ void SemanticAnalyser::visit(Call &call)
                       << " (" << arch::Host::Machine << ")";
     }
     call.return_type = CreateUInt64();
+<<<<<<< HEAD
     if (auto *probe = dynamic_cast<Probe *>(top_level_node_)) {
       ProbeType pt = probe->get_probetype();
       // In case of different attach_points, Set the addrspace to none.
@@ -1406,6 +1339,8 @@ void SemanticAnalyser::visit(Call &call)
       // Assume kernel space for data in subprogs
       call.return_type.SetAS(AddrSpace::kernel);
     }
+=======
+>>>>>>> 72046fd7 (inprog)
   } else if (call.func == "kaddr") {
     call.return_type = CreateUInt64();
     call.return_type.SetAS(AddrSpace::kernel);
@@ -1542,7 +1477,7 @@ void SemanticAnalyser::visit(Call &call)
         }
       }
     }
-    // Note that IsPrintableTy() is somewhat disingenuous here. Printing a
+    // Note that print() is somewhat disingenuous here. Printing a
     // non-map value requires being able to serialize the entire value, so
     // map-backed types like count(), min(), max(), etc. cannot be printed
     // through the non-map printing mechanism.
@@ -1554,14 +1489,10 @@ void SemanticAnalyser::visit(Call &call)
           << "Map type " << call.vargs.at(0).type()
           << " cannot print the value of individual keys. You must print "
              "the whole map.";
-    } else if (call.vargs.at(0).type().IsPrintableTy()) {
+    } else {
       if (call.vargs.size() != 1)
         call.addError() << "Non-map print() only takes 1 argument, "
                         << call.vargs.size() << " found";
-    } else {
-      if (is_final_pass())
-        call.addError() << call.vargs.at(0).type() << " type passed to "
-                        << call.func << "() is not printable";
     }
   } else if (call.func == "cgroup_path") {
     call.return_type = CreateCgroupPath();
@@ -3386,6 +3317,7 @@ void SemanticAnalyser::visit(Cast &cast)
     ty.MarkCtxAccess();
   }
   ty.SetAS(cast.expr.type().GetAS());
+<<<<<<< HEAD
   // case : begin { @foo = (struct Foo)0; }
   // case : profile:hz:99 $task = (struct task_struct *)curtask.
   if (ty.GetAS() == AddrSpace::none) {
@@ -3397,6 +3329,8 @@ void SemanticAnalyser::visit(Cast &cast)
       ty.SetAS(AddrSpace::kernel);
     }
   }
+=======
+>>>>>>> 72046fd7 (inprog)
 }
 
 void SemanticAnalyser::visit(Tuple &tuple)

@@ -14,7 +14,6 @@
 #include "gtest/gtest.h"
 
 namespace bpftrace::test::portability_analyser {
-
 using ::testing::_;
 
 void test(BPFtrace &bpftrace, const std::string &input, int expected_result = 0)
@@ -33,10 +32,7 @@ void test(BPFtrace &bpftrace, const std::string &input, int expected_result = 0)
                 .put(no_c_defs)
                 .put(no_types)
                 .add(CreateParsePass())
-                .add(ast::CreateParseAttachpointsPass())
-                .add(ast::CreateCheckAttachpointsPass())
-                .add(ast::CreateProbeAndApExpansionPass())
-                .add(ast::CreateArgsResolverPass())
+                .add(ast::CreateProbeExpansionPass())
                 .add(ast::CreateMacroExpansionPass())
                 .add(ast::CreateMapSugarPass())
                 .add(ast::CreateFieldAnalyserPass())
@@ -57,6 +53,15 @@ void test(const std::string &input, int expected_result = 0)
 TEST(portability_analyser, generic_field_access_disabled)
 {
   test("struct Foo { int x;} begin { $f = (struct Foo *)0; $f->x; }", 1);
+}
+
+TEST(portability_analyser, tracepoint_field_access)
+{
+  test("tracepoint:sched:sched_one { args }", 0);
+  test("tracepoint:sched:sched_one { args.common_field }", 0);
+  test("tracepoint:sched:sched_* { args.common_field }", 0);
+  // Backwards compatibility
+  test("tracepoint:sched:sched_one { args->common_field }", 0);
 }
 
 class portability_analyser_btf : public test_btf {};

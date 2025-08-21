@@ -1,16 +1,14 @@
 #pragma once
 
-#include "struct.h"
-#include "types.h"
-
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "types.h"
+
 #ifdef HAVE_LIBDW
 #include <elfutils/libdwfl.h>
 #include <optional>
-#include <unordered_map>
 
 namespace bpftrace {
 

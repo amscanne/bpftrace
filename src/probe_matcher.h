@@ -4,7 +4,6 @@
 #include <set>
 
 #include "ast/ast.h"
-#include "btf.h"
 
 namespace bpftrace {
 

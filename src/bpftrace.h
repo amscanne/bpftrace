@@ -2,7 +2,6 @@
 
 #include <bcc/bcc_syms.h>
 #include <cstdint>
-#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -13,15 +12,9 @@
 #include <utility>
 #include <vector>
 
-#include "ast/ast.h"
-#include "ast/pass_manager.h"
-#include "ast/passes/ap_probe_expansion.h"
 #include "ast/passes/clang_parser.h"
-#include "attached_probe.h"
 #include "bpfbytecode.h"
 #include "bpffeature.h"
-#include "bpfprogram.h"
-#include "btf.h"
 #include "child.h"
 #include "config.h"
 #include "dwarf_parser.h"
@@ -114,6 +107,7 @@ public:
   {
   }
   ~BPFtrace() override;
+<<<<<<< HEAD
   virtual int add_probe(const ast::AttachPoint &ap,
                         const ast::Probe &p,
                         ast::ExpansionType expansion,
@@ -121,13 +115,12 @@ public:
   Probe generateWatchpointSetupProbe(const ast::AttachPoint &ap,
                                      const ast::Probe &probe);
   int num_probes() const;
+=======
+>>>>>>> 72046fd7 (inprog)
   int prerun() const;
   int run(output::Output &out,
           const ast::CDefinitions &c_definitions,
           BpfBytecode bytecode);
-  virtual Result<std::unique_ptr<AttachedProbe>> attach_probe(
-      Probe &probe,
-      const BpfBytecode &bytecode);
   int run_iter();
   std::string get_stack(int64_t stackid,
                         uint32_t nr_stack_frames,
@@ -206,7 +199,6 @@ public:
   const util::FuncsModulesMap &get_traceable_funcs() const;
   const util::FuncsModulesMap &get_raw_tracepoints() const;
   util::KConfig kconfig;
-  std::vector<std::unique_ptr<AttachedProbe>> attached_probes_;
   std::vector<int> sigusr1_prog_fds_;
 
   unsigned int join_argnum_ = 16;
@@ -268,10 +260,13 @@ private:
   void poll_event_loss(output::Output &out);
   static uint64_t read_address_from_output(std::string output);
   struct bcc_symbol_option &get_symbol_opts();
+<<<<<<< HEAD
   Probe generate_probe(const ast::AttachPoint &ap,
                        const ast::Probe &p,
                        ast::ExpansionType expansion,
                        std::set<std::string> expanded_funcs);
+=======
+>>>>>>> 72046fd7 (inprog)
   bool has_iter_ = false;
   struct ring_buffer *ringbuf_ = nullptr;
   struct perf_buffer *skb_perfbuf_ = nullptr;

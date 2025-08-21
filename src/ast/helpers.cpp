@@ -30,10 +30,4 @@ bool is_supported_lang(const std::string &lang)
   return UPROBE_LANGS.contains(lang);
 }
 
-bool is_type_name(std::string_view str)
-{
-  return str.starts_with("struct ") || str.starts_with("union ") ||
-         str.starts_with("enum ");
-}
-
 } // namespace bpftrace

@@ -15,7 +15,6 @@
 
 #include "aot/aot.h"
 #include "ast/diagnostic.h"
-#include "ast/helpers.h"
 #include "ast/pass_manager.h"
 #include "ast/passes/attachpoint_passes.h"
 #include "ast/passes/clang_build.h"
@@ -29,6 +28,7 @@
 #include "ast/passes/pid_filter_pass.h"
 #include "ast/passes/portability_analyser.h"
 #include "ast/passes/printer.h"
+#include "ast/passes/probe_expansion.h"
 #include "ast/passes/probe_prune.h"
 #include "ast/passes/recursion_check.h"
 #include "ast/passes/register_providers.h"
@@ -38,7 +38,6 @@
 #include "benchmark.h"
 #include "bpffeature.h"
 #include "bpftrace.h"
-#include "btf.h"
 #include "build_info.h"
 #include "child.h"
 #include "config.h"
@@ -346,6 +345,7 @@ void CreateDynamicPasses(std::function<void(ast::Pass&& pass)> add)
   add(ast::CreateTypeSystemPass());
   add(ast::CreateSemanticPass());
   add(ast::CreateProbePrunePass());
+  add(ast::CreateProbeMergePass());
   add(ast::CreateResourcePass());
 }
 
@@ -356,6 +356,7 @@ void CreateAotPasses(std::function<void(ast::Pass&& pass)> add)
   add(ast::CreateTypeSystemPass());
   add(ast::CreateSemanticPass());
   add(ast::CreateProbePrunePass());
+  add(ast::CreateProbeMergePass());
   add(ast::CreateResourcePass());
 }
 
@@ -947,6 +948,7 @@ int main(int argc, char* argv[])
         .add(CreateParseBTFPass())
         .add(ast::CreateMapSugarPass())
         .add(ast::CreateNamedParamsPass())
+        .add(ast::CreateProbeExpansionPass())
         .add(ast::CreateSemanticPass());
 
     auto pmresult = pm.run();

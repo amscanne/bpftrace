@@ -1,7 +1,7 @@
 #include "ast/passes/pid_filter_pass.h"
 #include "ast/ast.h"
+#include "ast/passes/probe_expansion.h"
 #include "ast/visitor.h"
-#include "bpftrace.h"
 
 namespace bpftrace::ast {
 
@@ -9,8 +9,8 @@ namespace {
 
 class PidFilterPass : public Visitor<PidFilterPass> {
 public:
-  explicit PidFilterPass(ASTContext &ast, BPFtrace &bpftrace)
-      : ast_(ast), bpftrace_(bpftrace)
+  explicit PidFilterPass(ASTContext &ast, ExpandedAttachPoints &expanded)
+      : ast_(ast), expanded_(expanded)
   {
   }
 
@@ -19,9 +19,10 @@ public:
 
 private:
   ASTContext &ast_;
-  BPFtrace &bpftrace_;
+  ExpandedAttachPoints &expanded_;
 };
 
+<<<<<<< HEAD
 // If the probe can't filter by pid when attaching
 // then we inject custom AST to filter by pid.
 // Note: this doesn't work for AOT as the code has already
@@ -60,11 +61,11 @@ bool probe_needs_pid_filter(AttachPoint *ap)
   return false;
 }
 
+=======
+>>>>>>> 72046fd7 (inprog)
 } // namespace
 
-static BlockExpr *create_pid_filter(ASTContext &ast,
-                                    int pid,
-                                    BlockExpr *orig_block)
+static BlockExpr *create_pid_filter(ASTContext &ast, BlockExpr *orig_block)
 {
   auto *ret_block = ast.make_node<BlockExpr>(
       orig_block->loc,
@@ -76,6 +77,7 @@ static BlockExpr *create_pid_filter(ASTContext &ast,
       orig_block->loc,
       StatementList({}),
       ast.make_node<IfExpr>(
+<<<<<<< HEAD
           orig_block->loc,
           ast.make_node<Binop>(orig_block->loc,
                                ast.make_node<Builtin>(orig_block->loc, "pid"),
@@ -83,29 +85,39 @@ static BlockExpr *create_pid_filter(ASTContext &ast,
                                ast.make_node<Integer>(orig_block->loc, pid)),
           ret_block,
           orig_block));
+=======
+          ast.make_node<Binop>(
+              ast.make_node<Builtin>("pid", Location(orig_block->loc)),
+              Operator::NE,
+              ast.make_node<Call>(
+                  "getopt",
+                  ExpressionList(
+                      { ast.make_node<String>("pid", Location(orig_block->loc)),
+                        ast.make_node<Integer>(0, Location(orig_block->loc)) }),
+                  Location(orig_block->loc)),
+              Location(orig_block->loc)),
+          ast.make_node<None>(Location(orig_block->loc)), // Empty.
+          orig_block,
+          Location(orig_block->loc)),
+      Location(orig_block->loc));
+>>>>>>> 72046fd7 (inprog)
 }
 
 void PidFilterPass::visit(Probe &probe)
 {
-  const auto pid = bpftrace_.pid();
-  if (!pid.has_value()) {
+  if (expanded_.attach_points[&probe].first->uses_pid()) {
+    probe.block = create_pid_filter(ast_, probe.block);
     return;
-  }
-
-  for (AttachPoint *ap : probe.attach_points) {
-    if (probe_needs_pid_filter(ap)) {
-      probe.block = create_pid_filter(ast_, *pid, probe.block);
-      return;
-    }
   }
 }
 
 Pass CreatePidFilterPass()
 {
-  return Pass::create("PidFilter", [](ASTContext &ast, BPFtrace &b) {
-    auto pid_filter = PidFilterPass(ast, b);
-    pid_filter.visit(ast.root);
-  });
+  return Pass::create("PidFilter",
+                      [](ASTContext &ast, ExpandedAttachPoints &expanded) {
+                        auto pid_filter = PidFilterPass(ast, expanded);
+                        pid_filter.visit(ast.root);
+                      });
 };
 
 } // namespace bpftrace::ast
