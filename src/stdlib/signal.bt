@@ -1,0 +1,25 @@
+// Send a signal to the process being traced.
+//
+// **unsafe**
+//
+// **Kernel** 5.3
+//
+// This utilizes the BPF helper `bpf_send_signal`
+//
+// Probe types: k(ret)probe, u(ret)probe, USDT, profile
+//
+// The signal can either be identified by name, e.g. `SIGSTOP` or by ID, e.g. `19` as found in `kill -l`.
+//
+// ```
+// kprobe:__x64_sys_execve
+// /comm == "bash"/ {
+//   signal(5);
+// }
+// ```
+// ```
+// $ ls
+// Trace/breakpoint trap (core dumped)
+// ```
+macro signal(sig) {
+  __bpf_send_signal(sig)
+}
