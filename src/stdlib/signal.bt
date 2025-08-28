@@ -1,0 +1,44 @@
+// :variant void signal(const string sig)
+// :variant void signal(uint32 signum)
+//
+// **unsafe**
+//
+// This utilizes the BPF helper `bpf_send_signal`.
+//
+// Probe types: k(ret)probe, u(ret)probe, USDT, profile
+//
+// Send a signal to the process being traced (any thread).
+// Use `signal_thread` to send to the thread being traced.
+// The signal can either be identified by name, e.g. `SIGSTOP` or by ID, e.g. `19` as found in `kill -l`.
+//
+// ```
+// kprobe:__x64_sys_execve
+// /comm == "bash"/ {
+//   signal(5);
+// }
+// ```
+// ```
+// $ ls
+// Trace/breakpoint trap (core dumped)
+// ```
+macro signal(expr) {
+  import "stdlib/signal/signal.bpf.c";
+  __signal(expr, false);
+}
+
+// :variant void signal_thread(const string sig)
+// :variant void signal_thread(uint32 signum)
+//
+// **unsafe**
+//
+// This utilizes the BPF helper `bpf_send_signal_thread`.
+//
+// Probe types: k(ret)probe, u(ret)probe, USDT, profile
+//
+// Send a signal to the thread being traced.
+// Use `signal` to send to the process being traced (any thread).
+// The signal can either be identified by name, e.g. `SIGSTOP` or by ID, e.g. `19` as found in `kill -l`.
+macro signal_thread(expr) {
+  import "stdlib/signal/signal.bpf.c";
+  __signal(expr, true);
+}

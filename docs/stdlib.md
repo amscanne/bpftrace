@@ -987,8 +987,8 @@ For kretprobe and uretprobe, its type is uint64, but for fexit it depends. You c
 
 
 ### signal
-- `void signal(const string sig)`
-- `void signal(uint32 signum)`
+
+Send a signal to the process being traced.
 
 **unsafe**
 
