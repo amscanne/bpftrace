@@ -79,7 +79,6 @@ std::string typestr(const SizedType &type, bool debug)
     case Type::timestamp:
     case Type::ksym_t:
     case Type::usym_t:
-    case Type::username:
     case Type::stack_mode:
     case Type::timestamp_mode:
     case Type::cgroup_path_t:
@@ -218,7 +217,6 @@ std::string typestr(Type t)
     case Type::string:   return "string";   break;
     case Type::ksym_t:     return "ksym_t";     break;
     case Type::usym_t:     return "usym_t";     break;
-    case Type::username: return "username"; break;
     case Type::inet:     return "inet";     break;
     case Type::stack_mode:return "stack_mode";break;
     case Type::array:    return "array";    break;
@@ -409,11 +407,6 @@ SizedType CreateAvg(bool is_signed)
 SizedType CreateStats(bool is_signed)
 {
   return { Type::stats_t, 8, is_signed };
-}
-
-SizedType CreateUsername()
-{
-  return { Type::username, 8 };
 }
 
 SizedType CreateInet(size_t size)

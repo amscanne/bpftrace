@@ -41,7 +41,6 @@ enum class Type : uint8_t {
   string,
   ksym_t,
   usym_t,
-  username,
   inet,
   stack_mode,
   array,
@@ -432,10 +431,6 @@ public:
   bool IsUsymTy() const
   {
     return type_ == Type::usym_t;
-  };
-  bool IsUsernameTy() const
-  {
-    return type_ == Type::username;
   };
   bool IsInetTy() const
   {

@@ -709,11 +709,9 @@ ScopedExpr CodegenLLVM::visit(Builtin &builtin)
   } else if (builtin.ident == "__builtin_cgroup") {
     return ScopedExpr(b_.CreateGetCurrentCgroupId(builtin.loc));
   } else if (builtin.ident == "__builtin_uid" ||
-             builtin.ident == "__builtin_gid" ||
-             builtin.ident == "__builtin_username") {
+             builtin.ident == "__builtin_gid") {
     Value *uidgid = b_.CreateGetUidGid(builtin.loc);
-    if (builtin.ident == "__builtin_uid" ||
-        builtin.ident == "__builtin_username") {
+    if (builtin.ident == "__builtin_uid") {
       return ScopedExpr(b_.CreateAnd(uidgid, 0xffffffff));
     } else if (builtin.ident == "__builtin_gid") {
       return ScopedExpr(b_.CreateLShr(uidgid, 32));
@@ -2474,8 +2472,7 @@ ScopedExpr CodegenLLVM::unop_ptr(Unop &unop)
       // might be some internal types that don't deref properly after their
       // address is taken via the & operator, e.g., &$x
       if (unop.result_type.IsIntegerTy() || unop.result_type.IsPtrTy() ||
-          unop.result_type.IsUsernameTy() || unop.result_type.IsTimestampTy() ||
-          unop.result_type.IsKsymTy()) {
+          unop.result_type.IsTimestampTy() || unop.result_type.IsKsymTy()) {
         const auto *et = type.GetPointeeTy();
         AllocaInst *dst = b_.CreateAllocaBPF(*et, "deref");
         b_.CreateProbeRead(
