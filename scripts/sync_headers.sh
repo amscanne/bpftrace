@@ -78,6 +78,7 @@ HEADERS=(
   ["linux/kcsan-checks.h"]=true
   ["linux/compiler-clang.h"]=true # N.B. only care about clang.
   ["asm/rwonce.h"]=true
+  ["asm/signal.h"]=true
 )
 
 # When a header is found to be sourced from an `asm/` directory, we will

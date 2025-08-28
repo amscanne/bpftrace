@@ -836,32 +836,6 @@ macro retval() {
   __builtin_retval
 }
 
-// :function signal
-// :variant void signal(const string sig)
-// :variant void signal(uint32 signum)
-//
-// **unsafe**
-//
-// **Kernel** 5.3
-//
-// This utilizes the BPF helper `bpf_send_signal`
-//
-// Probe types: k(ret)probe, u(ret)probe, USDT, profile
-//
-// Send a signal to the process being traced.
-// The signal can either be identified by name, e.g. `SIGSTOP` or by ID, e.g. `19` as found in `kill -l`.
-//
-// ```
-// kprobe:__x64_sys_execve
-// /comm == "bash"/ {
-//   signal(5);
-// }
-// ```
-// ```
-// $ ls
-// Trace/breakpoint trap (core dumped)
-// ```
-
 // :function sizeof
 // :variant uint64 sizeof(TYPE)
 // :variant uint64 sizeof(EXPRESSION)
