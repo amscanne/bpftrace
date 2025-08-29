@@ -5,8 +5,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
-#include "attached_probe.h"
-#include "log.h"
+#include "bpfprogram.h"
 #include "providers/interval.h"
 #include "util/int_parser.h"
 #include "util/strings.h"
@@ -16,8 +15,7 @@ namespace bpftrace::providers {
 
 class IntervalAttachPoint : public AttachPoint {
 public:
-  IntervalAttachPoint(const Provider &provider, uint64_t interval)
-      : AttachPoint(provider), interval(interval) {};
+  IntervalAttachPoint(uint64_t interval) : interval(interval) {};
 
   std::string name() const override
   {
@@ -33,7 +31,13 @@ public:
     return BPF_PROG_TYPE_PERF_EVENT;
   }
 
-  const uint64_t interval; // interval time in nanoseconds.
+  template <class Archive>
+  void serialize([[maybe_unused]] Archive &ar)
+  {
+    ar(interval);
+  }
+
+  uint64_t interval; // interval time in nanoseconds.
 };
 
 class IntervalAttachedProbe : public AttachedProbe {
@@ -135,3 +139,7 @@ Result<AttachedProbeList> IntervalProvider::attach_single(
 }
 
 } // namespace bpftrace::providers
+
+CEREAL_REGISTER_TYPE(bpftrace::providers::IntervalAttachPoint)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(bpftrace::providers::AttachPoint,
+                                     bpftrace::providers::IntervalAttachPoint)

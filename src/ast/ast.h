@@ -12,10 +12,7 @@
 #include "ast/clone.h"
 #include "ast/context.h"
 #include "diagnostic.h"
-#include "probe_types.h"
 #include "types.h"
-#include "usdt.h"
-#include "util/strings.h"
 
 namespace bpftrace::ast {
 
@@ -56,647 +53,651 @@ enum class Operator {
 inline bool operator==(Operator lhs, Operator rhs)
 {
   return static_cast<int>(lhs) == static_cast<int>(rhs);
-}
-inline std::strong_ordering operator<=>(Operator lhs, Operator rhs)
-{
-  return static_cast<int>(lhs) <=> static_cast<int>(rhs);
-}
-
-class Node {
-public:
-  Node(ASTContext &ctx, Location &&loc) : state_(*ctx.state_), loc(loc) {};
-  virtual ~Node() = default;
-
-  Node(const Node &) = delete;
-  Node &operator=(const Node &) = delete;
-  Node(Node &&) = delete;
-  Node &operator=(Node &&) = delete;
-
-  Diagnostic &addError() const;
-  Diagnostic &addWarning() const;
-
-private:
-  // N.B. it is not legal to hold on to a long-term reference to `ASTContext&`,
-  // as this is generally movable. Therefore, we hold on to the internal state
-  // only, which will not be moving.
-  //
-  // See `ASTContext::State` for more information.
-  ASTContext::State &state_;
-
-public:
-  // This is temporarily accessible by other classes because we don't have a
-  // clear `clone` operation at this time. Eventually this should be made
-  // private and we should rely on a clear model for cloning nodes.
-  Location loc;
-};
-
-template <typename... Ts>
-class VariantNode {
-public:
-  template <typename T>
-  VariantNode(T *value)
-    requires(std::is_same_v<T, Ts> || ...)
-      : value(value){};
-
-  template <typename T>
-  bool is() const
+  }
+  inline std::strong_ordering operator<=>(Operator lhs, Operator rhs)
   {
-    return std::holds_alternative<T *>(value);
+    return static_cast<int>(lhs) <=> static_cast<int>(rhs);
   }
 
-  template <typename T>
-  T *as() const
-  {
-    if (is<T>()) {
-      return std::get<T *>(value);
+  class Node {
+  public:
+    Node(ASTContext &ctx, Location &&loc) : state_(*ctx.state_), loc(loc) {};
+    virtual ~Node() = default;
+
+    Node(const Node &) = delete;
+    Node &operator=(const Node &) = delete;
+    Node(Node &&) = delete;
+    Node &operator=(Node &&) = delete;
+
+    Diagnostic &addError() const;
+    Diagnostic &addWarning() const;
+
+  private:
+    // N.B. it is not legal to hold on to a long-term reference to
+    // `ASTContext&`, as this is generally movable. Therefore, we hold on to the
+    // internal state only, which will not be moving.
+    //
+    // See `ASTContext::State` for more information.
+    ASTContext::State &state_;
+
+  public:
+    // This is temporarily accessible by other classes because we don't have a
+    // clear `clone` operation at this time. Eventually this should be made
+    // private and we should rely on a clear model for cloning nodes.
+    Location loc;
+  };
+
+  template <typename... Ts>
+  class VariantNode {
+  public:
+    template <typename T>
+    VariantNode(T *value)
+      requires(std::is_same_v<T, Ts> || ...)
+        : value(value){};
+
+    template <typename T>
+    bool is() const
+    {
+      return std::holds_alternative<T *>(value);
     }
-    return nullptr;
-  }
 
-  Node &node() const
-  {
-    return std::visit([](auto *v) -> Node & { return *v; }, value);
-  }
+    template <typename T>
+    T *as() const
+    {
+      if (is<T>()) {
+        return std::get<T *>(value);
+      }
+      return nullptr;
+    }
 
-  const Location &loc() const
-  {
-    return std::visit([](const auto *v) -> const Location & { return v->loc; },
-                      value);
-  }
+    Node &node() const
+    {
+      return std::visit([](auto *v) -> Node & { return *v; }, value);
+    }
 
-  bool operator==(const VariantNode &other) const
-  {
-    if (value.index() != other.value.index())
-      return false;
-    return std::visit(
-        [&other](auto *v) {
-          using T = std::decay_t<decltype(*v)>;
-          auto *other_v = std::get<T *>(other.value);
-          return *v == *other_v;
-        },
-        value);
-  }
+    const Location &loc() const
+    {
+      return std::visit(
+          [](const auto *v) -> const Location & { return v->loc; }, value);
+    }
 
-  std::strong_ordering operator<=>(const VariantNode &other) const
-  {
-    if (auto cmp = value.index() <=> other.value.index(); cmp != 0)
-      return cmp;
-    return std::visit(
-        [&other](auto *v) {
-          using T = std::decay_t<decltype(*v)>;
-          auto *other_v = std::get<T *>(other.value);
-          return *v <=> *other_v;
-        },
-        value);
-  }
+    bool operator==(const VariantNode &other) const
+    {
+      if (value.index() != other.value.index())
+        return false;
+      return std::visit(
+          [&other](auto *v) {
+            using T = std::decay_t<decltype(*v)>;
+            auto *other_v = std::get<T *>(other.value);
+            return *v == *other_v;
+          },
+          value);
+    }
 
-  std::variant<Ts *...> value;
-};
-
-class Integer;
-class NegativeInteger;
-class Boolean;
-class PositionalParameter;
-class PositionalParameterCount;
-class String;
-class None;
-class Identifier;
-class Builtin;
-class Call;
-class Sizeof;
-class Offsetof;
-class Map;
-class Variable;
-class VariableAddr;
-class MapAddr;
-class Binop;
-class Unop;
-class FieldAccess;
-class ArrayAccess;
-class TupleAccess;
-class MapAccess;
-class Cast;
-class Tuple;
-class IfExpr;
-class BlockExpr;
-class Typeinfo;
-class Comptime;
-
-class Expression : public VariantNode<Integer,
-                                      NegativeInteger,
-                                      Boolean,
-                                      PositionalParameter,
-                                      PositionalParameterCount,
-                                      String,
-                                      None,
-                                      Identifier,
-                                      Builtin,
-                                      Call,
-                                      Sizeof,
-                                      Offsetof,
-                                      Map,
-                                      Variable,
-                                      VariableAddr,
-                                      MapAddr,
-                                      Binop,
-                                      Unop,
-                                      FieldAccess,
-                                      ArrayAccess,
-                                      TupleAccess,
-                                      MapAccess,
-                                      Cast,
-                                      Tuple,
-                                      IfExpr,
-                                      BlockExpr,
-                                      Typeinfo,
-                                      Comptime> {
-public:
-  using VariantNode::VariantNode;
-  Expression() : Expression(static_cast<BlockExpr *>(nullptr)) {};
-
-  // The `type` method is the only common thing required by all expression
-  // types. This will on the variant types.
-  const SizedType &type() const;
-  bool is_literal() const;
-};
-using ExpressionList = std::vector<Expression>;
-
-class ExprStatement;
-class VarDeclStatement;
-class AssignScalarMapStatement;
-class AssignMapStatement;
-class AssignVarStatement;
-class Unroll;
-class Jump;
-class While;
-class For;
-
-class Statement : public VariantNode<ExprStatement,
-                                     VarDeclStatement,
-                                     AssignScalarMapStatement,
-                                     AssignMapStatement,
-                                     AssignVarStatement,
-                                     Unroll,
-                                     Jump,
-                                     While,
-                                     For> {
-public:
-  using VariantNode::VariantNode;
-  Statement() : Statement(static_cast<ExprStatement *>(nullptr)) {};
-};
-using StatementList = std::vector<Statement>;
-
-class Macro;
-class MapDeclStatement;
-class Probe;
-class Subprog;
-
-class RootStatement
-    : public VariantNode<Probe, Subprog, Macro, MapDeclStatement> {
-public:
-  using VariantNode::VariantNode;
-  RootStatement() : RootStatement(static_cast<Probe *>(nullptr)) {};
-};
-using RootStatements = std::vector<RootStatement>;
-
-class Integer : public Node {
-public:
-  explicit Integer(ASTContext &ctx,
-                   uint64_t n,
-                   Location &&loc,
-                   bool force_unsigned = false)
-      : Node(ctx, std::move(loc)),
-        integer_type(force_unsigned || n > std::numeric_limits<int64_t>::max()
-                         ? CreateUInt64()
-                         : CreateInt64()),
-        value(n) {};
-  explicit Integer(ASTContext &ctx, const Integer &other, const Location &loc)
-      : Node(ctx, loc + other.loc),
-        integer_type(other.integer_type),
-        value(other.value) {};
-
-  const SizedType &type() const
-  {
-    return integer_type;
-  }
-
-  bool operator==(const Integer &other) const
-  {
-    return value == other.value && integer_type == other.integer_type;
-  }
-  std::strong_ordering operator<=>(const Integer &other) const
-  {
-    if (auto cmp = value <=> other.value; cmp != 0)
-      return cmp;
-    return integer_type <=> other.integer_type;
-  }
-
-  // This literal has a dynamic type, but it is not mutable. The type is
-  // generally signed if the signed value is capable of holding the literal,
-  // otherwise it is unsigned. This is the existing convention.
-  //
-  // However, the `force_unsigned` parameter can override this. This can be
-  // used for small cases that are explicitly unsigned (e.g. `sizeof`), and is
-  // preserved when folding literals in order to provide the intuitive type.
-  const SizedType integer_type;
-  const uint64_t value;
-};
-
-class NegativeInteger : public Node {
-public:
-  explicit NegativeInteger(ASTContext &ctx, int64_t n, Location &&loc)
-      : Node(ctx, std::move(loc)), value(n) {};
-  explicit NegativeInteger(ASTContext &ctx,
-                           const NegativeInteger &other,
-                           const Location &loc)
-      : Node(ctx, loc + other.loc), value(other.value) {};
-
-  const SizedType &type() const
-  {
-    static SizedType int64 = CreateInt64();
-    return int64;
-  }
-
-  bool operator==(const NegativeInteger &other) const
-  {
-    return value == other.value;
-  }
-  std::strong_ordering operator<=>(const NegativeInteger &other) const
-  {
-    return value <=> other.value;
-  }
-
-  const int64_t value;
-};
-
-class Boolean : public Node {
-public:
-  explicit Boolean(ASTContext &ctx, bool val, Location &&loc)
-      : Node(ctx, std::move(loc)), value(val) {};
-  explicit Boolean(ASTContext &ctx, const Boolean &other, const Location &loc)
-      : Node(ctx, loc + other.loc), value(other.value) {};
-
-  const SizedType &type() const
-  {
-    static SizedType boolean = CreateBool();
-    return boolean;
-  }
-
-  bool operator==(const Boolean &other) const
-  {
-    return value == other.value;
-  }
-  std::strong_ordering operator<=>(const Boolean &other) const
-  {
-    return value <=> other.value;
-  }
-
-  const bool value;
-};
-
-class None : public Node {
-public:
-  explicit None(ASTContext &ctx, Location &&loc) : Node(ctx, std::move(loc)) {};
-  explicit None(ASTContext &ctx, const None &other, const Location &loc)
-      : Node(ctx, loc + other.loc) {};
-
-  const SizedType &type() const
-  {
-    static SizedType none = CreateNone();
-    return none;
-  }
-
-  bool operator==([[maybe_unused]] const None &other) const
-  {
-    return true;
-  }
-  std::strong_ordering operator<=>([[maybe_unused]] const None &other) const
-  {
-    return std::strong_ordering::equal;
-  }
-};
-
-class PositionalParameter : public Node {
-public:
-  explicit PositionalParameter(ASTContext &ctx, long n, Location &&loc)
-      : Node(ctx, std::move(loc)), n(n) {};
-  explicit PositionalParameter(ASTContext &ctx,
-                               const PositionalParameter &other,
-                               const Location &loc)
-      : Node(ctx, loc + other.loc), n(other.n) {};
-
-  const SizedType &type() const
-  {
-    static SizedType none = CreateNone();
-    return none;
-  }
-
-  bool operator==(const PositionalParameter &other) const
-  {
-    return n == other.n;
-  }
-  std::strong_ordering operator<=>(const PositionalParameter &other) const
-  {
-    return n <=> other.n;
-  }
-
-  const long n;
-};
-
-class PositionalParameterCount : public Node {
-public:
-  explicit PositionalParameterCount(ASTContext &ctx, Location &&loc)
-      : Node(ctx, std::move(loc)) {};
-  explicit PositionalParameterCount(
-      ASTContext &ctx,
-      [[maybe_unused]] const PositionalParameterCount &other,
-      const Location &loc)
-      : Node(ctx, loc + other.loc) {};
-
-  const SizedType &type() const
-  {
-    static SizedType none = CreateNone();
-    return none;
-  }
-
-  bool operator==([[maybe_unused]] const PositionalParameterCount &other) const
-  {
-    return true;
-  }
-  std::strong_ordering operator<=>(
-      [[maybe_unused]] const PositionalParameterCount &other) const
-  {
-    return std::strong_ordering::equal;
-  }
-};
-
-class String : public Node {
-public:
-  explicit String(ASTContext &ctx, std::string str, Location &&loc)
-      : Node(ctx, std::move(loc)),
-        value(std::move(str)),
-        string_type(CreateString(value.size() + 1)) {};
-  explicit String(ASTContext &ctx, const String &other, const Location &loc)
-      : Node(ctx, loc + other.loc),
-        value(other.value),
-        string_type(other.string_type) {};
-
-  const SizedType &type() const
-  {
-    return string_type;
-  }
-
-  bool operator==(const String &other) const
-  {
-    return value == other.value && string_type == other.string_type;
-  }
-  std::strong_ordering operator<=>(const String &other) const
-  {
-    if (auto cmp = value <=> other.value; cmp != 0)
-      return cmp;
-    return string_type <=> other.string_type;
-  }
-
-  const std::string value;
-  SizedType string_type;
-};
-
-class Identifier : public Node {
-public:
-  explicit Identifier(ASTContext &ctx, std::string ident, Location &&loc)
-      : Node(ctx, std::move(loc)), ident(std::move(ident)) {};
-  explicit Identifier(ASTContext &ctx,
-                      const Identifier &other,
-                      const Location &loc)
-      : Node(ctx, loc + other.loc),
-        ident(other.ident),
-        ident_type(other.ident_type) {};
-
-  const SizedType &type() const
-  {
-    return ident_type;
-  }
-
-  bool operator==(const Identifier &other) const
-  {
-    return ident == other.ident && ident_type == other.ident_type;
-  }
-  std::strong_ordering operator<=>(const Identifier &other) const
-  {
-    if (auto cmp = ident <=> other.ident; cmp != 0)
-      return cmp;
-    return ident_type <=> other.ident_type;
-  }
-
-  std::string ident;
-  SizedType ident_type;
-};
-
-class Builtin : public Node {
-public:
-  explicit Builtin(ASTContext &ctx, std::string ident, Location &&loc)
-      : Node(ctx, std::move(loc)), ident(std::move(ident)) {};
-  explicit Builtin(ASTContext &ctx, const Builtin &other, const Location &loc)
-      : Node(ctx, loc + other.loc),
-        ident(other.ident),
-        probe_id(other.probe_id),
-        builtin_type(other.builtin_type) {};
-
-  const SizedType &type() const
-  {
-    return builtin_type;
-  }
-
-  // Check if the builtin is 'arg0' - 'arg255'
-  bool is_argx() const
-  {
-    if (ident.size() < 4 || ident.size() > 6 || !ident.starts_with("arg"))
-      return false;
-
-    std::string num_part = ident.substr(3);
-
-    // no leading zeros
-    if (num_part.size() > 1 && num_part.front() == '0')
-      return false;
-
-    int arg_num = 0;
-    auto [ptr, ec] = std::from_chars(num_part.data(),
-                                     num_part.data() + num_part.size(),
-                                     arg_num);
-    return ec == std::errc() && ptr == num_part.data() + num_part.size() &&
-           arg_num >= 0 && arg_num < 256;
-  }
-
-  bool operator==(const Builtin &other) const
-  {
-    return ident == other.ident && probe_id == other.probe_id &&
-           builtin_type == other.builtin_type;
-  }
-  std::strong_ordering operator<=>(const Builtin &other) const
-  {
-    if (auto cmp = ident <=> other.ident; cmp != 0)
-      return cmp;
-    if (auto cmp = probe_id <=> other.probe_id; cmp != 0)
-      return cmp;
-    return builtin_type <=> other.builtin_type;
-  }
-
-  std::string ident;
-  int probe_id;
-  SizedType builtin_type;
-};
-
-class Call : public Node {
-public:
-  explicit Call(ASTContext &ctx,
-                std::string func,
-                ExpressionList &&vargs,
-                Location &&loc)
-      : Node(ctx, std::move(loc)),
-        func(std::move(func)),
-        vargs(std::move(vargs)) {};
-  explicit Call(ASTContext &ctx, const Call &other, const Location &loc)
-      : Node(ctx, loc + other.loc),
-        func(other.func),
-        vargs(clone(ctx, other.vargs, loc)),
-        return_type(other.return_type),
-        injected_args(other.injected_args) {};
-
-  const SizedType &type() const
-  {
-    return return_type;
-  }
-
-  bool operator==(const Call &other) const
-  {
-    return func == other.func && vargs == other.vargs &&
-           injected_args == other.injected_args &&
-           return_type == other.return_type;
-  }
-  std::strong_ordering operator<=>(const Call &other) const
-  {
-    if (auto cmp = func <=> other.func; cmp != 0)
-      return cmp;
-    if (vargs.size() != other.vargs.size())
-      return vargs.size() <=> other.vargs.size();
-    for (size_t i = 0; i < vargs.size(); ++i) {
-      if (auto cmp = vargs[i] <=> other.vargs[i]; cmp != 0)
+    std::strong_ordering operator<=>(const VariantNode &other) const
+    {
+      if (auto cmp = value.index() <=> other.value.index(); cmp != 0)
         return cmp;
+      return std::visit(
+          [&other](auto *v) {
+            using T = std::decay_t<decltype(*v)>;
+            auto *other_v = std::get<T *>(other.value);
+            return *v <=> *other_v;
+          },
+          value);
     }
-    if (auto cmp = injected_args <=> other.injected_args; cmp != 0)
-      return cmp;
-    return return_type <=> other.return_type;
-  }
 
-  std::string func;
-  ExpressionList vargs;
-  SizedType return_type;
+    std::variant<Ts *...> value;
+  };
 
-  // Some passes may inject new arguments to the call, which is always
-  // done at the beginning (in order to support variadic arguments) for
-  // later passes. This is a result of "desugaring" some syntax. When this
-  // happens, this number is increased so that later error reporting can
-  // correctly account for this.
-  size_t injected_args = 0;
-  bool ret_val_discarded = false;
-};
+  class Integer;
+  class NegativeInteger;
+  class Boolean;
+  class PositionalParameter;
+  class PositionalParameterCount;
+  class String;
+  class None;
+  class Identifier;
+  class Builtin;
+  class Call;
+  class Sizeof;
+  class Offsetof;
+  class Map;
+  class Variable;
+  class VariableAddr;
+  class MapAddr;
+  class Binop;
+  class Unop;
+  class FieldAccess;
+  class ArrayAccess;
+  class TupleAccess;
+  class MapAccess;
+  class Cast;
+  class Tuple;
+  class IfExpr;
+  class BlockExpr;
+  class Typeinfo;
+  class Comptime;
 
-class Sizeof : public Node {
-public:
-  explicit Sizeof(ASTContext &ctx, SizedType type, Location &&loc)
-      : Node(ctx, std::move(loc)), record(type) {};
-  explicit Sizeof(ASTContext &ctx, Expression expr, Location &&loc)
-      : Node(ctx, std::move(loc)), record(expr) {};
-  explicit Sizeof(ASTContext &ctx, const Sizeof &other, const Location &loc)
-      : Node(ctx, loc + other.loc), record(clone(ctx, other.record, loc)) {};
+  class Expression : public VariantNode<Integer,
+                                        NegativeInteger,
+                                        Boolean,
+                                        PositionalParameter,
+                                        PositionalParameterCount,
+                                        String,
+                                        None,
+                                        Identifier,
+                                        Builtin,
+                                        Call,
+                                        Sizeof,
+                                        Offsetof,
+                                        Map,
+                                        Variable,
+                                        VariableAddr,
+                                        MapAddr,
+                                        Binop,
+                                        Unop,
+                                        FieldAccess,
+                                        ArrayAccess,
+                                        TupleAccess,
+                                        MapAccess,
+                                        Cast,
+                                        Tuple,
+                                        IfExpr,
+                                        BlockExpr,
+                                        Typeinfo,
+                                        Comptime> {
+  public:
+    using VariantNode::VariantNode;
+    Expression() : Expression(static_cast<BlockExpr *>(nullptr)) {};
 
-  const SizedType &type() const
-  {
-    // See exception for Integer type construction.
-    static SizedType uint64 = CreateUInt64();
-    return uint64;
-  }
+    // The `type` method is the only common thing required by all expression
+    // types. This will on the variant types.
+    const SizedType &type() const;
+    bool is_literal() const;
+  };
+  using ExpressionList = std::vector<Expression>;
 
-  bool operator==(const Sizeof &other) const
-  {
-    if (record.index() != other.record.index())
-      return false;
-    return std::visit(
-        [&other](const auto &v) {
-          using T = std::decay_t<decltype(v)>;
-          return v == std::get<T>(other.record);
-        },
-        record);
-  }
-  std::strong_ordering operator<=>(const Sizeof &other) const
-  {
-    if (auto cmp = record.index() <=> other.record.index(); cmp != 0)
-      return cmp;
-    return std::visit(
-        [&other](const auto &v) -> std::strong_ordering {
-          using T = std::decay_t<decltype(v)>;
-          return v <=> std::get<T>(other.record);
-        },
-        record);
-  }
+  class ExprStatement;
+  class VarDeclStatement;
+  class AssignScalarMapStatement;
+  class AssignMapStatement;
+  class AssignVarStatement;
+  class Unroll;
+  class Jump;
+  class While;
+  class For;
 
-  std::variant<Expression, SizedType> record;
-};
+  class Statement : public VariantNode<ExprStatement,
+                                       VarDeclStatement,
+                                       AssignScalarMapStatement,
+                                       AssignMapStatement,
+                                       AssignVarStatement,
+                                       Unroll,
+                                       Jump,
+                                       While,
+                                       For> {
+  public:
+    using VariantNode::VariantNode;
+    Statement() : Statement(static_cast<ExprStatement *>(nullptr)) {};
+  };
+  using StatementList = std::vector<Statement>;
 
-class Offsetof : public Node {
-public:
-  explicit Offsetof(ASTContext &ctx,
-                    SizedType record,
-                    std::vector<std::string> &field,
-                    Location &&loc)
-      : Node(ctx, std::move(loc)), record(record), field(field) {};
-  explicit Offsetof(ASTContext &ctx,
-                    Expression expr,
-                    std::vector<std::string> &field,
-                    Location &&loc)
-      : Node(ctx, std::move(loc)), record(expr), field(field) {};
-  explicit Offsetof(ASTContext &ctx, const Offsetof &other, const Location &loc)
-      : Node(ctx, loc + other.loc),
-        record(clone(ctx, other.record, loc + other.loc)),
-        field(other.field) {};
+  class Macro;
+  class MapDeclStatement;
+  class Probe;
+  class Subprog;
 
-  const SizedType &type() const
-  {
-    // See exception for Integer type construction.
-    static SizedType uint64 = CreateUInt64();
-    return uint64;
-  }
+  class RootStatement
+      : public VariantNode<Probe, Subprog, Macro, MapDeclStatement> {
+  public:
+    using VariantNode::VariantNode;
+    RootStatement() : RootStatement(static_cast<Probe *>(nullptr)) {};
+  };
+  using RootStatements = std::vector<RootStatement>;
 
-  bool operator==(const Offsetof &other) const
-  {
-    if (record.index() != other.record.index())
-      return false;
-    bool record_equal = std::visit(
-        [&other](const auto &v) {
-          using T = std::decay_t<decltype(v)>;
-          return v == std::get<T>(other.record);
-        },
-        record);
-    return record_equal && field == other.field;
-  }
-  std::strong_ordering operator<=>(const Offsetof &other) const
-  {
-    if (auto cmp = record.index() <=> other.record.index(); cmp != 0)
-      return cmp;
-    auto record_cmp = std::visit(
-        [&other](const auto &v) -> std::strong_ordering {
-          using T = std::decay_t<decltype(v)>;
-          return v <=> std::get<T>(other.record);
-        },
-        record);
-    if (record_cmp != 0)
-      return record_cmp;
-    return field <=> other.field;
-  }
+  class Integer : public Node {
+  public:
+    explicit Integer(ASTContext &ctx,
+                     uint64_t n,
+                     Location &&loc,
+                     bool force_unsigned = false)
+        : Node(ctx, std::move(loc)),
+          integer_type(force_unsigned || n > std::numeric_limits<int64_t>::max()
+                           ? CreateUInt64()
+                           : CreateInt64()),
+          value(n) {};
+    explicit Integer(ASTContext &ctx, const Integer &other, const Location &loc)
+        : Node(ctx, loc + other.loc),
+          integer_type(other.integer_type),
+          value(other.value) {};
 
-  std::variant<Expression, SizedType> record;
-  std::vector<std::string> field;
-};
+    const SizedType &type() const
+    {
+      return integer_type;
+    }
+
+    bool operator==(const Integer &other) const
+    {
+      return value == other.value && integer_type == other.integer_type;
+    }
+    std::strong_ordering operator<=>(const Integer &other) const
+    {
+      if (auto cmp = value <=> other.value; cmp != 0)
+        return cmp;
+      return integer_type <=> other.integer_type;
+    }
+
+    // This literal has a dynamic type, but it is not mutable. The type is
+    // generally signed if the signed value is capable of holding the literal,
+    // otherwise it is unsigned. This is the existing convention.
+    //
+    // However, the `force_unsigned` parameter can override this. This can be
+    // used for small cases that are explicitly unsigned (e.g. `sizeof`), and is
+    // preserved when folding literals in order to provide the intuitive type.
+    const SizedType integer_type;
+    const uint64_t value;
+  };
+
+  class NegativeInteger : public Node {
+  public:
+    explicit NegativeInteger(ASTContext &ctx, int64_t n, Location &&loc)
+        : Node(ctx, std::move(loc)), value(n) {};
+    explicit NegativeInteger(ASTContext &ctx,
+                             const NegativeInteger &other,
+                             const Location &loc)
+        : Node(ctx, loc + other.loc), value(other.value) {};
+
+    const SizedType &type() const
+    {
+      static SizedType int64 = CreateInt64();
+      return int64;
+    }
+
+    bool operator==(const NegativeInteger &other) const
+    {
+      return value == other.value;
+    }
+    std::strong_ordering operator<=>(const NegativeInteger &other) const
+    {
+      return value <=> other.value;
+    }
+
+    const int64_t value;
+  };
+
+  class Boolean : public Node {
+  public:
+    explicit Boolean(ASTContext &ctx, bool val, Location &&loc)
+        : Node(ctx, std::move(loc)), value(val) {};
+    explicit Boolean(ASTContext &ctx, const Boolean &other, const Location &loc)
+        : Node(ctx, loc + other.loc), value(other.value) {};
+
+    const SizedType &type() const
+    {
+      static SizedType boolean = CreateBool();
+      return boolean;
+    }
+
+    bool operator==(const Boolean &other) const
+    {
+      return value == other.value;
+    }
+    std::strong_ordering operator<=>(const Boolean &other) const
+    {
+      return value <=> other.value;
+    }
+
+    const bool value;
+  };
+
+  class None : public Node {
+  public:
+    explicit None(ASTContext &ctx, Location &&loc)
+        : Node(ctx, std::move(loc)) {};
+    explicit None(ASTContext &ctx, const None &other, const Location &loc)
+        : Node(ctx, loc + other.loc) {};
+
+    const SizedType &type() const
+    {
+      static SizedType none = CreateNone();
+      return none;
+    }
+
+    bool operator==([[maybe_unused]] const None &other) const
+    {
+      return true;
+    }
+    std::strong_ordering operator<=>([[maybe_unused]] const None &other) const
+    {
+      return std::strong_ordering::equal;
+    }
+  };
+
+  class PositionalParameter : public Node {
+  public:
+    explicit PositionalParameter(ASTContext &ctx, long n, Location &&loc)
+        : Node(ctx, std::move(loc)), n(n) {};
+    explicit PositionalParameter(ASTContext &ctx,
+                                 const PositionalParameter &other,
+                                 const Location &loc)
+        : Node(ctx, loc + other.loc), n(other.n) {};
+
+    const SizedType &type() const
+    {
+      static SizedType none = CreateNone();
+      return none;
+    }
+
+    bool operator==(const PositionalParameter &other) const
+    {
+      return n == other.n;
+    }
+    std::strong_ordering operator<=>(const PositionalParameter &other) const
+    {
+      return n <=> other.n;
+    }
+
+    const long n;
+  };
+
+  class PositionalParameterCount : public Node {
+  public:
+    explicit PositionalParameterCount(ASTContext &ctx, Location &&loc)
+        : Node(ctx, std::move(loc)) {};
+    explicit PositionalParameterCount(
+        ASTContext &ctx,
+        [[maybe_unused]] const PositionalParameterCount &other,
+        const Location &loc)
+        : Node(ctx, loc + other.loc) {};
+
+    const SizedType &type() const
+    {
+      static SizedType none = CreateNone();
+      return none;
+    }
+
+    bool operator==(
+        [[maybe_unused]] const PositionalParameterCount &other) const
+    {
+      return true;
+    }
+    std::strong_ordering operator<=>(
+        [[maybe_unused]] const PositionalParameterCount &other) const
+    {
+      return std::strong_ordering::equal;
+    }
+  };
+
+  class String : public Node {
+  public:
+    explicit String(ASTContext &ctx, std::string str, Location &&loc)
+        : Node(ctx, std::move(loc)),
+          value(std::move(str)),
+          string_type(CreateString(value.size() + 1)) {};
+    explicit String(ASTContext &ctx, const String &other, const Location &loc)
+        : Node(ctx, loc + other.loc),
+          value(other.value),
+          string_type(other.string_type) {};
+
+    const SizedType &type() const
+    {
+      return string_type;
+    }
+
+    bool operator==(const String &other) const
+    {
+      return value == other.value && string_type == other.string_type;
+    }
+    std::strong_ordering operator<=>(const String &other) const
+    {
+      if (auto cmp = value <=> other.value; cmp != 0)
+        return cmp;
+      return string_type <=> other.string_type;
+    }
+
+    const std::string value;
+    SizedType string_type;
+  };
+
+  class Identifier : public Node {
+  public:
+    explicit Identifier(ASTContext &ctx, std::string ident, Location &&loc)
+        : Node(ctx, std::move(loc)), ident(std::move(ident)) {};
+    explicit Identifier(ASTContext &ctx,
+                        const Identifier &other,
+                        const Location &loc)
+        : Node(ctx, loc + other.loc),
+          ident(other.ident),
+          ident_type(other.ident_type) {};
+
+    const SizedType &type() const
+    {
+      return ident_type;
+    }
+
+    bool operator==(const Identifier &other) const
+    {
+      return ident == other.ident && ident_type == other.ident_type;
+    }
+    std::strong_ordering operator<=>(const Identifier &other) const
+    {
+      if (auto cmp = ident <=> other.ident; cmp != 0)
+        return cmp;
+      return ident_type <=> other.ident_type;
+    }
+
+    std::string ident;
+    SizedType ident_type;
+  };
+
+  class Builtin : public Node {
+  public:
+    explicit Builtin(ASTContext &ctx, std::string ident, Location &&loc)
+        : Node(ctx, std::move(loc)), ident(std::move(ident)) {};
+    explicit Builtin(ASTContext &ctx, const Builtin &other, const Location &loc)
+        : Node(ctx, loc + other.loc),
+          ident(other.ident),
+          probe_id(other.probe_id),
+          builtin_type(other.builtin_type) {};
+
+    const SizedType &type() const
+    {
+      return builtin_type;
+    }
+
+    // Check if the builtin is 'arg0' - 'arg255'
+    bool is_argx() const
+    {
+      if (ident.size() < 4 || ident.size() > 6 || !ident.starts_with("arg"))
+        return false;
+
+      std::string num_part = ident.substr(3);
+
+      // no leading zeros
+      if (num_part.size() > 1 && num_part.front() == '0')
+        return false;
+
+      int arg_num = 0;
+      auto [ptr, ec] = std::from_chars(num_part.data(),
+                                       num_part.data() + num_part.size(),
+                                       arg_num);
+      return ec == std::errc() && ptr == num_part.data() + num_part.size() &&
+             arg_num >= 0 && arg_num < 256;
+    }
+
+    bool operator==(const Builtin &other) const
+    {
+      return ident == other.ident && probe_id == other.probe_id &&
+             builtin_type == other.builtin_type;
+    }
+    std::strong_ordering operator<=>(const Builtin &other) const
+    {
+      if (auto cmp = ident <=> other.ident; cmp != 0)
+        return cmp;
+      if (auto cmp = probe_id <=> other.probe_id; cmp != 0)
+        return cmp;
+      return builtin_type <=> other.builtin_type;
+    }
+
+    std::string ident;
+    int probe_id;
+    SizedType builtin_type;
+  };
+
+  class Call : public Node {
+  public:
+    explicit Call(ASTContext &ctx,
+                  std::string func,
+                  ExpressionList &&vargs,
+                  Location &&loc)
+        : Node(ctx, std::move(loc)),
+          func(std::move(func)),
+          vargs(std::move(vargs)) {};
+    explicit Call(ASTContext &ctx, const Call &other, const Location &loc)
+        : Node(ctx, loc + other.loc),
+          func(other.func),
+          vargs(clone(ctx, other.vargs, loc)),
+          return_type(other.return_type),
+          injected_args(other.injected_args) {};
+
+    const SizedType &type() const
+    {
+      return return_type;
+    }
+
+    bool operator==(const Call &other) const
+    {
+      return func == other.func && vargs == other.vargs &&
+             injected_args == other.injected_args &&
+             return_type == other.return_type;
+    }
+    std::strong_ordering operator<=>(const Call &other) const
+    {
+      if (auto cmp = func <=> other.func; cmp != 0)
+        return cmp;
+      if (vargs.size() != other.vargs.size())
+        return vargs.size() <=> other.vargs.size();
+      for (size_t i = 0; i < vargs.size(); ++i) {
+        if (auto cmp = vargs[i] <=> other.vargs[i]; cmp != 0)
+          return cmp;
+      }
+      if (auto cmp = injected_args <=> other.injected_args; cmp != 0)
+        return cmp;
+      return return_type <=> other.return_type;
+    }
+
+    std::string func;
+    ExpressionList vargs;
+    SizedType return_type;
+
+    // Some passes may inject new arguments to the call, which is always
+    // done at the beginning (in order to support variadic arguments) for
+    // later passes. This is a result of "desugaring" some syntax. When this
+    // happens, this number is increased so that later error reporting can
+    // correctly account for this.
+    size_t injected_args = 0;
+    bool ret_val_discarded = false;
+  };
+
+  class Sizeof : public Node {
+  public:
+    explicit Sizeof(ASTContext &ctx, SizedType type, Location &&loc)
+        : Node(ctx, std::move(loc)), record(type) {};
+    explicit Sizeof(ASTContext &ctx, Expression expr, Location &&loc)
+        : Node(ctx, std::move(loc)), record(expr) {};
+    explicit Sizeof(ASTContext &ctx, const Sizeof &other, const Location &loc)
+        : Node(ctx, loc + other.loc), record(clone(ctx, other.record, loc)) {};
+
+    const SizedType &type() const
+    {
+      // See exception for Integer type construction.
+      static SizedType uint64 = CreateUInt64();
+      return uint64;
+    }
+
+    bool operator==(const Sizeof &other) const
+    {
+      if (record.index() != other.record.index())
+        return false;
+      return std::visit(
+          [&other](const auto &v) {
+            using T = std::decay_t<decltype(v)>;
+            return v == std::get<T>(other.record);
+          },
+          record);
+    }
+    std::strong_ordering operator<=>(const Sizeof &other) const
+    {
+      if (auto cmp = record.index() <=> other.record.index(); cmp != 0)
+        return cmp;
+      return std::visit(
+          [&other](const auto &v) -> std::strong_ordering {
+            using T = std::decay_t<decltype(v)>;
+            return v <=> std::get<T>(other.record);
+          },
+          record);
+    }
+
+    std::variant<Expression, SizedType> record;
+  };
+
+  class Offsetof : public Node {
+  public:
+    explicit Offsetof(ASTContext &ctx,
+                      SizedType record,
+                      std::vector<std::string> &field,
+                      Location &&loc)
+        : Node(ctx, std::move(loc)), record(record), field(field) {};
+    explicit Offsetof(ASTContext &ctx,
+                      Expression expr,
+                      std::vector<std::string> &field,
+                      Location &&loc)
+        : Node(ctx, std::move(loc)), record(expr), field(field) {};
+    explicit Offsetof(ASTContext &ctx,
+                      const Offsetof &other,
+                      const Location &loc)
+        : Node(ctx, loc + other.loc),
+          record(clone(ctx, other.record, loc + other.loc)),
+          field(other.field) {};
+
+    const SizedType &type() const
+    {
+      // See exception for Integer type construction.
+      static SizedType uint64 = CreateUInt64();
+      return uint64;
+    }
+
+    bool operator==(const Offsetof &other) const
+    {
+      if (record.index() != other.record.index())
+        return false;
+      bool record_equal = std::visit(
+          [&other](const auto &v) {
+            using T = std::decay_t<decltype(v)>;
+            return v == std::get<T>(other.record);
+          },
+          record);
+      return record_equal && field == other.field;
+    }
+    std::strong_ordering operator<=>(const Offsetof &other) const
+    {
+      if (auto cmp = record.index() <=> other.record.index(); cmp != 0)
+        return cmp;
+      auto record_cmp = std::visit(
+          [&other](const auto &v) -> std::strong_ordering {
+            using T = std::decay_t<decltype(v)>;
+            return v <=> std::get<T>(other.record);
+          },
+          record);
+      if (record_cmp != 0)
+        return record_cmp;
+      return field <=> other.field;
+    }
+
+    std::variant<Expression, SizedType> record;
+    std::vector<std::string> field;
+  };
 
 class Map : public Node {
 public:
@@ -862,6 +863,40 @@ public:
   const int max_entries;
 };
 using MapDeclList = std::vector<MapDeclStatement *>;
+
+class Map : public Node {
+public:
+  explicit Map(ASTContext &ctx, std::string ident, Location &&loc)
+      : Node(ctx, std::move(loc)), ident(std::move(ident)) {};
+  explicit Map(ASTContext &ctx, const Map &other, const Location &loc)
+      : Node(ctx, loc + other.loc),
+        ident(other.ident),
+        key_type(other.key_type),
+        value_type(other.value_type) {};
+
+  const SizedType &type() const
+  {
+    return value_type;
+  }
+
+  bool operator==(const Map &other) const
+  {
+    return ident == other.ident && key_type == other.key_type &&
+           value_type == other.value_type;
+  }
+  std::strong_ordering operator<=>(const Map &other) const
+  {
+    if (auto cmp = ident <=> other.ident; cmp != 0)
+      return cmp;
+    if (auto cmp = key_type <=> other.key_type; cmp != 0)
+      return cmp;
+    return value_type <=> other.value_type;
+  }
+
+  std::string ident;
+  SizedType key_type;
+  SizedType value_type;
+};
 
 class Variable : public Node {
 public:
@@ -1717,131 +1752,37 @@ public:
   ConfigStatementList stmts;
 };
 
-class Probe;
 class AttachPoint : public Node {
 public:
   explicit AttachPoint(ASTContext &ctx,
-                       std::string raw_input,
-                       bool ignore_invalid,
+                       std::string provider,
+                       std::string target,
                        Location &&loc)
       : Node(ctx, std::move(loc)),
-        raw_input(std::move(raw_input)),
-        ignore_invalid(ignore_invalid) {};
+        provider(std::move(provider)),
+        target(std::move(target)) {};
   explicit AttachPoint(ASTContext &ctx,
                        const AttachPoint &other,
                        const Location &loc)
       : Node(ctx, loc + other.loc),
-        raw_input(other.raw_input),
         provider(other.provider),
-        target(other.target),
-        lang(other.lang),
-        ns(other.ns),
-        func(other.func),
-        pin(other.pin),
-        usdt(other.usdt),
-        freq(other.freq),
-        len(other.len),
-        mode(other.mode),
-        async(other.async),
-        address(other.address),
-        func_offset(other.func_offset),
-        ignore_invalid(other.ignore_invalid),
-        index_(other.index_) {};
+        target(other.target) {};
 
   bool operator==(const AttachPoint &other) const
   {
-    return raw_input == other.raw_input && provider == other.provider &&
-           target == other.target && lang == other.lang && ns == other.ns &&
-           func == other.func && pin == other.pin && freq == other.freq &&
-           len == other.len && mode == other.mode && async == other.async &&
-           address == other.address && func_offset == other.func_offset &&
-           ignore_invalid == other.ignore_invalid;
+    return provider == other.provider && target == other.target;
   }
   std::strong_ordering operator<=>(const AttachPoint &other) const
   {
-    if (auto cmp = raw_input <=> other.raw_input; cmp != 0)
-      return cmp;
     if (auto cmp = provider <=> other.provider; cmp != 0)
       return cmp;
-    if (auto cmp = target <=> other.target; cmp != 0)
-      return cmp;
-    if (auto cmp = lang <=> other.lang; cmp != 0)
-      return cmp;
-    if (auto cmp = ns <=> other.ns; cmp != 0)
-      return cmp;
-    if (auto cmp = func <=> other.func; cmp != 0)
-      return cmp;
-    if (auto cmp = pin <=> other.pin; cmp != 0)
-      return cmp;
-    if (auto cmp = freq <=> other.freq; cmp != 0)
-      return cmp;
-    if (auto cmp = len <=> other.len; cmp != 0)
-      return cmp;
-    if (auto cmp = mode <=> other.mode; cmp != 0)
-      return cmp;
-    if (auto cmp = async <=> other.async; cmp != 0)
-      return cmp;
-    if (auto cmp = address <=> other.address; cmp != 0)
-      return cmp;
-    if (auto cmp = func_offset <=> other.func_offset; cmp != 0)
-      return cmp;
-    return ignore_invalid <=> other.ignore_invalid;
+    return target <=> other.target;
   }
-
-  // Currently, the AST node itself is used to store metadata related to probe
-  // expansion and attachment. This is done through `create_expansion_copy`
-  // below.  Since the nodes are not currently copyable by default (this is
-  // currently fraught, as nodes may have backreferences that are not updated
-  // in these cases), these fields are copied manually. *Until this is fixed,
-  // if you are adding new fields, be sure to update `create_expansion_copy`.
-  //
-  // FIXME(amscanne): We are not currently cloning AttachPoints correctly, as
-  // they refer to the existing ret probe.
-
-  // Raw, unparsed input from user, eg. kprobe:vfs_read
-  std::string raw_input;
 
   std::string provider;
   std::string target;
-  std::string lang; // for userspace probes, enable language-specific features
-  std::string ns;
-  std::string func;
-  std::string pin;
-  usdt_probe_entry usdt; // resolved USDT entry, used to support arguments with
-                         // wildcard matches
-  int64_t freq = 0;
-  uint64_t len = 0;   // for watchpoint probes, the width of watched addr
-  std::string mode;   // for watchpoint probes, the watch mode
-  bool async = false; // for watchpoint probes, if it's an async watchpoint
-
-  uint64_t address = 0;
-  uint64_t func_offset = 0;
-  uint64_t bpf_prog_id = 0;
-  bool ignore_invalid = false;
-
-  std::string name() const;
-
-  AttachPoint *create_expansion_copy(ASTContext &ctx,
-                                     const std::string &match) const;
-
-  int index() const;
-  void set_index(int index);
-
-  bool check_available(const std::string &identifier) const;
-
-private:
-  int index_ = 0;
 };
 using AttachPointList = std::vector<AttachPoint *>;
-
-inline std::string probe_orig_name(AttachPointList &aps)
-{
-  std::vector<std::string> ap_names;
-  std::ranges::transform(aps,
-                         std::back_inserter(ap_names),
-                         [](const AttachPoint *ap) { return ap->raw_input; });
-  return util::str_join(ap_names, ",");
-}
 
 class Probe : public Node {
 public:
@@ -1851,42 +1792,25 @@ public:
                  Location &&loc)
       : Node(ctx, std::move(loc)),
         attach_points(std::move(attach_points)),
-        block(block),
-        orig_name(probe_orig_name(this->attach_points)) {};
+        block(block) {};
   explicit Probe(ASTContext &ctx, const Probe &other, const Location &loc)
       : Node(ctx, loc + other.loc),
         attach_points(clone(ctx, other.attach_points, loc)),
-        block(clone(ctx, other.block, loc)),
-        orig_name(other.orig_name),
-        index_(other.index_) {};
+        block(clone(ctx, other.block, loc)) {};
 
   bool operator==(const Probe &other) const
   {
-    return attach_points == other.attach_points && *block == *other.block &&
-           orig_name == other.orig_name;
+    return attach_points == other.attach_points && *block == *other.block;
   }
   std::strong_ordering operator<=>(const Probe &other) const
   {
     if (auto cmp = attach_points <=> other.attach_points; cmp != 0)
       return cmp;
-    if (auto cmp = *block <=> *other.block; cmp != 0)
-      return cmp;
-    return orig_name <=> other.orig_name;
+    return *block <=> *other.block;
   }
 
   AttachPointList attach_points;
   BlockExpr *block = nullptr;
-  std::string orig_name;
-
-  std::string args_typename() const;
-
-  int index() const;
-  void set_index(int index);
-
-  bool has_ap_of_probetype(ProbeType probe_type);
-
-private:
-  int index_ = 0;
 };
 using ProbeList = std::vector<Probe *>;
 

@@ -5,11 +5,9 @@
 namespace bpftrace::providers {
 
 /// Provider for tracepoint attach points.
-class TracepointProvider : public ProviderImpl<TracepointProvider> {
+class TracepointProvider
+    : public ProviderImpl<TracepointProvider, "tracepoint", "t"> {
 public:
-  TracepointProvider()
-      : ProviderImpl<TracepointProvider>("tracepoint", { "t" }) {};
-
   Result<AttachPointList> parse(
       const std::string &str,
       const BtfLookup &btf,

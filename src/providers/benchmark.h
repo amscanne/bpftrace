@@ -5,10 +5,8 @@
 namespace bpftrace::providers {
 
 /// Provider for benchmark probes.
-class BenchmarkProvider : public ProviderImpl<BenchmarkProvider> {
+class BenchmarkProvider : public ProviderImpl<BenchmarkProvider, "bench", "b"> {
 public:
-  BenchmarkProvider() : ProviderImpl<BenchmarkProvider>("bench", { "b" }) {};
-
   Result<AttachPointList> parse(
       const std::string &str,
       const BtfLookup &btf,

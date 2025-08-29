@@ -20,7 +20,6 @@ add_dependencies(compiler_core parser)
 
 add_library(runtime STATIC
   async_action.cpp
-  attached_probe.cpp
   bpffeature.cpp
   bpftrace.cpp
   bpfbytecode.cpp
@@ -35,7 +34,6 @@ add_library(runtime STATIC
   globalvars.cpp
   log.cpp
   probe_matcher.cpp
-  probe_types.cpp
   procmon.cpp
   run_bpftrace.cpp
   usdt.cpp
@@ -52,7 +50,6 @@ add_library(libbpftrace STATIC
   build_info.cpp
   driver.cpp
   lockdown.cpp
-  tracepoint_format_parser.cpp
 )
 # So it's not "liblibbpftrace"
 set_target_properties(libbpftrace PROPERTIES PREFIX "")

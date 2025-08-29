@@ -1,41 +1,35 @@
 #include <bpf/libbpf.h>
 
-#include "attached_probe.h"
-#include "btf/btf.h"
 #include "log.h"
 #include "providers/provider.h"
 
 namespace bpftrace::providers {
-
-std::ostream &operator<<(std::ostream &out, const AttachPoint &attach_point)
-{
-  auto name = attach_point.name();
-  if (name.empty()) {
-    out << attach_point.provider();
-  } else {
-    out << attach_point.provider().name() << ":" << attach_point.name();
-  }
-  return out;
-}
 
 char AttachError::ID = 0;
 
 void AttachError::log(llvm::raw_ostream &OS) const
 {
   std::stringstream ss;
-  ss << "attach error for " << *attach_point_ << ": " << err_;
+  ss << "attach error for " << provider_->name() << ":" << attach_point_->name()
+     << ": " << err_;
   OS << ss.str();
 }
 
 int AttachedProbe::link_fd() const
 {
-  return bpf_link__fd(link_);
+  if (std::holds_alternative<struct bpf_link *>(link_)) {
+    return bpf_link__fd(std::get<struct bpf_link *>(link_));
+  } else {
+    return std::get<util::FD>(link_).get();
+  }
 }
 
 AttachedProbe::~AttachedProbe()
 {
-  if (bpf_link__destroy(link_)) {
-    LOG(WARNING) << "failed to destroy bpf_link: " << strerror(errno);
+  if (std::holds_alternative<struct bpf_link *>(link_)) {
+    if (bpf_link__destroy(std::get<struct bpf_link *>(link_))) {
+      LOG(WARNING) << "failed to destroy bpf_link: " << strerror(errno);
+    }
   }
 }
 
@@ -72,13 +66,21 @@ void ProviderConflict::log(llvm::raw_ostream &OS) const
   OS << "unable to proceed";
 }
 
+Result<bpftrace::btf::AnyType> AttachPoint::context_type(
+    const btf::Types &kernel_types) const
+{
+  return kernel_types.lookup<btf::Void>(0);
+}
+
+Result<bpftrace::btf::AnyType> AttachPoint::return_type(
+    const btf::Types &kernel_types) const
+{
+  return kernel_types.lookup<btf::Void>(0);
+}
+
 Result<> Provider::run(std::unique_ptr<AttachPoint> &attach_point,
                        const BpfProgram &prog) const
 {
-  if (attach_point->provider().provider_id() != provider_id()) {
-    return make_error<AttachError>(std::move(attach_point),
-                                   "attach point provider mismatch");
-  }
   return run_single(attach_point, prog);
 }
 
@@ -101,10 +103,6 @@ Result<AttachedProbeList> Provider::attach(AttachPointList &&attach_points,
   AttachPointList multi_attachable;
   AttachPointList single_attachable;
   for (auto &attach_point : attach_points) {
-    if (attach_point->provider().provider_id() != provider_id()) {
-      return make_error<AttachError>(std::move(attach_point),
-                                     "attach point provider mismatch");
-    }
     if (attach_point->can_multi_attach()) {
       multi_attachable.emplace_back(std::move(attach_point));
     } else {
@@ -151,3 +149,8 @@ Result<AttachedProbeList> Provider::attach_multi(
 }
 
 } // namespace bpftrace::providers
+
+CEREAL_REGISTER_TYPE(bpftrace::providers::AttachPoint)
+CEREAL_REGISTER_TYPE(bpftrace::providers::SimpleAttachPoint)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(bpftrace::providers::AttachPoint,
+                                     bpftrace::providers::SimpleAttachPoint)

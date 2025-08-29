@@ -22,3 +22,103 @@ macro usermode() {
     fail("'usermode' builtin is only supported on x86_64")
   }
 }
+
+// Given a registers struct, return the instruction pointer.
+macro pc(regs) {
+  if (comptime arch == "x86_64") {
+    regs.ip
+  } else if (comptime arch == "arm") {
+    regs.pc
+  } else if (comptime arch == "arm64") {
+    regs.pc
+  } else if (comptime arch == "s390x") {
+    regs.pswaddr
+  } else if (comptime arch == "ppc64") {
+    regs.nip
+  } else if (comptime arch == "mips64") {
+    regs.cp0_epc
+  } else if (comptime arch == "riscv64") {
+    regs.pc
+  } else if (comptime arch == "loongarch64") {
+    regs.pc
+  } else {
+    fail("unknown architecture: ", arch)
+  }
+}
+macro pc() {
+  if (comptime provider == "kprobe" || provider == "kretprobe" || provider == "uprobe" || provider == "uretprobe") {
+    pc(ctx)
+  } else {
+    fail("pc must be called with an explicit registers struct")
+  }
+}
+
+// Given a registers struct, return the return value.
+macro retval(regs) {
+  if (comptime arch == "x86_64") {
+    regs.ax
+  } else if (comptime arch == "arm") {
+    regs.r0
+  } else if (comptime arch == "arm64") {
+    regs.r0
+  } else if (comptime arch == "s390x") {
+    regs.r2
+  } else if (comptime arch == "ppc64") {
+    regs.r3
+  } else if (comptime arch == "mips64") {
+    regs.v0
+  } else if (comptime arch == "riscv64") {
+    regs.a0
+  } else if (comptime arch == "loongarch64") {
+    regs.r4
+  } else {
+    fail("unknown architecture: ", arch)
+  }
+}
+macro retval() {
+  if (comptime provider == "fexit") {
+    $rv = (uint64)0;
+    __bpf_get_func_ret(ctx, &$rv);
+    $rv
+  } else if (comptime provider == "kretprobe" || provider == "kprobe") {
+    retval(ctx)
+  }
+}
+
+macro func_ip() {
+  __bpf_get_func_ip(ctx)
+}
+
+macro arg_registers(ctx) {
+}
+
+macro arg(n) {
+  $val = (uint64)0;
+  __bpf_get_func_arg(ctx, (uint32)n, &$val);
+  $val
+}
+
+macro arg1() { arg(0) }
+macro arg2() { arg(1) }
+macro arg3() { arg(2) }
+macro arg4() { arg(3) }
+macro arg5() { arg(4) }
+macro arg6() { arg(5) }
+macro arg7() { arg(6) }
+macro arg8() { arg(7) }
+macro arg9() { arg(8) }
+macro arg10() { arg(9) }
+macro arg11() { arg(10) }
+macro arg12() { arg(11) }
+macro arg13() { arg(12) }
+macro arg14() { arg(13) }
+macro arg15() { arg(14) }
+macro arg16() { arg(15) }
+
+macro args() {
+  if (comptime provider == "tracepoint" || provider == "rawtracepoint" || provider == "fentry") {
+    ctx
+  } else {
+    fail("args are not available with provider: ", provider)
+  }
+}

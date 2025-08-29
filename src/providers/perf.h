@@ -5,12 +5,13 @@
 namespace bpftrace::providers {
 
 /// Provider for software & hardware event attach points.
-class PerfProvider : public ProviderImpl<PerfProvider> {
+class PerfProvider : public ProviderImpl<PerfProvider,
+                                         "perf",
+                                         "hardware",
+                                         "software",
+                                         "hw",
+                                         "sw"> {
 public:
-  PerfProvider()
-      : ProviderImpl<PerfProvider>("perf",
-                                   { "hardware", "software", "hw", "sw" }) {};
-
   Result<AttachPointList> parse(
       const std::string &str,
       const BtfLookup &btf,

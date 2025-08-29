@@ -1,16 +1,14 @@
 #include "providers/benchmark.h"
 #include "bpfprogram.h"
 #include "util/result.h"
-#include "util/strings.h"
 
 namespace bpftrace::providers {
 
-class BenchmarkAttachPoint : public AttachPoint {
+class BenchmarkAttachPoint : public SimpleAttachPoint {
 public:
-  BenchmarkAttachPoint(const Provider &provider, const std::string &name)
-      : AttachPoint(provider, name)
-  {
-  }
+  BenchmarkAttachPoint([[maybe_unused]] Provider &provider,
+                       const std::string &name)
+      : SimpleAttachPoint(name) {};
 
   Action action() const override
   {
@@ -58,3 +56,7 @@ Result<> BenchmarkProvider::run_single(
 }
 
 } // namespace bpftrace::providers
+
+CEREAL_REGISTER_TYPE(bpftrace::providers::BenchmarkAttachPoint)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(bpftrace::providers::SimpleAttachPoint,
+                                     bpftrace::providers::BenchmarkAttachPoint)

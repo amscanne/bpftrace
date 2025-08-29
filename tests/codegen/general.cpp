@@ -11,18 +11,6 @@ using ::testing::_;
 
 class MockBPFtrace : public BPFtrace {
 public:
-#pragma GCC diagnostic push
-#ifdef __clang__
-#pragma GCC diagnostic ignored "-Winconsistent-missing-override"
-#endif
-  MOCK_METHOD5(add_probe,
-               int(const ast::AttachPoint &,
-                   const ast::Probe &,
-                   ast::ExpansionType,
-                   std::set<std::string>,
-                   int));
-#pragma GCC diagnostic pop
-
   int resolve_uname(const std::string &name,
                     struct symbol *sym,
                     const std::string &path) const override

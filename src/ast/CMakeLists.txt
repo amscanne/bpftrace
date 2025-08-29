@@ -26,7 +26,6 @@ add_library(ast STATIC
   passes/config_analyser.cpp
   passes/control_flow_analyser.cpp
   passes/deprecated.cpp
-  passes/field_analyser.cpp
   passes/fold_literals.cpp
   passes/import_scripts.cpp
   passes/link.cpp
@@ -36,7 +35,6 @@ add_library(ast STATIC
   passes/portability_analyser.cpp
   passes/printer.cpp
   passes/probe_expansion.cpp
-  passes/probe_prune.cpp
   passes/resource_analyser.cpp
   passes/register_providers.cpp
   passes/semantic_analyser.cpp

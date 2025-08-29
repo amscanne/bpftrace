@@ -3,7 +3,11 @@
 
 #include "arch/arch.h"
 #include "ast/ast.h"
+<<<<<<< HEAD
 #include "ast/passes/attachpoint_passes.h"
+    == == ==
+    =
+>>>>>>> 0c4403e6 (inprog)
 #include "ast/passes/c_macro_expansion.h"
 #include "ast/passes/clang_parser.h"
 #include "ast/passes/control_flow_analyser.h"
@@ -23,231 +27,231 @@
 #include "driver.h"
 #include "mocks.h"
 
-namespace bpftrace::test::semantic_analyser {
-
-using ::testing::_;
-using ::testing::HasSubstr;
-
-struct Mock {
-  BPFtrace &bpftrace;
-};
-enum class UnsafeMode {
-  Enable = 0, // Default is safe.
-};
-enum class Child {
-  Enable = 0, // Default is no child.
-};
-enum class NoFeatures {
-  Enable = 0, // Default is full features.
-};
-struct Warning {
-  std::string_view str;
-};
-struct NoWarning {
-  std::string_view str;
-};
-struct Error {
-  std::string_view str;
-};
-struct Types {
-  ast::TypeMetadata &types;
-};
-struct ExpectedAST {
-  std::string_view str;
-};
-
-template <typename T, typename First, typename... Ts>
-std::optional<T> extract(First &&arg, Ts &&...rest)
+        namespace bpftrace::test::semantic_analyser
 {
-  if constexpr (std::is_same_v<std::decay_t<First>, T>) {
-    // Assert that nothing in the rest matches T.
-    static_assert(!(std::is_same_v<std::decay_t<Ts>, T> || ...),
-                  "Only one argument of each type is allowed");
-    return arg;
-  }
-  if constexpr (sizeof...(Ts) != 0) {
-    return extract<T, Ts...>(std::forward<Ts>(rest)...);
-  }
-  return std::nullopt;
-}
+  using ::testing::_;
+  using ::testing::HasSubstr;
 
-template <typename T>
-std::optional<T> extract()
-{
-  return std::nullopt;
-}
+  struct Mock {
+    BPFtrace &bpftrace;
+  };
+  enum class UnsafeMode {
+    Enable = 0, // Default is safe.
+  };
+  enum class Child {
+    Enable = 0, // Default is no child.
+  };
+  enum class NoFeatures {
+    Enable = 0, // Default is full features.
+  };
+  struct Warning {
+    std::string_view str;
+  };
+  struct NoWarning {
+    std::string_view str;
+  };
+  struct Error {
+    std::string_view str;
+  };
+  struct Types {
+    ast::TypeMetadata &types;
+  };
+  struct ExpectedAST {
+    std::string_view str;
+  };
 
-std::string_view clean_prefix(std::string_view view)
-{
-  while (!view.empty() && view[0] == '\n')
-    view.remove_prefix(1); // Remove initial '\n'
-  return view;
-}
-
-// This exists as a test fixture because the types may refer to `bpftrace`, so
-// this objects lifetime must exceed the tests lifetime. This is easier with a
-// fixture, and allows us to have a single harness.
-class SemanticAnalyserHarness {
-public:
-  template <typename... Ts>
-    requires((std::is_same_v<std::decay_t<Ts>, Mock> ||
-              std::is_same_v<std::decay_t<Ts>, UnsafeMode> ||
-              std::is_same_v<std::decay_t<Ts>, Child> ||
-              std::is_same_v<std::decay_t<Ts>, NoFeatures> ||
-              std::is_same_v<std::decay_t<Ts>, Warning> ||
-              std::is_same_v<std::decay_t<Ts>, NoWarning> ||
-              std::is_same_v<std::decay_t<Ts>, Error> ||
-              std::is_same_v<std::decay_t<Ts>, ExpectedAST> ||
-              std::is_same_v<std::decay_t<Ts>, Types>) &&
-             ...)
-  ast::ASTContext test(std::string_view input, Ts &&...args)
+  template <typename T, typename First, typename... Ts>
+  std::optional<T> extract(First && arg, Ts && ...rest)
   {
-    ast::ASTContext ast("stdin", std::string(clean_prefix(input)));
-
-    // Reset for each iteration. We only guarantee that the types remain
-    // valid after the ASTContext has been returned.
-    bpftrace_.reset();
-    types_.reset();
-
-    // Extract all extra arguments.
-    auto mock = extract<Mock>(args...);
-    auto unsafe_mode = extract<UnsafeMode>(args...);
-    auto child = extract<Child>(args...);
-    auto no_features = extract<NoFeatures>(args...);
-    auto warning = extract<Warning>(args...);
-    auto nowarning = extract<NoWarning>(args...);
-    auto error = extract<Error>(args...);
-    auto types = extract<Types>(args...);
-    auto expected_ast = extract<ExpectedAST>(args...);
-
-    if (!mock) {
-      // Create a fresh instance.
-      bpftrace_ = get_mock_bpftrace();
-      mock.emplace(*bpftrace_);
+    if constexpr (std::is_same_v<std::decay_t<First>, T>) {
+      // Assert that nothing in the rest matches T.
+      static_assert(!(std::is_same_v<std::decay_t<Ts>, T> || ...),
+                    "Only one argument of each type is allowed");
+      return arg;
     }
-    mock->bpftrace.safe_mode_ = !unsafe_mode.has_value();
-    mock->bpftrace.feature_ = std::make_unique<MockBPFfeature>(
-        !no_features.has_value());
-    if (child.has_value()) {
-      mock->bpftrace.cmd_ = "not-empty"; // Used by SemanticAnalyser.
+    if constexpr (sizeof...(Ts) != 0) {
+      return extract<T, Ts...>(std::forward<Ts>(rest)...);
     }
-    if (!types) {
-      types_.emplace();
-      types.emplace(*types_);
-    }
-
-    auto ok = ast::PassManager()
-                  .put(ast)
-                  .put(mock->bpftrace)
-                  .put(types->types)
-                  .add(CreateParsePass())
-                  .add(ast::CreateResolveImportsPass())
-                  .add(ast::CreateControlFlowPass())
-                  .add(ast::CreateImportInternalScriptsPass())
-                  .add(ast::CreateMacroExpansionPass())
-                  .add(ast::CreateParseAttachpointsPass())
-                  .add(ast::CreateProbeExpansionPass())
-                  .add(ast::CreateFieldAnalyserPass())
-                  .add(ast::CreateClangParsePass())
-                  .add(ast::CreateCMacroExpansionPass())
-                  .add(ast::CreateFoldLiteralsPass())
-                  .add(ast::CreateMapSugarPass())
-                  .add(ast::CreateNamedParamsPass())
-                  .add(ast::CreateSemanticPass())
-                  .run();
-    EXPECT_TRUE(bool(ok));
-
-    std::stringstream out;
-    ast.diagnostics().emit(out, ast::Diagnostics::Severity::Warning);
-    if (warning) {
-      EXPECT_TRUE(!warning->str.empty());
-      EXPECT_THAT(out.str(), HasSubstr(clean_prefix(warning->str)))
-          << out.str();
-    }
-    if (nowarning) {
-      EXPECT_TRUE(!nowarning->str.empty());
-      EXPECT_THAT(out.str(), Not(HasSubstr(clean_prefix(nowarning->str))))
-          << out.str();
-    }
-    out.str("");
-    ast.diagnostics().emit(out, ast::Diagnostics::Severity::Error);
-    const auto errstr = out.str();
-    if (error) {
-      if (!error->str.empty()) {
-        EXPECT_THAT(errstr, HasSubstr(clean_prefix(error->str))) << errstr;
-      } else {
-        EXPECT_TRUE(!errstr.empty()) << errstr;
-      }
-    } else {
-      EXPECT_EQ(errstr, "") << errstr;
-    }
-    out.str("");
-    if (expected_ast) {
-      EXPECT_TRUE(!expected_ast->str.empty());
-      ast::Printer printer(out);
-      printer.visit(ast.root);
-      const auto aststr = out.str();
-      EXPECT_THAT(aststr, HasSubstr(clean_prefix(expected_ast->str))) << aststr;
-    }
-
-    return ast;
+    return std::nullopt;
   }
 
-private:
-  std::unique_ptr<MockBPFtrace> bpftrace_;
-  std::optional<ast::TypeMetadata> types_;
-};
+  template <typename T>
+  std::optional<T> extract()
+  {
+    return std::nullopt;
+  }
 
-class SemanticAnalyserTest : public SemanticAnalyserHarness,
-                             public testing::Test {};
+  std::string_view clean_prefix(std::string_view view)
+  {
+    while (!view.empty() && view[0] == '\n')
+      view.remove_prefix(1); // Remove initial '\n'
+    return view;
+  }
 
-TEST_F(SemanticAnalyserTest, builtin_variables)
-{
-  // Just check that each one exists as a builtin or macro
-  test("kprobe:f { pid }");
-  test("kprobe:f { tid }");
-  test("kprobe:f { cgroup }");
-  test("kprobe:f { uid }");
-  test("kprobe:f { username }");
-  test("kprobe:f { gid }");
-  test("kprobe:f { nsecs }");
-  test("kprobe:f { elapsed }");
-  test("kprobe:f { cpu }");
-  test("kprobe:f { ncpus }");
-  test("kprobe:f { curtask }");
-  test("kprobe:f { rand }");
-  test("kprobe:f { ctx }");
-  test("kprobe:f { comm }");
-  test("kprobe:f { kstack }");
-  test("kprobe:f { ustack }");
-  test("kprobe:f { arg0 }");
-  test("kprobe:f { sarg0 }");
-  test("kretprobe:f { retval }");
-  test("kprobe:f { func }");
-  test("uprobe:/bin/sh:f { func }");
-  test("kprobe:f { probe }");
-  test("tracepoint:sched:sched_one { args }");
-  test("kprobe:f { jiffies }");
+  // This exists as a test fixture because the types may refer to `bpftrace`, so
+  // this objects lifetime must exceed the tests lifetime. This is easier with a
+  // fixture, and allows us to have a single harness.
+  class SemanticAnalyserHarness {
+  public:
+    template <typename... Ts>
+      requires((std::is_same_v<std::decay_t<Ts>, Mock> ||
+                std::is_same_v<std::decay_t<Ts>, UnsafeMode> ||
+                std::is_same_v<std::decay_t<Ts>, Child> ||
+                std::is_same_v<std::decay_t<Ts>, NoFeatures> ||
+                std::is_same_v<std::decay_t<Ts>, Warning> ||
+                std::is_same_v<std::decay_t<Ts>, NoWarning> ||
+                std::is_same_v<std::decay_t<Ts>, Error> ||
+                std::is_same_v<std::decay_t<Ts>, ExpectedAST> ||
+                std::is_same_v<std::decay_t<Ts>, Types>) &&
+               ...)
+    ast::ASTContext test(std::string_view input, Ts &&...args)
+    {
+      ast::ASTContext ast("stdin", std::string(clean_prefix(input)));
 
-  test("kprobe:f { fake }", Error{ R"(
+      // Reset for each iteration. We only guarantee that the types remain
+      // valid after the ASTContext has been returned.
+      bpftrace_.reset();
+      types_.reset();
+
+      // Extract all extra arguments.
+      auto mock = extract<Mock>(args...);
+      auto unsafe_mode = extract<UnsafeMode>(args...);
+      auto child = extract<Child>(args...);
+      auto no_features = extract<NoFeatures>(args...);
+      auto warning = extract<Warning>(args...);
+      auto nowarning = extract<NoWarning>(args...);
+      auto error = extract<Error>(args...);
+      auto types = extract<Types>(args...);
+      auto expected_ast = extract<ExpectedAST>(args...);
+
+      if (!mock) {
+        // Create a fresh instance.
+        bpftrace_ = get_mock_bpftrace();
+        mock.emplace(*bpftrace_);
+      }
+      mock->bpftrace.safe_mode_ = !unsafe_mode.has_value();
+      mock->bpftrace.feature_ = std::make_unique<MockBPFfeature>(
+          !no_features.has_value());
+      if (child.has_value()) {
+        mock->bpftrace.cmd_ = "not-empty"; // Used by SemanticAnalyser.
+      }
+      if (!types) {
+        types_.emplace();
+        types.emplace(*types_);
+      }
+
+      auto ok = ast::PassManager()
+                    .put(ast)
+                    .put(mock->bpftrace)
+                    .put(types->types)
+                    .add(CreateParsePass())
+                    .add(ast::CreateResolveImportsPass())
+                    .add(ast::CreateControlFlowPass())
+                    .add(ast::CreateImportInternalScriptsPass())
+                    .add(ast::CreateMacroExpansionPass())
+                    .add(ast::CreateProbeExpansionPass())
+                    .add(ast::CreateFieldAnalyserPass())
+                    .add(ast::CreateClangParsePass())
+                    .add(ast::CreateCMacroExpansionPass())
+                    .add(ast::CreateFoldLiteralsPass())
+                    .add(ast::CreateMapSugarPass())
+                    .add(ast::CreateNamedParamsPass())
+                    .add(ast::CreateSemanticPass())
+                    .run();
+      EXPECT_TRUE(bool(ok));
+
+      std::stringstream out;
+      ast.diagnostics().emit(out, ast::Diagnostics::Severity::Warning);
+      if (warning) {
+        EXPECT_TRUE(!warning->str.empty());
+        EXPECT_THAT(out.str(), HasSubstr(clean_prefix(warning->str)))
+            << out.str();
+      }
+      if (nowarning) {
+        EXPECT_TRUE(!nowarning->str.empty());
+        EXPECT_THAT(out.str(), Not(HasSubstr(clean_prefix(nowarning->str))))
+            << out.str();
+      }
+      out.str("");
+      ast.diagnostics().emit(out, ast::Diagnostics::Severity::Error);
+      const auto errstr = out.str();
+      if (error) {
+        if (!error->str.empty()) {
+          EXPECT_THAT(errstr, HasSubstr(clean_prefix(error->str))) << errstr;
+        } else {
+          EXPECT_TRUE(!errstr.empty()) << errstr;
+        }
+      } else {
+        EXPECT_EQ(errstr, "") << errstr;
+      }
+      out.str("");
+      if (expected_ast) {
+        EXPECT_TRUE(!expected_ast->str.empty());
+        ast::Printer printer(out);
+        printer.visit(ast.root);
+        const auto aststr = out.str();
+        EXPECT_THAT(aststr, HasSubstr(clean_prefix(expected_ast->str)))
+            << aststr;
+      }
+
+      return ast;
+    }
+
+  private:
+    std::unique_ptr<MockBPFtrace> bpftrace_;
+    std::optional<ast::TypeMetadata> types_;
+  };
+
+  class SemanticAnalyserTest : public SemanticAnalyserHarness,
+                               public testing::Test {};
+
+  TEST_F(SemanticAnalyserTest, builtin_variables)
+  {
+    // Just check that each one exists as a builtin or macro
+    test("kprobe:f { pid }");
+    test("kprobe:f { tid }");
+    test("kprobe:f { cgroup }");
+    test("kprobe:f { uid }");
+    test("kprobe:f { username }");
+    test("kprobe:f { gid }");
+    test("kprobe:f { nsecs }");
+    test("kprobe:f { elapsed }");
+    test("kprobe:f { cpu }");
+    test("kprobe:f { ncpus }");
+    test("kprobe:f { curtask }");
+    test("kprobe:f { rand }");
+    test("kprobe:f { ctx }");
+    test("kprobe:f { comm }");
+    test("kprobe:f { kstack }");
+    test("kprobe:f { ustack }");
+    test("kprobe:f { arg0 }");
+    test("kprobe:f { sarg0 }");
+    test("kretprobe:f { retval }");
+    test("kprobe:f { func }");
+    test("uprobe:/bin/sh:f { func }");
+    test("kprobe:f { probe }");
+    test("tracepoint:sched:sched_one { args }");
+    test("kprobe:f { jiffies }");
+
+    test("kprobe:f { fake }", Error{ R"(
 stdin:1:12-16: ERROR: Unknown identifier: 'fake'
 kprobe:f { fake }
            ~~~~
 )" });
 
-  test("fentry:f { func }", NoFeatures::Enable, Error{});
-}
+    test("fentry:f { func }", NoFeatures::Enable, Error{});
+  }
 
-TEST_F(SemanticAnalyserTest, builtin_cpid)
-{
-  test(R"(i:ms:100 { printf("%d\n", cpid); })", Error{});
-  test("i:ms:100 { @=cpid }", Error{});
-  test("i:ms:100 { $a=cpid }", Error{});
+  TEST_F(SemanticAnalyserTest, builtin_cpid)
+  {
+    test(R"(i:ms:100 { printf("%d\n", cpid); })", Error{});
+    test("i:ms:100 { @=cpid }", Error{});
+    test("i:ms:100 { $a=cpid }", Error{});
 
-  test(R"(i:ms:100 { printf("%d\n", cpid); })", Child::Enable);
-  test("i:ms:100 { @=cpid }", Child::Enable);
-  test("i:ms:100 { $a=cpid }", Child::Enable);
-}
+    test(R"(i:ms:100 { printf("%d\n", cpid); })", Child::Enable);
+    test("i:ms:100 { @=cpid }", Child::Enable);
+    test("i:ms:100 { $a=cpid }", Child::Enable);
+  }
 
 TEST_F(SemanticAnalyserTest, builtin_functions)
 {

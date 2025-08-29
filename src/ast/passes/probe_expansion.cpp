@@ -1,197 +1,107 @@
 #include "ast/passes/probe_expansion.h"
-
-#include <algorithm>
-
-#include "ast/visitor.h"
+#include "ast/passes/register_providers.h"
 #include "bpftrace.h"
-#include "util/wildcard.h"
+#include "providers/kprobe.h"
+#include "providers/provider.h"
 
 namespace bpftrace::ast {
 
-class ExpansionAnalyser : public Visitor<ExpansionAnalyser> {
-public:
-  ExpansionAnalyser(BPFtrace &bpftrace) : bpftrace_(bpftrace)
-  {
-  }
-  ExpansionResult analyse(Program &program);
-
-  using Visitor<ExpansionAnalyser>::visit;
-  void visit(Probe &probe);
-  void visit(AttachPoint &ap);
-  void visit(Builtin &builtin);
-
-private:
-  ExpansionResult result_;
-  Probe *probe_ = nullptr;
-
-  BPFtrace &bpftrace_;
-};
-
-ExpansionResult ExpansionAnalyser::analyse(Program &program)
+static ExpandedAttachPoints expand(ASTContext &ast, ProviderRegistry &registry)
 {
-  visit(program);
-  return std::move(result_);
-}
-
-void ExpansionAnalyser::visit(Probe &probe)
-{
-  probe_ = &probe;
-
-  visit(probe.attach_points);
-  visit(probe.block);
-}
-
-void ExpansionAnalyser::visit(AttachPoint &ap)
-{
-  ExpansionType expansion = ExpansionType::NONE;
-
-  switch (probetype(ap.provider)) {
-    case ProbeType::kprobe:
-    case ProbeType::kretprobe:
-      // kprobe_multi does not support the "module:function" syntax so in case
-      // a module is specified, always use full expansion
-      if (util::has_wildcard(ap.target)) {
-        expansion = ExpansionType::FULL;
-      } else if (util::has_wildcard(ap.func)) {
-        if (ap.target.empty() && bpftrace_.feature_->has_kprobe_multi())
-          expansion = ExpansionType::MULTI;
-        else
-          expansion = ExpansionType::FULL;
-      }
-      break;
-
-    case ProbeType::uprobe:
-    case ProbeType::uretprobe:
-      // As the C++ language supports function overload, a given function name
-      // (without parameters) could have multiple matches even when no
-      // wildcards are used.
-      if (util::has_wildcard(ap.func) || util::has_wildcard(ap.target) ||
-          ap.lang == "cpp") {
-        if (bpftrace_.feature_->has_uprobe_multi())
-          expansion = ExpansionType::MULTI;
-        else
-          expansion = ExpansionType::FULL;
-      }
-      break;
-
-    case ProbeType::fentry:
-    case ProbeType::fexit: {
-      if (ap.target == "bpf") {
-        if (!ap.bpf_prog_id || util::has_wildcard(ap.func)) {
-          expansion = ExpansionType::FULL;
-        }
-        break;
-      }
-      [[fallthrough]];
+  ExpandedAttachPoints result;
+  auto orig_probes = std::move(ast.root->probes);
+  ast.root->probes.clear();
+  for (auto *probe : orig_probes) {
+    if (probe->attach_points.empty()) {
+      continue; // Nothing to attach to?
     }
-    case ProbeType::tracepoint:
-    case ProbeType::rawtracepoint:
-      if (util::has_wildcard(ap.target) || util::has_wildcard(ap.func))
-        expansion = ExpansionType::FULL;
-      break;
-
-    case ProbeType::usdt:
-      // Always fully expand USDT probes as they may access args
-      if (util::has_wildcard(ap.target) || util::has_wildcard(ap.ns) ||
-          ap.ns.empty() || util::has_wildcard(ap.func) ||
-          bpftrace_.pid().has_value()) {
-        expansion = ExpansionType::FULL;
+    for (auto *attach_point : probe->attach_points) {
+      auto aps = registry.get_all_matching(attach_point->provider,
+                                           attach_point->target);
+      if (!aps) {
+        attach_point->addError()
+            << "Unable to expand attach points: " << aps.takeError();
+        continue;
       }
-      break;
-
-    case ProbeType::watchpoint:
-      if (util::has_wildcard(ap.func))
-        expansion = ExpansionType::FULL;
-      break;
-
-    case ProbeType::iter:
-      if (util::has_wildcard(ap.func))
-        expansion = ExpansionType::FULL;
-
-    default:
-      // No expansion support for the rest of the probe types
-      break;
+      if (aps->empty()) {
+        continue; // Nothing expanded.
+      }
+      if (aps->size() == 1 && aps->at(0).second.size() == 1) {
+        // Use the original probe, rewritting the attach point.
+        auto &[provider, ap] = aps->at(0);
+        attach_point->provider = provider->name();
+        attach_point->target = ap[0]->name();
+        ast.root->probes.push_back(probe);
+        result.attach_points.emplace(probe, std::move(ap));
+        continue;
+      }
+      // Expand all probes into single attach points.
+      for (auto &pair : *aps) {
+        auto &[provider, provider_aps] = pair;
+        for (auto &ap : provider_aps) {
+          auto *new_attach_point = ast.make_node<AttachPoint>(
+              provider->name(), ap->name(), Location(attach_point->loc));
+          auto *new_probe = ast.make_node<Probe>(
+              AttachPointList({ new_attach_point }),
+              clone(ast, probe->block, Location(attach_point->loc)),
+              Location(probe->loc));
+          ast.root->probes.push_back(new_probe);
+          result.attach_points.emplace(new_probe, std::move(ap));
+        }
+      }
+    }
   }
-
-  if (expansion != ExpansionType::NONE)
-    result_.set_expansion(ap, expansion);
+  return result;
 }
 
-void ExpansionAnalyser::visit(Builtin &builtin)
+static Probe *find_matching_retprobe(Probe *probe, ExpandedAttachPoints &result)
 {
-  if (!probe_)
-    return;
-
-  if (builtin.ident == "__builtin_probe") {
-    for (auto *ap : probe_->attach_points)
-      result_.set_expansion(*ap, ExpansionType::FULL);
+  auto it = result.attach_points.find(probe);
+  assert(it != result.attach_points.end());
+  const auto &pair = it->second;
+  const auto &[provider, attach_point] = pair;
+  if (!provider->is<providers::KprobeProvider>()) {
+    return nullptr; // Not matchable.
   }
-}
-
-class SessionExpander : public Visitor<SessionExpander> {
-public:
-  explicit SessionExpander(ASTContext &ast,
-                           BPFtrace &bpftrace,
-                           ExpansionResult &expansion_result)
-      : ast_(ast), bpftrace_(bpftrace), expansion_result_(expansion_result)
-  {
+  for (const auto &[other, other_pair] : result.attach_points) {
+    const auto &[other_provider, other_attach_point] = other_pair;
+    if (other_provider->is<providers::KretprobeProvider>() &&
+        attach_point->name() == other_attach_point->name()) {
+      return other; // Matched!
+    }
   }
-
-  using Visitor<SessionExpander>::visit;
-  void visit(Probe &probe);
-
-  Probe expand(Probe &entry, Probe &exit);
-
-private:
-  Probe *find_matching_retprobe(Probe &probe);
-
-  ASTContext &ast_;
-  const BPFtrace &bpftrace_;
-  ExpansionResult &expansion_result_;
-};
-
-Probe *SessionExpander::find_matching_retprobe(Probe &probe)
-{
-  ProbeList retprobes;
-  AttachPoint *ap = probe.attach_points[0];
-  // Search for a probe which:
-  // - has a single kretprobe attach point
-  // - attaches to the same target and function as probe
-  // - is multi-expanded (session expansion uses the same attach mechanism)
-  std::ranges::copy_if(
-      ast_.root->probes, std::back_inserter(retprobes), [&](Probe *other) {
-        return other->attach_points.size() == 1 &&
-               probetype(other->attach_points[0]->provider) ==
-                   ProbeType::kretprobe &&
-               expansion_result_.get_expansion(*other->attach_points[0]) ==
-                   ExpansionType::MULTI &&
-               other->attach_points[0]->target == ap->target &&
-               other->attach_points[0]->func == ap->func;
-      });
-
-  // If there's not exactly one match, we don't know how to do session expansion
-  if (retprobes.size() == 1)
-    return retprobes[0];
-
   return nullptr;
 }
 
-void SessionExpander::visit(Probe &probe)
+static void reduce_sessions(ASTContext &ast,
+                            ProviderRegistry &registry,
+                            ExpandedAttachPoints &result)
 {
-  // If the probe has a single multi-expanded kprobe attach point, check if
-  // there's another probe with a single multi-expanded kretprobe attach point
-  // with the same target. If so, perform session expansion by merging the two
-  // probes together.
-  if (probe.attach_points.size() == 1 &&
-      probetype(probe.attach_points[0]->provider) == ProbeType::kprobe) {
-    Probe *retprobe = find_matching_retprobe(probe);
-    if (!retprobe)
-      return;
+  const auto *session_provider = registry.lookup<providers::KprobeProvider>();
+  if (session_provider == nullptr) {
+    return;
+  }
 
-    if (!bpftrace_.feature_->has_kprobe_session())
-      return;
+  for (const auto &[probe, _] : result.attach_points) {
+    auto *retprobe = find_matching_retprobe(probe, result);
+    if (retprobe == nullptr) {
+      continue; // Not reducable.
+    }
 
-    AttachPointList attach_points = probe.attach_points;
+    // Check to see if this is a legal session probe.
+    auto session = session_provider->parse(probe->attach_points[0]->target,
+                                           providers::BtfLookup{});
+    if (!session || session->size() != 1) {
+      continue; // Not a valid session target, or ambiguous?
+    }
+
+    // Ensure that this is not included.
+    if (result.attach_points.contains(retprobe)) {
+      result.attach_points.erase(retprobe);
+    }
+
+    // Modify the block of this probe, to have a new attach point and a new
+    // if that gates session. This will refer to the session return builtin.
     auto *expr = ast_.make_node<IfExpr>(
         ast_.make_node<Call>("__session_is_return",
                              ExpressionList{},
@@ -199,137 +109,79 @@ void SessionExpander::visit(Probe &probe)
         retprobe->block,
         probe.block,
         Location(probe.block->loc));
-    auto *stmt = ast_.make_node<ExprStatement>(expr,
-                                               Location(probe.block->loc));
-
-    probe.block = ast_.make_node<BlockExpr>(StatementList({ stmt }),
-                                            ast_.make_node<None>(
-                                                Location(probe.block->loc)),
-                                            Location(probe.block->loc));
-
-    expansion_result_.set_expansion(*probe.attach_points[0],
-                                    ExpansionType::SESSION);
-
-    std::erase(ast_.root->probes, retprobe);
+    probe->block = ast.make_node<BlockExpr>(StatementList{},
+                                            expr,
+                                            Location(probe->block->loc));
+    result.attach_points[probe].first = session_provider;
+    result.attach_points[probe].second = std::move(session->at(0));
   }
 }
 
-class ProbeExpander : public Visitor<ProbeExpander> {
-public:
-  ProbeExpander(ASTContext &ast, BPFtrace &bpftrace, ExpansionResult &result)
-      : ast_(ast), bpftrace_(bpftrace), result_(result)
-  {
-  }
-
-  void expand();
-
-  using Visitor<ProbeExpander>::visit;
-  void visit(Program &prog);
-  void visit(AttachPointList &aps);
-
-private:
-  uint64_t probe_count_ = 0;
-
-  ASTContext &ast_;
-  BPFtrace &bpftrace_;
-  ExpansionResult &result_;
+struct ReduceKey {
+  const providers::Provider *provider;
+  Probe *probe;
 };
 
-void ProbeExpander::expand()
-{
-  visit(*ast_.root);
-}
-
-void ProbeExpander::visit(Program &prog)
-{
-  Visitor<ProbeExpander>::visit(prog);
-}
-
-void ProbeExpander::visit(AttachPointList &aps)
-{
-  const auto max_bpf_progs = bpftrace_.config_->max_bpf_progs;
-
-  AttachPointList new_aps;
-  for (auto *ap : aps) {
-    auto probe_type = probetype(ap->provider);
-    auto expansion = result_.get_expansion(*ap);
-    switch (expansion) {
-      case ExpansionType::FULL: {
-        auto matches = bpftrace_.probe_matcher_->get_matches_for_ap(*ap);
-
-        probe_count_ += matches.size();
-        if (probe_count_ > max_bpf_progs) {
-          auto &err = ap->addError();
-          err << "Your program is trying to generate more than "
-              << std::to_string(probe_count_)
-              << " BPF programs, which exceeds the current limit of "
-              << std::to_string(max_bpf_progs);
-          err.addHint() << "You can increase the limit through the "
-                           "BPFTRACE_MAX_BPF_PROGS "
-                           "environment variable.";
-          return;
-        }
-
-        for (const auto &match : matches) {
-          new_aps.push_back(ap->create_expansion_copy(ast_, match));
-        }
-        break;
-      }
-
-      case ExpansionType::SESSION:
-      case ExpansionType::MULTI: {
-        auto matches = bpftrace_.probe_matcher_->get_matches_for_ap(*ap);
-        if (util::has_wildcard(ap->target)) {
-          // If we have a wildcard in the target path, we need to generate one
-          // attach point per expanded target
-          assert(probe_type == ProbeType::uprobe ||
-                 probe_type == ProbeType::uretprobe);
-
-          std::unordered_map<std::string, AttachPoint *> new_aps_by_target;
-          for (const auto &func : matches) {
-            auto *match_ap = ap->create_expansion_copy(ast_, func);
-            // Reset the original (possibly wildcarded) function name
-            auto expanded_func = match_ap->func;
-            match_ap->func = ap->func;
-
-            auto new_ap = new_aps_by_target.emplace(match_ap->target, match_ap);
-            result_.add_expanded_func(*new_ap.first->second,
-                                      match_ap->target + ":" + expanded_func);
-          }
-          for (auto &[_, new_ap] : new_aps_by_target)
-            new_aps.push_back(std::move(new_ap));
-        } else if (!matches.empty()) {
-          result_.set_expanded_funcs(*ap, std::move(matches));
-          new_aps.push_back(ap);
-        }
-        break;
-      }
-      case ExpansionType::NONE: {
-        new_aps.push_back(ap);
-        break;
-      }
-    }
+struct BlockComparison {
+  bool operator()(ReduceKey *const &a, ReduceKey *const &b) const
+  {
+    // Checks if the blocks are the same and the provider is the same.
+    return a->provider->name() == b->provider->name() &&
+           *a->probe->block == *b->probe->block;
   }
-
-  aps = new_aps;
-}
+};
 
 Pass CreateProbeExpansionPass()
 {
-  auto fn = [](ASTContext &ast, BPFtrace &bpftrace) {
-    ExpansionAnalyser analyser(bpftrace);
-    auto result = analyser.analyse(*ast.root);
-
-    SessionExpander session_expander(ast, bpftrace, result);
-    session_expander.visit(*ast.root);
-
-    ProbeExpander expander(ast, bpftrace, result);
-    expander.expand();
-
+  auto fn = [](ASTContext &ast,
+               BPFtrace &bpftrace,
+               ProviderRegistry &registry) -> ExpandedAttachPoints {
+    auto result = expand(ast, registry);
+    if (bpftrace.feature_->has_kprobe_session()) {
+      reduce_sessions(ast, registry, result);
+    }
     return result;
   };
 
   return Pass::create("ProbeExpansion", fn);
+}
+
+Pass CreateProbeMergePass()
+{
+  auto fn = [](ASTContext &ast,
+               ExpandedAttachPoints &expanded) -> ReducedAttachPoints {
+    // Deduplicate all identifical programs.
+    std::map<ReduceKey,
+             std::pair<providers::Provider *, providers::AttachPointList>,
+             BlockComparison>
+        blocks;
+    for (auto &[probe, pair] : expanded.attach_points) {
+      auto &[provider, target] = pair;
+      auto key = ReduceKey{
+        .provider = provider,
+        .probe = probe,
+      };
+      auto it = blocks.find(key);
+      if (it == blocks.end()) {
+        // Add a new entry, since this program is unique.
+        blocks.emplace(probe, std::make_pair(provider, std::move(target)));
+      } else {
+        // Just add to the list of existing attach points.
+        it->second.second.emplace_back(std::move(target));
+      }
+    }
+
+    // Update the program and construct our result.
+    ReducedAttachPoints result;
+    ast.root->probes.clear();
+    for (auto &[key, pair] : blocks) {
+      ast.root->probes.push_back(key.probe);
+      result.attach_points.emplace(key.probe, std::move(pair));
+    }
+    return result;
+  };
+
+  return Pass::create("ProbeMerge", fn);
 }
 
 } // namespace bpftrace::ast

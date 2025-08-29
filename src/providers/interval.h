@@ -5,10 +5,9 @@
 namespace bpftrace::providers {
 
 /// Provider for interval (timer-based) attach points.
-class IntervalProvider : public ProviderImpl<IntervalProvider> {
+class IntervalProvider
+    : public ProviderImpl<IntervalProvider, "interval", "i"> {
 public:
-  IntervalProvider() : ProviderImpl<IntervalProvider>("interval", { "i" }) {};
-
   Result<AttachPointList> parse(
       const std::string &str,
       const BtfLookup &btf,

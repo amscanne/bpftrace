@@ -5,10 +5,9 @@
 namespace bpftrace::providers {
 
 /// Provider for profile (timer-based) attach points.
-class ProfileProvider : public ProviderImpl<ProfileProvider> {
+class ProfileProvider
+    : public ProviderImpl<ProfileProvider, "profile", "prof"> {
 public:
-  ProfileProvider() : ProviderImpl<ProfileProvider>("profile", { "prof" }) {};
-
   Result<AttachPointList> parse(
       const std::string &str,
       const BtfLookup &btf,

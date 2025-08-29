@@ -1,3 +1,4 @@
+#include "providers/provider.h"
 #include <algorithm>
 #include <arpa/inet.h>
 #include <cerrno>
@@ -55,7 +56,6 @@
 #include "log.h"
 #include "map_info.h"
 #include "required_resources.h"
-#include "tracepoint_format_parser.h"
 #include "types.h"
 #include "usdt.h"
 #include "util/bpf_names.h"
@@ -206,7 +206,7 @@ public:
                        NamedParamDefaults &named_param_defaults,
                        LLVMContext &llvm_ctx,
                        USDTHelper &usdt_helper,
-                       ExpansionResult &expansions);
+                       ReducedAttachPoints &expansions);
 
   using Visitor<CodegenLLVM, ScopedExpr>::visit;
   ScopedExpr visit(Integer &integer);
@@ -249,7 +249,6 @@ public:
   std::unique_ptr<llvm::Module> compile();
 
 private:
-  int getNextIndexForProbe();
   ScopedExpr createLogicalAnd(Binop &binop);
   ScopedExpr createLogicalOr(Binop &binop);
 
@@ -282,17 +281,6 @@ private:
                      const CodegenResources &codegen_resources);
   void generate_global_vars(const RequiredResources &resources,
                             const ::bpftrace::Config &bpftrace_config);
-
-  // Generate a probe for `current_attach_point_`
-  //
-  // If `dummy` is passed, then code is generated but immediately thrown away.
-  // This is used to progress state (eg. asyncids) in this class instance for
-  // invalid probes that still need to be visited.
-  void generateProbe(Probe &probe,
-                     const std::string &name,
-                     FunctionType *func_type,
-                     std::optional<int> usdt_location_index = std::nullopt,
-                     bool dummy = false);
 
   // Generate a probe and register it to the BPFtrace class.
   void add_probe(AttachPoint &ap, Probe &probe, FunctionType *func_type);
@@ -331,7 +319,6 @@ private:
   //
   // If null, return value will depend on current attach point (void in subprog)
   void createRet(Value *value = nullptr);
-  int getReturnValueForProbe(ProbeType probe_type);
 
   // Every time we see a watchpoint that specifies a function + arg pair, we
   // generate a special "setup" probe that:
@@ -414,7 +401,7 @@ private:
   NamedParamDefaults &named_param_defaults_;
   LLVMContext &llvm_ctx_;
   USDTHelper &usdt_helper_;
-  ExpansionResult &expansions_;
+  ReducedAttachPoints &expansions_;
   std::unique_ptr<Module> module_;
   AsyncIds async_ids_;
 
@@ -426,16 +413,11 @@ private:
     return module_->getDataLayout();
   }
 
+  int index_;
   Value *ctx_;
   llvm::DILocalScope *scope_ = nullptr;
   AttachPoint *current_attach_point_ = nullptr;
   std::string probefull_;
-  uint64_t probe_count_ = 0;
-  // Probes and attach points are indexed from 1, 0 means no index
-  // (no index is used for probes whose attach points are indexed individually)
-  int next_probe_index_ = 1;
-  // Used if there are duplicate USDT entries
-  int current_usdt_location_index_{ 0 };
   bool inside_subprog_ = false;
 
   std::vector<Node *> scope_stack_;
@@ -472,7 +454,7 @@ CodegenLLVM::CodegenLLVM(ASTContext &ast,
                          NamedParamDefaults &named_param_defaults,
                          LLVMContext &llvm_ctx,
                          USDTHelper &usdt_helper,
-                         ExpansionResult &expansions)
+                         ReducedAttachPoints &expansions)
     : ast_(ast),
       bpftrace_(bpftrace),
       c_definitions_(c_definitions),
@@ -734,57 +716,6 @@ ScopedExpr CodegenLLVM::visit(Builtin &builtin)
     b_.CreateMemsetBPF(buf, b_.getInt8(0), builtin.builtin_type.GetSize());
     b_.CreateGetCurrentComm(buf, builtin.builtin_type.GetSize(), builtin.loc);
     return ScopedExpr(buf, [this, buf]() { b_.CreateLifetimeEnd(buf); });
-  } else if (builtin.ident == "__builtin_func") {
-    // fentry/fexit probes do not have access to registers, so require use of
-    // the get_func_ip helper to get the instruction pointer.
-    //
-    // For [ku]retprobes, the IP register will not be pointing to the function
-    // we want to trace. It may point to a kernel trampoline, or it may point to
-    // the caller of the traced function, as it fires after the "ret"
-    // instruction has executed.
-    //
-    // The get_func_ip helper resolves these issues for us.
-    //
-    // But do not use the it for non-ret [ku]probes (which can be used with
-    // offsets), as the helper will fail for probes placed within a function
-    // (not at the entry).
-    Value *value = nullptr;
-    auto probe_type = probetype(current_attach_point_->provider);
-    if (probe_type == ProbeType::fentry || probe_type == ProbeType::fexit ||
-        probe_type == ProbeType::kretprobe ||
-        probe_type == ProbeType::uretprobe) {
-      value = b_.CreateGetFuncIp(ctx_, builtin.loc);
-    } else {
-      value = b_.CreateRegisterRead(ctx_, builtin.ident);
-    }
-
-    if (builtin.builtin_type.IsUsymTy()) {
-      value = b_.CreateUSym(value, get_probe_id(), builtin.loc);
-      return ScopedExpr(value,
-                        [this, value]() { b_.CreateLifetimeEnd(value); });
-    }
-    return ScopedExpr(value);
-  } else if (builtin.is_argx() || builtin.ident == "__builtin_retval") {
-    auto probe_type = probetype(current_attach_point_->provider);
-
-    if (builtin.builtin_type.is_funcarg) {
-      return ScopedExpr(
-          b_.CreateKFuncArg(ctx_, builtin.builtin_type, builtin.ident));
-    }
-
-    Value *value = nullptr;
-    if (builtin.is_argx() && probe_type == ProbeType::rawtracepoint)
-      value = b_.CreateRawTracepointArg(ctx_, builtin.ident);
-    else
-      value = b_.CreateRegisterRead(ctx_, builtin.ident);
-
-    if (builtin.builtin_type.IsUsymTy()) {
-      value = b_.CreateUSym(value, get_probe_id(), builtin.loc);
-      return ScopedExpr(value,
-                        [this, value]() { b_.CreateLifetimeEnd(value); });
-    }
-    return ScopedExpr(value);
-
   } else if (!builtin.ident.compare(0, 4, "sarg") &&
              builtin.ident.size() == 5 && builtin.ident.at(4) >= '0' &&
              builtin.ident.at(4) <= '9') {
@@ -823,13 +754,6 @@ ScopedExpr CodegenLLVM::visit(Builtin &builtin)
     probe_var->setInitializer(
         ConstantDataArray::getString(module_->getContext(), probe_str));
     return ScopedExpr(probe_var);
-  } else if (builtin.ident == "args" &&
-             probetype(current_attach_point_->provider) == ProbeType::uprobe) {
-    // uprobe args record is built on stack
-    return ScopedExpr(b_.CreateUprobeArgsRecord(ctx_, builtin.builtin_type));
-  } else if (builtin.ident == "args" || builtin.ident == "ctx") {
-    // ctx is undocumented builtin: for debugging.
-    return ScopedExpr(ctx_);
   } else if (builtin.ident == "__builtin_cpid") {
     pid_t cpid = bpftrace_.child_->pid();
     if (cpid < 1) {
@@ -1604,6 +1528,7 @@ ScopedExpr CodegenLLVM::visit(Call &call)
                                             offset.value(),
                                             call.func + "_" + reg_name));
   } else if (call.func == "printf") {
+#if 0
     // We overload printf call for iterator probe's seq_printf helper.
     if (!inside_subprog_ &&
         probetype(current_attach_point_->provider) == ProbeType::iter) {
@@ -1649,17 +1574,19 @@ ScopedExpr CodegenLLVM::visit(Call &call)
                          b_.getInt32(data_size),
                          call.loc);
       return ScopedExpr();
-
-    } else {
-      auto async_id = async_ids_.printf();
-      createFormatStringCall(call,
-                             async_id,
-                             std::get<1>(
-                                 bpftrace_.resources.printf_args[async_id]),
-                             "printf",
-                             async_action::AsyncAction::printf);
-      return ScopedExpr();
-    }
+  } else {
+#endif
+    auto async_id = async_ids_.printf();
+    createFormatStringCall(call,
+                           async_id,
+                           std::get<1>(
+                               bpftrace_.resources.printf_args[async_id]),
+                           "printf",
+                           async_action::AsyncAction::printf);
+    return ScopedExpr();
+#if 0
+  }
+#endif
   } else if (call.func == "errorf") {
     auto async_id = async_ids_.printf();
     createFormatStringCall(call,
@@ -2543,37 +2470,11 @@ ScopedExpr CodegenLLVM::visit(FieldAccess &acc)
 
   assert(type.IsRecordTy());
   bool is_ctx = type.IsCtxAccess();
-  bool is_tparg = type.is_tparg;
-  bool is_internal = type.is_internal;
-  bool is_funcarg = type.is_funcarg;
-
-  if (type.is_funcarg) {
-    auto probe_type = probetype(current_attach_point_->provider);
-    if (probe_type == ProbeType::fentry || probe_type == ProbeType::fexit ||
-        probe_type == ProbeType::rawtracepoint)
-      return ScopedExpr(b_.CreateKFuncArg(ctx_, acc.field_type, acc.field),
-                        std::move(scoped_arg));
-    else if (probe_type == ProbeType::uprobe) {
-      llvm::Type *args_type = b_.UprobeArgsType(type);
-      return readDatastructElemFromStack(std::move(scoped_arg),
-                                         b_.getInt32(
-                                             acc.field_type.funcarg_idx),
-                                         args_type,
-                                         acc.field_type);
-    }
-  }
-
-  std::string cast_type = is_tparg ? TracepointFormatParser::get_struct_name(
-                                         *current_attach_point_)
-                                   : type.GetName();
 
   // This overwrites the stored type!
   type = CreateRecord(cast_type, bpftrace_.structs.Lookup(cast_type));
   if (is_ctx)
     type.MarkCtxAccess();
-  type.is_tparg = is_tparg;
-  type.is_internal = is_internal;
-  type.is_funcarg = is_funcarg;
   // Restore the addrspace info
   // struct MyStruct { const int* a; };  $s = (struct MyStruct *)arg0;  $s->a
   type.SetAS(addrspace);
@@ -3002,12 +2903,10 @@ ScopedExpr CodegenLLVM::visit(AssignMapStatement &assignment)
       }
     }
   } else if (map_type.IsRecordTy() || map_type.IsArrayTy()) {
-    if (!expr_type.is_internal) {
-      // expr currently contains a pointer to the struct or array
-      // We now want to read the entire struct/array in so we can save it
-      b_.CreateProbeRead(
-          value, map_type, expr, assignment.loc, expr_type.GetAS());
-    }
+    // expr currently contains a pointer to the struct or array
+    // We now want to read the entire struct/array in so we can save it
+    b_.CreateProbeRead(
+        value, map_type, expr, assignment.loc, expr_type.GetAS());
   } else {
     if (assignment.map->type().IsIntTy()) {
       // Integers are always stored as 64-bit in map values
@@ -3222,94 +3121,6 @@ ScopedExpr CodegenLLVM::visit(BlockExpr &block_expr)
   return value;
 }
 
-void CodegenLLVM::generateProbe(Probe &probe,
-                                const std::string &name,
-                                FunctionType *func_type,
-                                std::optional<int> usdt_location_index,
-                                bool dummy)
-{
-  int index = current_attach_point_->index() ?: probe.index();
-  auto func_name = util::get_function_name_for_probe(name,
-                                                     index,
-                                                     usdt_location_index);
-  auto *func = llvm::Function::Create(
-      func_type, llvm::Function::ExternalLinkage, func_name, module_.get());
-  func->setSection(util::get_section_name(func_name));
-  func->addFnAttr(Attribute::NoUnwind);
-  scope_ = debug_.createProbeDebugInfo(*func);
-
-  BasicBlock *entry = BasicBlock::Create(module_->getContext(), "entry", func);
-  b_.SetInsertPoint(entry);
-
-  // check: do the following 8 lines need to be in the wildcard loop?
-  ctx_ = func->arg_begin();
-
-  variables_.clear();
-  auto scoped_block = visit(*probe.block);
-
-  if (dummy) {
-    func->eraseFromParent();
-    return;
-  }
-
-  auto pt = probetype(current_attach_point_->provider);
-  if ((pt == ProbeType::watchpoint || pt == ProbeType::asyncwatchpoint) &&
-      !current_attach_point_->func.empty()) {
-    auto ok = generateWatchpointSetupProbe(
-        func_type, name, current_attach_point_->address, index, probe.loc);
-    if (!ok) {
-      probe.addError() << "unable to setup watchpoint: " << ok.takeError();
-    }
-  }
-}
-
-void CodegenLLVM::add_probe(AttachPoint &ap,
-                            Probe &probe,
-                            FunctionType *func_type)
-{
-  current_attach_point_ = &ap;
-  probefull_ = ap.name();
-  if (probetype(ap.provider) == ProbeType::usdt) {
-    auto usdt = usdt_helper_.find(bpftrace_.pid(),
-                                  ap.target,
-                                  ap.ns,
-                                  ap.func,
-                                  bpftrace_.feature_->has_uprobe_multi());
-    if (!usdt.has_value()) {
-      ap.addError() << "Failed to find usdt probe: " << probefull_;
-    } else
-      ap.usdt = *usdt;
-
-    // A "unique" USDT probe can be present in a binary in multiple
-    // locations. One case where this happens is if a function
-    // containing a USDT probe is inlined into a caller. So we must
-    // generate a new program for each instance. We _must_ regenerate
-    // because argument locations may differ between instance locations
-    // (eg arg0. may not be found in the same offset from the same
-    // register in each location)
-    auto reset_ids = async_ids_.create_reset_ids();
-    current_usdt_location_index_ = 0;
-    for (int i = 0; i < ap.usdt.num_locations; ++i) {
-      reset_ids();
-
-      generateProbe(probe, probefull_, func_type, i);
-      bpftrace_.add_probe(ap,
-                          probe,
-                          expansions_.get_expansion(ap),
-                          expansions_.get_expanded_funcs(ap),
-                          i);
-      current_usdt_location_index_++;
-    }
-  } else {
-    generateProbe(probe, probefull_, func_type);
-    bpftrace_.add_probe(ap,
-                        probe,
-                        expansions_.get_expansion(ap),
-                        expansions_.get_expanded_funcs(ap));
-  }
-  current_attach_point_ = nullptr;
-}
-
 ScopedExpr CodegenLLVM::visit(Subprog &subprog)
 {
   scope_stack_.push_back(&subprog);
@@ -3372,69 +3183,37 @@ void CodegenLLVM::createRet(Value *value)
       b_.CreateRet(b_.getInt64(ret_val));
     }
   }
-}
-
-int CodegenLLVM::getReturnValueForProbe(ProbeType probe_type)
-{
-  // Fall back to default return value
-  switch (probe_type) {
-    case ProbeType::invalid:
-      LOG(BUG) << "Returning from invalid probetype";
-      return 0;
-    case ProbeType::tracepoint:
-      // Classic (ie. *not* raw) tracepoints have a kernel quirk stopping perf
-      // subsystem from seeing a tracepoint event if BPF program returns 0.
-      // This breaks perf in some situations and generally makes such BPF
-      // programs bad citizens. Return 1 instead.
-      return 1;
-    case ProbeType::special:
-    case ProbeType::benchmark:
-    case ProbeType::kprobe:
-    case ProbeType::kretprobe:
-    case ProbeType::uprobe:
-    case ProbeType::uretprobe:
-    case ProbeType::usdt:
-    case ProbeType::profile:
-    case ProbeType::interval:
-    case ProbeType::software:
-    case ProbeType::hardware:
-    case ProbeType::watchpoint:
-    case ProbeType::asyncwatchpoint:
-    case ProbeType::fentry:
-    case ProbeType::fexit:
-    case ProbeType::iter:
-    case ProbeType::rawtracepoint:
-      return 0;
-  }
-  LOG(BUG) << "Unknown probetype";
-  return 0;
+  b_.CreateRet(b_.getInt64(0));
 }
 
 ScopedExpr CodegenLLVM::visit(Probe &probe)
 {
+  auto &[_, attach_points] = expansions_.attach_points[&probe];
+  if (attach_points.empty()) {
+    LOG(BUG) << "Attachpoints are empty during codegen?";
+  }
+
+  // Extract the common information for this probe.
+  btf::Types no_types;
+  const auto ctx_type = attach_points[0]->context_type(no_types);
+  const auto prog_type = attach_points[0]->prog_type();
+  const std::string func_name = "probe_" + std::to_string(index_++);
+
   FunctionType *func_type = FunctionType::get(b_.getInt64Ty(),
-                                              { b_.getPtrTy() }, // ctx
+                                              { b_.GetType(ctx_type) }, // ctx
                                               false);
+  auto *func = llvm::Function::Create(
+      func_type, llvm::Function::ExternalLinkage, func_name, module_.get());
+  func->setSection(util::get_section_name(func_name));
+  func->addFnAttr(Attribute::NoUnwind);
+  scope_ = debug_.createProbeDebugInfo(*func);
+  BasicBlock *entry = BasicBlock::Create(module_->getContext(), "entry", func);
+  b_.SetInsertPoint(entry);
+  ctx_ = func->arg_begin();
 
-  // We begin by saving state that gets changed by the codegen pass, so we
-  // can restore it for the next pass (printf_id_, time_id_).
-  auto reset_ids = async_ids_.create_reset_ids();
-  bool generated = false;
-  for (auto *attach_point : probe.attach_points) {
-    reset_ids();
-    current_attach_point_ = attach_point;
+  variables_.clear();
+  auto scoped_block = visit(*probe.block);
 
-    if (attach_point->index() == 0)
-      attach_point->set_index(getNextIndexForProbe());
-
-    add_probe(*attach_point, probe, func_type);
-    generated = true;
-  }
-  if (!generated) {
-    generateProbe(probe, "dummy", func_type, std::nullopt, true);
-  }
-
-  current_attach_point_ = nullptr;
   return ScopedExpr();
 }
 
@@ -3445,11 +3224,6 @@ ScopedExpr CodegenLLVM::visit(Program &program)
   for (Probe *probe : program.probes)
     visit(probe);
   return ScopedExpr();
-}
-
-int CodegenLLVM::getNextIndexForProbe()
-{
-  return next_probe_index_++;
 }
 
 ScopedExpr CodegenLLVM::getMapKey(Map &map, Expression &key_expr)
@@ -5080,7 +4854,7 @@ Pass CreateCompilePass(
                     CDefinitions &c_definitions,
                     NamedParamDefaults &named_param_defaults,
                     CompileContext &ctx,
-                    ExpansionResult &expansions) mutable {
+                    ReducedAttachPoints &expansions) mutable {
         USDTHelper default_usdt;
         if (!usdt_helper) {
           usdt_helper = std::ref(default_usdt);

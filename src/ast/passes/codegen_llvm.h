@@ -9,6 +9,7 @@
 
 #include "ast/pass_manager.h"
 #include "ast/passes/link.h"
+#include "providers/provider.h"
 #include "usdt.h"
 
 namespace bpftrace::ast {
@@ -52,7 +53,14 @@ Pass CreateOptimizePass();
 class BpfObject : public ast::State<"bpf-object"> {
 public:
   BpfObject(std::span<char> data) : data(data.begin(), data.end()) {};
+
+  // This is the BPF object data.
   std::vector<char> data;
+
+  // This is the set of attach points, along with the name of the generated
+  // function of the suitable type. These can be serialized along with the rest
+  // of the BpfObject.
+  std::vector<std::pair<std::string, providers::AttachPointList>> attach_points;
 };
 
 // Produces the ELF data for the BPF bytecode as a `BpfObject`. This is

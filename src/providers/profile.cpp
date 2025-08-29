@@ -1,12 +1,11 @@
 #include <bpf/libbpf.h>
+#include <cereal/types/variant.hpp>
 #include <linux/perf_event.h>
-#include <sstream>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <variant>
 
-#include "attached_probe.h"
-#include "log.h"
+#include "bpfprogram.h"
 #include "providers/profile.h"
 #include "util/int_parser.h"
 #include "util/strings.h"
@@ -15,17 +14,34 @@ namespace bpftrace::providers {
 
 struct FrequencySpec {
   uint64_t hz;
+
+  template <class Archive>
+  void serialize([[maybe_unused]] Archive &ar)
+  {
+    ar(hz);
+  }
 };
 
 struct PeriodSpec {
   uint64_t nanoseconds;
+
+  template <class Archive>
+  void serialize([[maybe_unused]] Archive &ar)
+  {
+    ar(nanoseconds);
+  }
 };
 
 class ProfileAttachPoint : public AttachPoint {
 public:
-  ProfileAttachPoint(const Provider &provider,
-                     std::variant<FrequencySpec, PeriodSpec> spec)
-      : AttachPoint(provider), spec(spec) {};
+  ProfileAttachPoint(std::variant<FrequencySpec, PeriodSpec> spec)
+      : spec(spec) {};
+
+  template <class Archive>
+  void serialize([[maybe_unused]] Archive &ar)
+  {
+    ar(spec);
+  }
 
   std::variant<FrequencySpec, PeriodSpec> spec;
 };
@@ -130,3 +146,7 @@ Result<AttachedProbeList> ProfileProvider::attach_single(
 }
 
 } // namespace bpftrace::providers
+
+CEREAL_REGISTER_TYPE(bpftrace::providers::ProfileAttachPoint)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(bpftrace::providers::AttachPoint,
+                                     bpftrace::providers::ProfileAttachPoint)

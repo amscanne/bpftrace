@@ -4,7 +4,11 @@
 #include <iostream>
 #include <regex>
 
+<<<<<<< HEAD
 #include "ast/passes/attachpoint_passes.h"
+    == == ==
+    =
+>>>>>>> 0c4403e6 (inprog)
 #include "ast/passes/c_macro_expansion.h"
 #include "ast/passes/clang_build.h"
 #include "ast/passes/clang_parser.h"
@@ -29,8 +33,8 @@
 
 #include "../mocks.h"
 
-namespace bpftrace::test::codegen {
-
+        namespace bpftrace::test::codegen
+{
 #define NAME (::testing::UnitTest::GetInstance()->current_test_info()->name())
 
 static std::string get_expected(const std::string &name)
@@ -63,8 +67,14 @@ static void test(BPFtrace &bpftrace,
                 .put(ast)
                 .put(bpftrace)
                 .add(CreateParsePass())
+<<<<<<< HEAD
                 .add(ast::CreateParseAttachpointsPass())
                 .add(ast::CreateCheckAttachpointsPass())
+=======
+                .add(ast::CreateResolveImportsPass())
+                .add(ast::CreateImportInternalScriptsPass())
+                .add(ast::CreateMacroExpansionPass())
+>>>>>>> 0c4403e6 (inprog)
                 .add(ast::CreateProbeExpansionPass())
                 .add(ast::CreateResolveImportsPass())
                 .add(ast::CreatePidFilterPass())

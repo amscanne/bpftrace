@@ -22,8 +22,11 @@ TEST(codegen, regression_957)
                 .add(CreateParsePass())
                 .add(ast::CreateResolveImportsPass())
                 .add(ast::CreateImportInternalScriptsPass())
+<<<<<<< HEAD
                 .add(ast::CreateParseAttachpointsPass())
                 .add(ast::CreateCheckAttachpointsPass())
+=======
+>>>>>>> 0c4403e6 (inprog)
                 .add(ast::CreateControlFlowPass())
                 .add(ast::CreateMacroExpansionPass())
                 .add(ast::CreateProbeExpansionPass())

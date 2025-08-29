@@ -8,7 +8,6 @@
 #include "ast/passes/config_analyser.h"
 #include "ast/passes/control_flow_analyser.h"
 #include "ast/passes/deprecated.h"
-#include "ast/passes/field_analyser.h"
 #include "ast/passes/import_scripts.h"
 #include "ast/passes/macro_expansion.h"
 #include "ast/passes/map_sugar.h"
@@ -21,7 +20,6 @@
 #include "ast/passes/usdt_arguments.h"
 #include "btf.h"
 #include "driver.h"
-#include "tracepoint_format_parser.h"
 
 namespace bpftrace::ast {
 
@@ -44,9 +42,8 @@ inline std::vector<Pass> AllParsePasses(
   passes.emplace_back(CreateUnstableFeaturePass());
   passes.emplace_back(CreateDeprecatedPass());
 
-  // Attachpoints are parsed and checked, but not yet expanded.
-  passes.emplace_back(CreateParseAttachpointsPass());
-  passes.emplace_back(CreateCheckAttachpointsPass());
+  // Probes are expanded early.
+  passes.emplace_back(CreateProbeExpansionPass());
 
   // Any transformations that rely on conditional internal imports should be
   // placed here, and should be careful not to rely on control flow analysis.
@@ -66,11 +63,7 @@ inline std::vector<Pass> AllParsePasses(
 
   // Past this point, the AST should not generally grow and will have builtins
   // replaced, simplifications applied, types filled in, etc.
-  passes.emplace_back(CreateParseBTFPass());
-  passes.emplace_back(CreateProbeExpansionPass());
-  passes.emplace_back(CreateParseTracepointFormatPass());
   passes.emplace_back(CreateBuiltinsPass());
-  passes.emplace_back(CreateFieldAnalyserPass());
   passes.emplace_back(CreateClangParsePass(std::move(extra_flags)));
   passes.emplace_back(CreateCMacroExpansionPass());
   passes.emplace_back(CreateMapSugarPass());

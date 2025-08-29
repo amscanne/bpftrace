@@ -80,14 +80,12 @@ void PortabilityAnalyser::visit(Cast &cast)
 
 void PortabilityAnalyser::visit(AttachPoint &ap)
 {
-  auto type = probetype(ap.provider);
-
   // USDT probes require analyzing a USDT enabled binary for precise offsets
   // and argument information. This analyzing is currently done during codegen
   // and offsets and type information is embedded into the bytecode. For AOT
   // support, this analyzing must be done during runtime and fixed up during
   // load time.
-  if (type == ProbeType::usdt) {
+  if (ap.provider == "usdt") {
     ap.addError() << "AOT does not yet support USDT probes";
   }
   // While userspace watchpoint probes are technically portable from codegen
@@ -96,8 +94,7 @@ void PortabilityAnalyser::visit(AttachPoint &ap)
   // (see https://github.com/bpftrace/bpftrace/issues/1683).
   //
   // So disable for now and re-evalulate at another point.
-  else if (type == ProbeType::watchpoint ||
-           type == ProbeType::asyncwatchpoint) {
+  else if (ap.provider == "watchpoint" || ap.provider == "asyncwatchpoint") {
     ap.addError() << "AOT does not yet support watchpoint probes";
   }
 }

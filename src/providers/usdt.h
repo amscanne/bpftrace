@@ -5,10 +5,8 @@
 namespace bpftrace::providers {
 
 /// Provider for USDT (User Statically Defined Tracing) attach points.
-class UsdtProvider : public ProviderImpl<UsdtProvider> {
+class UsdtProvider : public ProviderImpl<UsdtProvider, "usdt"> {
 public:
-  UsdtProvider() : ProviderImpl<UsdtProvider>("usdt", {}) {};
-
   Result<AttachPointList> parse(
       const std::string &str,
       const BtfLookup &btf,

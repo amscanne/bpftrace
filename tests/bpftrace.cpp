@@ -2,7 +2,11 @@
 #include <cstdint>
 #include <cstring>
 
+<<<<<<< HEAD
 #include "ast/passes/attachpoint_passes.h"
+    == == ==
+    =
+>>>>>>> 0c4403e6 (inprog)
 #include "ast/passes/clang_parser.h"
 #include "ast/passes/codegen_llvm.h"
 #include "ast/passes/control_flow_analyser.h"
@@ -26,7 +30,7 @@
 #include "gmock/gmock-nice-strict.h"
 #include "gtest/gtest.h"
 
-using namespace std::chrono_literals;
+        using namespace std::chrono_literals;
 
 namespace bpftrace::test::bpftrace {
 
@@ -66,8 +70,11 @@ static auto parse_probe(const std::string &str,
                 .put(bpftrace)
                 .put(no_types)
                 .add(CreateParsePass())
+<<<<<<< HEAD
                 .add(ast::CreateParseAttachpointsPass())
                 .add(ast::CreateCheckAttachpointsPass())
+=======
+>>>>>>> 0c4403e6 (inprog)
                 .add(ast::CreateControlFlowPass())
                 .add(ast::CreateProbeExpansionPass())
                 .add(ast::CreateMacroExpansionPass())
@@ -467,22 +474,6 @@ TEST(bpftrace, trailing_comma)
   ASSERT_TRUE(ast.diagnostics().ok());
 }
 
-TEST(bpftrace, empty_attachpoint)
-{
-  ast::ASTContext ast("stdin", "{}");
-  Driver driver(ast);
-
-  // Empty attach point should fail...
-  ast.root = driver.parse_program();
-
-  // ... ah, but it doesn't really. What fails is the attachpoint parser. The
-  // above is a valid program, it is just not a valid attachpoint.
-  StrictMock<MockBPFtrace> bpftrace;
-  ast::AttachPointParser ap_parser(ast, bpftrace, false);
-  ap_parser.parse();
-  EXPECT_FALSE(ast.diagnostics().ok());
-}
-
 TEST(bpftrace, sort_by_key_int)
 {
   auto bpftrace = get_strict_mock_bpftrace();
@@ -846,7 +837,6 @@ static std::set<std::string> list_modules(std::string_view ap)
                 .put(ast)
                 .put(static_cast<BPFtrace &>(*bpftrace))
                 .add(CreateParsePass())
-                .add(ast::CreateParseAttachpointsPass())
                 .run();
   EXPECT_TRUE(ok && ast.diagnostics().ok());
 

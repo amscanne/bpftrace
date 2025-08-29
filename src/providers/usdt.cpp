@@ -1,7 +1,7 @@
 #include <bpf/libbpf.h>
+#include <utility>
 
-#include "attached_probe.h"
-#include "log.h"
+#include "bpfprogram.h"
 #include "providers/usdt.h"
 #include "util/strings.h"
 
@@ -9,13 +9,13 @@ namespace bpftrace::providers {
 
 class UsdtAttachPoint : public AttachPoint {
 public:
-  UsdtAttachPoint(const Provider &provider,
-                  const std::string &target,
-                  const std::string &provider_name,
-                  const std::string &probe_name)
-      : AttachPoint(provider, target),
-        provider_name(provider_name),
-        probe_name(probe_name) {};
+  UsdtAttachPoint() = default;
+  UsdtAttachPoint(std::string target,
+                  std::string provider_name,
+                  std::string probe_name)
+      : target(std::move(target)),
+        provider_name(std::move(provider_name)),
+        probe_name(std::move(probe_name)) {};
 
   std::string name() const override
   {
@@ -31,9 +31,15 @@ public:
     return BPF_PROG_TYPE_KPROBE;
   }
 
-  const std::string target;
-  const std::string provider_name;
-  const std::string probe_name;
+  template <class Archive>
+  void serialize([[maybe_unused]] Archive &ar)
+  {
+    ar(target, provider_name, probe_name);
+  }
+
+  std::string target;
+  std::string provider_name;
+  std::string probe_name;
 };
 
 Result<AttachPointList> UsdtProvider::parse(
@@ -84,3 +90,7 @@ Result<AttachedProbeList> UsdtProvider::attach_single(
 }
 
 } // namespace bpftrace::providers
+
+CEREAL_REGISTER_TYPE(bpftrace::providers::UsdtAttachPoint)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(bpftrace::providers::AttachPoint,
+                                     bpftrace::providers::UsdtAttachPoint)

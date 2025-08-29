@@ -199,16 +199,6 @@ public:
   globalvars::GlobalVars global_vars;
   bool using_skboutput = false;
 
-  // Probe metadata
-  //
-  // Probe metadata that codegen creates. Ideally ResourceAnalyser pass should
-  // be collecting this, but it's complex to move the logic.
-  std::vector<Probe> probes;
-  std::unordered_map<std::string, Probe> special_probes;
-  std::vector<Probe> benchmark_probes;
-  std::vector<Probe> signal_probes;
-  std::vector<Probe> watchpoint_probes;
-
   // List of probes using userspace symbol resolution
   std::unordered_set<const ast::Probe *> probes_using_usym;
 
@@ -229,11 +219,7 @@ private:
             probe_ids,
             maps_info,
             global_vars,
-            using_skboutput,
-            probes,
-            signal_probes,
-            special_probes,
-            benchmark_probes);
+            using_skboutput);
   }
 };
 

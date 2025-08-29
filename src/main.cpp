@@ -15,7 +15,6 @@
 
 #include "aot/aot.h"
 #include "ast/diagnostic.h"
-#include "ast/helpers.h"
 #include "ast/pass_manager.h"
 #include "ast/passes/attachpoint_passes.h"
 #include "ast/passes/clang_build.h"
@@ -29,6 +28,7 @@
 #include "ast/passes/pid_filter_pass.h"
 #include "ast/passes/portability_analyser.h"
 #include "ast/passes/printer.h"
+#include "ast/passes/probe_expansion.h"
 #include "ast/passes/probe_prune.h"
 #include "ast/passes/recursion_check.h"
 #include "ast/passes/register_providers.h"
@@ -331,6 +331,7 @@ void CreateDynamicPasses(std::function<void(ast::Pass&& pass)> add)
   add(ast::CreateTypeSystemPass());
   add(ast::CreateSemanticPass());
   add(ast::CreateProbePrunePass());
+  add(ast::CreateProbeMergePass());
   add(ast::CreateResourcePass());
 }
 
@@ -342,6 +343,7 @@ void CreateAotPasses(std::function<void(ast::Pass&& pass)> add)
   add(ast::CreateTypeSystemPass());
   add(ast::CreateSemanticPass());
   add(ast::CreateProbePrunePass());
+  add(ast::CreateProbeMergePass());
   add(ast::CreateResourcePass());
 }
 
@@ -773,9 +775,28 @@ int main(int argc, char* argv[])
     }
 
     // List all matching probes.
-    auto& registry = ok->get<ProviderRegistry>();
-    for (const auto& str : registry.get_all_matching(args.search)) {
-      std::cout << str << std::endl;
+    std::string provider;
+    std::string target;
+    auto n = args.search.find(":");
+    if (n != std::string::npos) {
+      provider = args.search.substr(0, n);
+      target = args.search.substr(n + 1);
+    } else {
+      provider = "*";
+      target = args.search;
+    }
+    auto& registry = ok->get<ast::ProviderRegistry>();
+    auto result = registry.get_all_matching(provider, target);
+    if (!result) {
+      LOG(ERROR) << "Error listing probes: " << result.takeError();
+      return 1;
+    }
+    // Print it in the way that we parse it.
+    for (const auto& [provider, attach_points] : *result) {
+      for (const auto& attach_point : attach_points) {
+        std::cout << provider->name() << ":" << attach_point->name()
+                  << std::endl;
+      }
     }
 
     return 0;
@@ -851,6 +872,7 @@ int main(int argc, char* argv[])
         .add(CreateParseBTFPass())
         .add(ast::CreateMapSugarPass())
         .add(ast::CreateNamedParamsPass())
+        .add(ast::CreateProbeExpansionPass())
         .add(ast::CreateSemanticPass());
 
     auto pmresult = pm.run();
