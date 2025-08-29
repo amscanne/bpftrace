@@ -4,13 +4,12 @@
 
 namespace bpftrace::providers {
 
+enum class UprobeType { uprobe, uretprobe };
+
 /// Provider for uprobe and uretprobe attach points.
-class UprobeProvider : public ProviderImpl<UprobeProvider> {
+class UprobeProviderBase : virtual public Provider {
 public:
-  UprobeProvider(bool is_uretprobe)
-      : ProviderImpl<UprobeProvider>(is_uretprobe ? "uretprobe" : "uprobe",
-                                     { is_uretprobe ? "ur" : "u" }),
-        is_uretprobe_(is_uretprobe) {};
+  UprobeProviderBase(UprobeType uprobe_type) : uprobe_type_(uprobe_type){};
 
   Result<AttachPointList> parse(
       const std::string &str,
@@ -28,7 +27,20 @@ public:
       std::optional<int> pid = std::nullopt) const override;
 
 private:
-  bool is_uretprobe_;
+  UprobeType uprobe_type_;
+};
+
+class UprobeProvider : public ProviderImpl<UprobeProvider, "uprobe", "u">,
+                       public UprobeProviderBase {
+public:
+  UprobeProvider() : UprobeProviderBase(UprobeType::uprobe){};
+};
+
+class UretprobeProvider
+    : public ProviderImpl<UprobeProvider, "uretprobe", "ur">,
+      public UprobeProviderBase {
+public:
+  UretprobeProvider() : UprobeProviderBase(UprobeType::uretprobe){};
 };
 
 } // namespace bpftrace::providers

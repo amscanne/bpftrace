@@ -1,6 +1,5 @@
 #pragma once
 
-#include "ast/attachpoint_parser.h"
 #include "ast/pass_manager.h"
 #include "ast/passes/builtins.h"
 #include "ast/passes/c_macro_expansion.h"
@@ -8,7 +7,6 @@
 #include "ast/passes/config_analyser.h"
 #include "ast/passes/control_flow_analyser.h"
 #include "ast/passes/deprecated.h"
-#include "ast/passes/field_analyser.h"
 #include "ast/passes/import_scripts.h"
 #include "ast/passes/macro_expansion.h"
 #include "ast/passes/map_sugar.h"
@@ -20,7 +18,6 @@
 #include "ast/passes/usdt_arguments.h"
 #include "btf.h"
 #include "driver.h"
-#include "tracepoint_format_parser.h"
 
 namespace bpftrace::ast {
 
@@ -41,17 +38,15 @@ inline std::vector<Pass> AllParsePasses(
   passes.emplace_back(CreateImportExternalScriptsPass());
   passes.emplace_back(CreateUnstableFeaturePass());
   passes.emplace_back(CreateDeprecatedPass());
-  passes.emplace_back(CreateParseAttachpointsPass());
+  passes.emplace_back(CreateProbeExpansionPass());
   passes.emplace_back(CreatePidFilterPass());
   passes.emplace_back(CreateUSDTImportPass());
   passes.emplace_back(CreateImportInternalScriptsPass());
   passes.emplace_back(CreateControlFlowPass());
   passes.emplace_back(CreateMacroExpansionPass());
   passes.emplace_back(CreateParseBTFPass());
-  passes.emplace_back(CreateProbeExpansionPass());
   passes.emplace_back(CreateParseTracepointFormatPass());
   passes.emplace_back(CreateBuiltinsPass());
-  passes.emplace_back(CreateFieldAnalyserPass());
   passes.emplace_back(CreateClangParsePass(std::move(extra_flags)));
   passes.emplace_back(CreateCMacroExpansionPass());
   passes.emplace_back(CreateMapSugarPass());

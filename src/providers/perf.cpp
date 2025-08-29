@@ -4,24 +4,21 @@
 #include <unistd.h>
 
 #include "bpfprogram.h"
-#include "log.h"
 #include "providers/perf.h"
 #include "util/int_parser.h"
-#include "util/strings.h"
 
 namespace bpftrace::providers {
 
-class PerfEventAttachPoint : public AttachPoint {
+class PerfEventAttachPoint : public SimpleAttachPoint {
 public:
-  PerfEventAttachPoint(const Provider &provider,
-                       const std::string &orig_name,
+  PerfEventAttachPoint(std::string orig_name,
                        uint64_t perf_type,
                        uint64_t event_type,
                        uint64_t freq)
-      : AttachPoint(provider, orig_name),
+      : SimpleAttachPoint(std::move(orig_name)),
         perf_type(perf_type),
         event_type(event_type),
-        freq(freq) {};
+        freq(freq){};
 
   bpf_prog_type prog_type() const override
   {
@@ -39,7 +36,7 @@ public:
                     AttachPointList &&attach_points,
                     int perf_event_fd)
       : AttachedProbe(link, std::move(attach_points)),
-        perf_event_fd_(perf_event_fd) {};
+        perf_event_fd_(perf_event_fd){};
 
 private:
   util::FD perf_event_fd_;
@@ -226,7 +223,8 @@ Result<AttachedProbeList> PerfProvider::attach_single(
   auto *link = bpf_program__attach_perf_event(prog.bpf_prog(), perf_event_fd);
   if (!link) {
     close(perf_event_fd);
-    return make_error<AttachError>(std::move(attach_point),
+    return make_error<AttachError>(this,
+                                   std::move(attach_point),
                                    "failed to attach perf event");
   }
 
@@ -236,3 +234,7 @@ Result<AttachedProbeList> PerfProvider::attach_single(
 }
 
 } // namespace bpftrace::providers
+
+CEREAL_REGISTER_TYPE(bpftrace::providers::PerfEventAttachPoint)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(bpftrace::providers::SimpleAttachPoint,
+                                     bpftrace::providers::PerfEventAttachPoint)

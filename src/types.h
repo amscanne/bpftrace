@@ -166,10 +166,6 @@ public:
   }
 
   StackType stack_type;
-  int funcarg_idx = -1;
-  bool is_internal = false;
-  bool is_tparg = false;
-  bool is_funcarg = false;
   TimestampMode ts_mode = TimestampMode::boot;
 
 private:
@@ -197,10 +193,6 @@ private:
   {
     archive(type_,
             stack_type,
-            is_internal,
-            is_tparg,
-            is_funcarg,
-            funcarg_idx,
             is_signed_,
             element_type_,
             name_,
@@ -269,13 +261,6 @@ public:
   // but their individual elements have different sizes.
   bool IsSameSizeRecursive(const SizedType &t) const;
   bool FitsInto(const SizedType &t) const;
-
-  bool IsPrintableTy() const
-  {
-    return type_ != Type::none && type_ != Type::stack_mode &&
-           type_ != Type::timestamp_mode &&
-           (!IsCtxAccess() || is_funcarg); // args builtin is printable
-  }
 
   void SetSign(bool is_signed)
   {

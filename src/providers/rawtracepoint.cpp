@@ -1,9 +1,7 @@
 #include <bpf/libbpf.h>
 
 #include "bpfprogram.h"
-#include "log.h"
 #include "providers/rawtracepoint.h"
-#include "util/strings.h"
 
 namespace bpftrace::providers {
 
@@ -23,7 +21,8 @@ Result<AttachedProbeList> RawTracepointProvider::attach_single(
   auto *link = bpf_program__attach_raw_tracepoint(prog.bpf_prog(),
                                                   attach_point->name().c_str());
   if (!link) {
-    return make_error<AttachError>(std::move(attach_point),
+    return make_error<AttachError>(this,
+                                   std::move(attach_point),
                                    "failed to attach rawtracepoint");
   }
 

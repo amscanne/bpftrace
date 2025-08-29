@@ -4,7 +4,6 @@
 #include <cstdint>
 #include <map>
 #include <memory>
-#include <ranges>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -27,9 +26,8 @@ class Handle {
 public:
   Handle();
   Handle(HandleRef base);
-  Handle(struct btf *btf) : btf_(btf) {};
-  Handle(struct btf *btf, HandleRef base)
-      : btf_(btf), base_(std::move(base)) {};
+  Handle(struct btf *btf) : btf_(btf){};
+  Handle(struct btf *btf, HandleRef base) : btf_(btf), base_(std::move(base)){};
   ~Handle();
   Handle(Handle &&other) = delete;
   Handle &operator=(Handle &&other) = delete;
@@ -66,7 +64,7 @@ using detail::HandleRef;
 class ParseError : public ErrorInfo<ParseError> {
 public:
   static char ID;
-  ParseError(int err) : err_(err >= 0 ? err : -err) {};
+  ParseError(int err) : err_(err >= 0 ? err : -err){};
   void log(llvm::raw_ostream &OS) const override;
 
 private:
@@ -77,7 +75,7 @@ private:
 class TypeError : public ErrorInfo<TypeError> {
 public:
   static char ID;
-  TypeError(int err) : err_(err >= 0 ? err : -err) {};
+  TypeError(int err) : err_(err >= 0 ? err : -err){};
   void log(llvm::raw_ostream &OS) const override;
 
 private:
@@ -89,8 +87,8 @@ private:
 class UnknownType : public ErrorInfo<UnknownType> {
 public:
   static char ID;
-  UnknownType(const std::string &name) : name_(name) {};
-  UnknownType(uint32_t type_id) : name_(type_id) {};
+  UnknownType(const std::string &name) : name_(name){};
+  UnknownType(uint32_t type_id) : name_(type_id){};
   void log(llvm::raw_ostream &OS) const override;
 
 private:
@@ -102,7 +100,7 @@ class KindMismatch : public ErrorInfo<KindMismatch> {
 public:
   static char ID;
   KindMismatch(uint32_t got, uint32_t expected)
-      : got_(got), expected_(expected) {};
+      : got_(got), expected_(expected){};
   void log(llvm::raw_ostream &OS) const override;
 
 private:
@@ -180,7 +178,7 @@ public:
   // Construct a new object with the handle and type_id. This is the universal
   // constructor for all types; it should not be overriden.
   BaseType(HandleRef handle, uint32_t type_id)
-      : handle_(std::move(handle)), type_id_(type_id) {};
+      : handle_(std::move(handle)), type_id_(type_id){};
 
   // Return the resolved size of the type.
   Result<size_t> size() const;
@@ -262,8 +260,7 @@ public:
 
 class Void : public Type<Void, BTF_KIND_UNKN> {
 public:
-  Void(HandleRef handle, uint32_t type_id)
-      : Type(std::move(handle), type_id) {};
+  Void(HandleRef handle, uint32_t type_id) : Type(std::move(handle), type_id){};
 
   static Result<Void> lookup(HandleRef handle, const std::string &name)
   {
@@ -291,7 +288,7 @@ private:
 class Integer : public Type<Integer, BTF_KIND_INT> {
 public:
   Integer(HandleRef &&handle, uint32_t type_id)
-      : Type<Integer, BTF_KIND_INT>(std::move(handle), type_id) {};
+      : Type<Integer, BTF_KIND_INT>(std::move(handle), type_id){};
 
   size_t bytes() const;
 
@@ -308,7 +305,7 @@ private:
 class Pointer : public Type<Pointer, BTF_KIND_PTR> {
 public:
   Pointer(HandleRef &&handle, uint32_t type_id)
-      : Type<Pointer, BTF_KIND_PTR>(std::move(handle), type_id) {};
+      : Type<Pointer, BTF_KIND_PTR>(std::move(handle), type_id){};
 
   Result<AnyType> element_type() const;
 
@@ -322,7 +319,7 @@ private:
 class Array : public Type<Array, BTF_KIND_ARRAY> {
 public:
   Array(HandleRef &&handle, uint32_t type_id)
-      : Type<Array, BTF_KIND_ARRAY>(std::move(handle), type_id) {};
+      : Type<Array, BTF_KIND_ARRAY>(std::move(handle), type_id){};
 
   Result<ValueType> index_type() const;
   Result<AnyType> element_type() const;
@@ -344,7 +341,7 @@ struct FieldInfo;
 class Struct : public Type<Struct, BTF_KIND_STRUCT> {
 public:
   Struct(HandleRef &&handle, uint32_t type_id)
-      : Type<Struct, BTF_KIND_STRUCT>(std::move(handle), type_id) {};
+      : Type<Struct, BTF_KIND_STRUCT>(std::move(handle), type_id){};
 
   std::string name() const;
   Result<FieldInfo> field(const std::string &name) const;
@@ -364,7 +361,7 @@ private:
 class Union : public Type<Union, BTF_KIND_UNION> {
 public:
   Union(HandleRef handle, uint32_t type_id)
-      : Type<Union, BTF_KIND_UNION>(std::move(handle), type_id) {};
+      : Type<Union, BTF_KIND_UNION>(std::move(handle), type_id){};
 
   std::string name() const;
   Result<FieldInfo> field(const std::string &name) const;
@@ -384,7 +381,7 @@ private:
 class Enum : public Type<Enum, BTF_KIND_ENUM> {
 public:
   Enum(HandleRef handle, uint32_t type_id)
-      : Type<Enum, BTF_KIND_ENUM>(std::move(handle), type_id) {};
+      : Type<Enum, BTF_KIND_ENUM>(std::move(handle), type_id){};
 
   std::string name() const;
   std::map<std::string, int32_t> values() const;
@@ -401,7 +398,7 @@ private:
 class Enum64 : public Type<Enum64, BTF_KIND_ENUM64> {
 public:
   Enum64(HandleRef handle, uint32_t type_id)
-      : Type<Enum64, BTF_KIND_ENUM64>(std::move(handle), type_id) {};
+      : Type<Enum64, BTF_KIND_ENUM64>(std::move(handle), type_id){};
 
   std::string name() const;
   std::map<std::string, int64_t> values() const;
@@ -418,7 +415,7 @@ private:
 class ForwardDecl : public Type<ForwardDecl, BTF_KIND_FWD> {
 public:
   ForwardDecl(HandleRef &&handle, uint32_t type_id)
-      : Type<ForwardDecl, BTF_KIND_FWD>(std::move(handle), type_id) {};
+      : Type<ForwardDecl, BTF_KIND_FWD>(std::move(handle), type_id){};
 
   enum Kind {
     Struct = BTF_FWD_STRUCT,
@@ -442,7 +439,7 @@ private:
 class Typedef : public Type<Typedef, BTF_KIND_TYPEDEF> {
 public:
   Typedef(HandleRef &&handle, uint32_t type_id)
-      : Type<Typedef, BTF_KIND_TYPEDEF>(std::move(handle), type_id) {};
+      : Type<Typedef, BTF_KIND_TYPEDEF>(std::move(handle), type_id){};
 
   std::string name() const;
   Result<AnyType> type() const;
@@ -459,7 +456,7 @@ private:
 class Volatile : public Type<Volatile, BTF_KIND_VOLATILE> {
 public:
   Volatile(HandleRef &&handle, uint32_t type_id)
-      : Type<Volatile, BTF_KIND_VOLATILE>(std::move(handle), type_id) {};
+      : Type<Volatile, BTF_KIND_VOLATILE>(std::move(handle), type_id){};
 
   Result<AnyType> type() const;
 
@@ -473,7 +470,7 @@ private:
 class Const : public Type<Const, BTF_KIND_CONST> {
 public:
   Const(HandleRef handle, uint32_t type_id)
-      : Type<Const, BTF_KIND_CONST>(std::move(handle), type_id) {};
+      : Type<Const, BTF_KIND_CONST>(std::move(handle), type_id){};
 
   Result<AnyType> type() const;
 
@@ -487,7 +484,7 @@ private:
 class Restrict : public Type<Restrict, BTF_KIND_RESTRICT> {
 public:
   Restrict(HandleRef &&handle, uint32_t type_id)
-      : Type<Restrict, BTF_KIND_RESTRICT>(std::move(handle), type_id) {};
+      : Type<Restrict, BTF_KIND_RESTRICT>(std::move(handle), type_id){};
 
   Result<AnyType> type() const;
 
@@ -501,7 +498,7 @@ private:
 class FunctionProto : public Type<FunctionProto, BTF_KIND_FUNC_PROTO> {
 public:
   FunctionProto(HandleRef &&handle, uint32_t type_id)
-      : Type<FunctionProto, BTF_KIND_FUNC_PROTO>(std::move(handle), type_id) {};
+      : Type<FunctionProto, BTF_KIND_FUNC_PROTO>(std::move(handle), type_id){};
 
   Result<std::vector<std::pair<std::string, ValueType>>> argument_types() const;
   Result<ValueType> return_type() const;
@@ -519,7 +516,7 @@ private:
 class Function : public Type<Function, BTF_KIND_FUNC> {
 public:
   Function(HandleRef &&handle, uint32_t type_id)
-      : Type<Function, BTF_KIND_FUNC>(std::move(handle), type_id) {};
+      : Type<Function, BTF_KIND_FUNC>(std::move(handle), type_id){};
 
   enum Linkage {
     Static = BTF_FUNC_STATIC,
@@ -544,7 +541,7 @@ private:
 class Var : public Type<Var, BTF_KIND_VAR> {
 public:
   Var(HandleRef &&handle, uint32_t type_id)
-      : Type<Var, BTF_KIND_VAR>(std::move(handle), type_id) {};
+      : Type<Var, BTF_KIND_VAR>(std::move(handle), type_id){};
 
   enum Linkage {
     Static = BTF_VAR_STATIC,
@@ -568,7 +565,7 @@ private:
 class DataSection : public Type<DataSection, BTF_KIND_DATASEC> {
 public:
   DataSection(HandleRef &&handle, uint32_t type_id)
-      : Type<DataSection, BTF_KIND_DATASEC>(std::move(handle), type_id) {};
+      : Type<DataSection, BTF_KIND_DATASEC>(std::move(handle), type_id){};
 
   std::string name() const;
 
@@ -584,7 +581,7 @@ private:
 class Float : public Type<Float, BTF_KIND_FLOAT> {
 public:
   Float(HandleRef &&handle, uint32_t type_id)
-      : Type<Float, BTF_KIND_FLOAT>(std::move(handle), type_id) {};
+      : Type<Float, BTF_KIND_FLOAT>(std::move(handle), type_id){};
 
 private:
   // We don't presently support floating point operations, and hence do not
@@ -597,7 +594,7 @@ private:
 class DeclTag : public Type<DeclTag, BTF_KIND_DECL_TAG> {
 public:
   DeclTag(HandleRef &&handle, uint32_t type_id)
-      : Type<DeclTag, BTF_KIND_DECL_TAG>(std::move(handle), type_id) {};
+      : Type<DeclTag, BTF_KIND_DECL_TAG>(std::move(handle), type_id){};
 
   std::string value() const;
 
@@ -610,7 +607,7 @@ private:
 class TypeTag : public Type<TypeTag, BTF_KIND_TYPE_TAG> {
 public:
   TypeTag(HandleRef &&handle, uint32_t type_id)
-      : Type<TypeTag, BTF_KIND_TYPE_TAG>(std::move(handle), type_id) {};
+      : Type<TypeTag, BTF_KIND_TYPE_TAG>(std::move(handle), type_id){};
 
   std::string value() const;
   Result<AnyType> element_type() const;
@@ -625,7 +622,7 @@ private:
 template <typename... Ts>
 class VariantType {
 public:
-  VariantType(std::variant<Ts...> value) : value_(std::move(value)) {};
+  VariantType(std::variant<Ts...> value) : value_(std::move(value)){};
 
   // Allow automatic construct from any supported type.
   template <typename U>
@@ -763,7 +760,7 @@ public:
   }; // Used for `end`.
 
   TypeIterator(HandleRef handle, uint32_t type_id)
-      : handle_(std::move(handle)), type_id_(type_id) {};
+      : handle_(std::move(handle)), type_id_(type_id){};
 
   AnyType operator*() const
   {
@@ -812,9 +809,9 @@ private:
 // from a serialized BTF dataset, but may be constructed dynamically.
 class Types {
 public:
-  Types() : handle_(std::make_shared<detail::Handle>()) {};
+  Types() : handle_(std::make_shared<detail::Handle>()){};
   Types(const Types &base)
-      : handle_(std::make_shared<detail::Handle>(base.handle_)) {};
+      : handle_(std::make_shared<detail::Handle>(base.handle_)){};
   Types(Types &&other) = default;
   Types &operator=(Types &&other) = default;
 
@@ -868,7 +865,7 @@ public:
   Result<> emit_decl(std::ostream &out) const;
 
 private:
-  Types(HandleRef &&handle) : handle_(std::move(handle)) {};
+  Types(HandleRef &&handle) : handle_(std::move(handle)){};
   HandleRef handle_;
 };
 

@@ -4,12 +4,12 @@
 
 namespace bpftrace::providers {
 
+enum class FentryType { fentry, fexit };
+
 /// Provider for fentry attach points.
-class FentryProvider : public ProviderImpl<FentryProvider> {
+class FentryProviderBase : virtual public Provider {
 public:
-  FentryProvider(bool is_fexit)
-      : ProviderImpl<FentryProvider>(is_fexit ? "fexit" : "fentry", {}),
-        is_fexit_(is_fexit) {};
+  FentryProviderBase(FentryType fentry_type) : fentry_type_(fentry_type){};
 
   Result<AttachPointList> parse(
       const std::string &str,
@@ -22,7 +22,19 @@ public:
       std::optional<int> pid = std::nullopt) const override;
 
 private:
-  bool is_fexit_;
+  FentryType fentry_type_;
+};
+
+class FentryProvider : public ProviderImpl<FentryProvider, "fentry">,
+                       public FentryProviderBase {
+public:
+  FentryProvider() : FentryProviderBase(FentryType::fentry){};
+};
+
+class FexitProvider : public ProviderImpl<FexitProvider, "fexit">,
+                      public FentryProviderBase {
+public:
+  FexitProvider() : FentryProviderBase(FentryType::fexit){};
 };
 
 } // namespace bpftrace::providers

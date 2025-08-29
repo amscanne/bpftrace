@@ -9,7 +9,6 @@ target_link_libraries(ast_defs util)
 
 add_library(ast STATIC
   async_event_types.cpp
-  attachpoint_parser.cpp
   codegen_helper.cpp
   diagnostic.cpp
   dibuilderbpf.cpp
@@ -26,7 +25,6 @@ add_library(ast STATIC
   passes/config_analyser.cpp
   passes/control_flow_analyser.cpp
   passes/deprecated.cpp
-  passes/field_analyser.cpp
   passes/fold_literals.cpp
   passes/import_scripts.cpp
   passes/link.cpp

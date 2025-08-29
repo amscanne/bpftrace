@@ -1,5 +1,4 @@
 #include "ast/passes/pid_filter_pass.h"
-#include "ast/attachpoint_parser.h"
 #include "ast/passes/field_analyser.h"
 #include "ast/passes/printer.h"
 #include "ast/passes/probe_expansion.h"
@@ -29,7 +28,6 @@ void test(const std::string& input, bool has_pid, bool has_filter)
                 .put(ast)
                 .put(bpftrace)
                 .add(CreateParsePass())
-                .add(ast::CreateParseAttachpointsPass())
                 .add(ast::CreateProbeExpansionPass())
                 .add(ast::CreateFieldAnalyserPass())
                 .add(ast::CreatePidFilterPass())

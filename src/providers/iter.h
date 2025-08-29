@@ -5,10 +5,8 @@
 namespace bpftrace::providers {
 
 /// Provider for iter attach points.
-class IterProvider : public ProviderImpl<IterProvider> {
+class IterProvider : public ProviderImpl<IterProvider, "iter", "it"> {
 public:
-  IterProvider() : ProviderImpl<IterProvider>("iter", { "it" }) {};
-
   Result<AttachPointList> parse(
       const std::string &str,
       const BtfLookup &btf,

@@ -1,6 +1,5 @@
 #include <llvm/Config/llvm-config.h>
 
-#include "ast/attachpoint_parser.h"
 #include "ast/passes/clang_parser.h"
 #include "ast/passes/field_analyser.h"
 #include "ast/passes/probe_expansion.h"
@@ -26,7 +25,6 @@ static ast::CDefinitions parse(
                 .put(ast)
                 .put(bpftrace)
                 .add(CreateParsePass())
-                .add(ast::CreateParseAttachpointsPass())
                 .add(ast::CreateProbeExpansionPass())
                 .add(ast::CreateFieldAnalyserPass())
                 .add(ast::CreateClangParsePass())

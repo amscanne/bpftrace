@@ -434,9 +434,6 @@ attach_point_def:
         |       attach_point_def RBRACKET     { $$ = $1 + "]"; }
         |       attach_point_def param
                 {
-                  // "Un-parse" the positional parameter back into text so
-                  // we can give it to the AttachPointParser. This is kind of
-                  // a hack but there doesn't look to be any other way.
                   $$ = $1 + "$" + std::to_string($2->n);
                 }
         |       %empty                    { $$ = ""; }

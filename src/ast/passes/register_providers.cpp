@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <vector>
 
 #include "ast/passes/register_providers.h"
@@ -61,27 +62,18 @@ Result<> ProviderRegistry::add(std::unique_ptr<Provider> &&provider)
   return OK();
 }
 
-Result<AttachPointList> ProviderRegistry::get_all_matching(
-    const std::string &glob,
-    const BtfLookup &btf) const
+Result<std::vector<std::pair<Provider *, AttachPointList>>> ProviderRegistry::
+    get_all_matching(const std::string &provider_glob,
+                     const std::string &target_glob,
+                     const BtfLookup &btf) const
 {
-  // If there is no target provided, then we call parse on any matching
-  // provider with the empty string. It is up to the individual provider
-  // what it would like to do in that case.
-  std::string provider_part;
-  std::string target_part;
-  auto first_colon = glob.find(':');
-  if (first_colon != std::string::npos) {
-    provider_part = glob.substr(0, first_colon);
-    target_part = glob.substr(first_colon + 1);
-  }
   bool start_wildcard, end_wildcard;
-  auto tokens = util::get_wildcard_tokens(provider_part,
+  auto tokens = util::get_wildcard_tokens(provider_glob,
                                           start_wildcard,
                                           end_wildcard);
 
   // Collect the set of providers that we will query.
-  std::vector<const Provider *> providers;
+  std::vector<Provider *> providers;
   for (const auto &pair : providers_by_name_) {
     if (util::wildcard_match(
             pair.first, tokens, start_wildcard, end_wildcard)) {
@@ -91,22 +83,19 @@ Result<AttachPointList> ProviderRegistry::get_all_matching(
   for (const auto &pair : aliases_to_provider_) {
     if (util::wildcard_match(
             pair.first, tokens, start_wildcard, end_wildcard) &&
-        std::find(providers.begin(), providers.end(), pair.second) ==
-            providers.end()) {
+        std::ranges::find(providers, pair.second) == providers.end()) {
       providers.push_back(pair.second);
     }
   }
 
   // Grab all matching targets.
-  AttachPointList results;
-  for (const auto *p : providers) {
-    auto targets = p->parse(target_part, btf);
+  std::vector<std::pair<Provider *, AttachPointList>> results;
+  for (auto *p : providers) {
+    auto targets = p->parse(target_glob, btf);
     if (!targets) {
       return targets.takeError();
     }
-    for (auto &t : *targets) {
-      results.emplace_back(std::move(t));
-    }
+    results.emplace_back(p, std::move(*targets));
   }
   return results;
 }
@@ -117,14 +106,15 @@ Pass CreateRegisterProvidersPass()
     std::vector<std::function<std::unique_ptr<Provider>()>>
         provider_factories = {
           []() { return std::make_unique<BenchmarkProvider>(); },
-          []() { return std::make_unique<FentryProvider>(false); },
-          []() { return std::make_unique<FentryProvider>(true); },
+          []() { return std::make_unique<FentryProvider>(); },
+          []() { return std::make_unique<FexitProvider>(); },
           []() { return std::make_unique<RawTracepointProvider>(); },
           []() { return std::make_unique<TracepointProvider>(); },
-          []() { return std::make_unique<KprobeProvider>(false); },
-          []() { return std::make_unique<KprobeProvider>(true); },
-          []() { return std::make_unique<UprobeProvider>(false); },
-          []() { return std::make_unique<UprobeProvider>(true); },
+          []() { return std::make_unique<KprobeProvider>(); },
+          []() { return std::make_unique<KretprobeProvider>(); },
+          []() { return std::make_unique<KsessionProvider>(); },
+          []() { return std::make_unique<UprobeProvider>(); },
+          []() { return std::make_unique<UretprobeProvider>(); },
           []() { return std::make_unique<BeginProvider>(); },
           []() { return std::make_unique<EndProvider>(); },
           []() { return std::make_unique<SelfProvider>(); },

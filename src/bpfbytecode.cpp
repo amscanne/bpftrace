@@ -1,14 +1,10 @@
-#include "bpfbytecode.h"
-
 #include <algorithm>
 #include <cstring>
-#include <stdexcept>
 
-#include "ast/passes/named_param.h"
+#include "bpfbytecode.h"
 #include "bpftrace.h"
 #include "globalvars.h"
 #include "log.h"
-#include "util/bpf_names.h"
 #include "util/exceptions.h"
 #include "util/wildcard.h"
 
@@ -78,40 +74,6 @@ BpfBytecode::BpfBytecode(std::span<const std::byte> elf)
   bpf_object__for_each_program (p, bpf_object_.get()) {
     programs_.emplace(bpf_program__name(p), BpfProgram(p));
   }
-}
-
-const BpfProgram &BpfBytecode::getProgramForProbe(const Probe &probe) const
-{
-  auto usdt_location_idx = (probe.type == ProbeType::usdt)
-                               ? std::make_optional<int>(
-                                     probe.usdt_location_idx)
-                               : std::nullopt;
-
-  auto prog = programs_.find(util::get_function_name_for_probe(
-      probe.name, probe.index, usdt_location_idx));
-  if (prog == programs_.end()) {
-    prog = programs_.find(util::get_function_name_for_probe(probe.orig_name,
-                                                            probe.index,
-                                                            usdt_location_idx));
-  }
-
-  if (prog == programs_.end()) {
-    std::stringstream msg;
-    if (probe.name != probe.orig_name)
-      msg << "Code not generated for probe " << probe.name << " (expanded from "
-          << probe.orig_name << ")";
-    else
-      msg << "Code not generated for probe: " << probe.name;
-    throw std::runtime_error(msg.str());
-  }
-
-  return prog->second;
-}
-
-BpfProgram &BpfBytecode::getProgramForProbe(const Probe &probe)
-{
-  return const_cast<BpfProgram &>(
-      const_cast<const BpfBytecode *>(this)->getProgramForProbe(probe));
 }
 
 void BpfBytecode::update_global_vars(BPFtrace &bpftrace,

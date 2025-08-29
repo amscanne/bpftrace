@@ -4,19 +4,15 @@
 #include <linux/bpf.h>
 
 #include "bpfprogram.h"
-#include "log.h"
 #include "providers/special.h"
 #include "util/result.h"
-#include "util/strings.h"
 
 namespace bpftrace::providers {
 
-class SpecialAttachPoint : public AttachPoint {
+class SpecialAttachPoint : public SimpleAttachPoint {
 public:
-  SpecialAttachPoint(const Provider &provider,
-                     const std::string &name,
-                     Action action)
-      : AttachPoint(provider, name), action_(action) {};
+  SpecialAttachPoint(const std::string &name, Action action)
+      : SimpleAttachPoint(name), action_(action){};
 
   bpf_prog_type prog_type() const override
   {
@@ -28,11 +24,17 @@ public:
     return action_;
   }
 
+  template <class Archive>
+  void serialize([[maybe_unused]] Archive &ar)
+  {
+    ar(action_);
+  }
+
 private:
   Action action_;
 };
 
-Result<AttachPointList> SpecialProvider::parse(
+Result<AttachPointList> SpecialProviderBase::parse(
     const std::string &str,
     [[maybe_unused]] const BtfLookup &btf,
     [[maybe_unused]] std::optional<int> pid) const
@@ -45,10 +47,10 @@ Result<AttachPointList> SelfProvider::parse(
     [[maybe_unused]] const BtfLookup &btf,
     [[maybe_unused]] std::optional<int> pid) const
 {
-  return SpecialProvider::parse(str, btf, pid);
+  return SpecialProviderBase::parse(str, btf, pid);
 }
 
-Result<> SpecialProvider::run_single(
+Result<> SpecialProviderBase::run_single(
     [[maybe_unused]] std::unique_ptr<AttachPoint> &attach_point,
     const BpfProgram &prog) const
 {
@@ -68,3 +70,7 @@ Result<> SpecialProvider::run_single(
 }
 
 } // namespace bpftrace::providers
+
+CEREAL_REGISTER_TYPE(bpftrace::providers::SpecialAttachPoint)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(bpftrace::providers::SimpleAttachPoint,
+                                     bpftrace::providers::SpecialAttachPoint)

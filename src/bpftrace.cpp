@@ -35,7 +35,6 @@
 #include "ast/async_event_types.h"
 #include "ast/context.h"
 #include "async_action.h"
-#include "attached_probe.h"
 #include "bpfmap.h"
 #include "bpfprogram.h"
 #include "bpftrace.h"
@@ -88,100 +87,6 @@ BPFtrace::~BPFtrace()
   close_pcaps();
 }
 
-Probe BPFtrace::generateWatchpointSetupProbe(const ast::AttachPoint &ap,
-                                             const ast::Probe &probe)
-{
-  Probe setup_probe;
-  setup_probe.name = util::get_watchpoint_setup_probe_name(ap.name());
-  setup_probe.type = ProbeType::uprobe;
-  setup_probe.path = ap.target;
-  setup_probe.attach_point = ap.func;
-  setup_probe.orig_name = util::get_watchpoint_setup_probe_name(
-      probe.orig_name);
-  setup_probe.index = ap.index() > 0 ? ap.index() : probe.index();
-
-  return setup_probe;
-}
-
-Probe BPFtrace::generate_probe(const ast::AttachPoint &ap,
-                               const ast::Probe &p,
-                               ast::ExpansionType expansion,
-                               std::set<std::string> expanded_funcs,
-                               int usdt_location_idx)
-{
-  Probe probe;
-  probe.path = ap.target;
-  probe.attach_point = ap.func;
-  probe.type = probetype(ap.provider);
-  probe.log_size = config_->log_size;
-  probe.orig_name = p.orig_name;
-  probe.ns = ap.ns;
-  probe.name = ap.name();
-  probe.freq = ap.freq;
-  probe.address = ap.address;
-  probe.func_offset = ap.func_offset;
-  probe.loc = 0;
-  probe.usdt_location_idx = usdt_location_idx;
-  probe.index = ap.index() ?: p.index();
-  probe.len = ap.len;
-  probe.mode = ap.mode;
-  probe.async = ap.async;
-  probe.pin = ap.pin;
-  probe.is_session = expansion == ast::ExpansionType::SESSION;
-  probe.funcs = std::move(expanded_funcs);
-  probe.bpf_prog_id = ap.bpf_prog_id;
-  return probe;
-}
-
-int BPFtrace::add_probe(const ast::AttachPoint &ap,
-                        const ast::Probe &p,
-                        ast::ExpansionType expansion,
-                        std::set<std::string> expanded_funcs,
-                        int usdt_location_idx)
-{
-  auto type = probetype(ap.provider);
-  auto probe = generate_probe(
-      ap, p, expansion, std::move(expanded_funcs), usdt_location_idx);
-
-  // Add the new probe(s) to resources
-  if (ap.provider == "begin" || ap.provider == "end") {
-    // special probes
-    auto target = ap.target.empty() ? "" : "_" + ap.target;
-    auto name = ap.provider + target;
-    resources.special_probes[name] = std::move(probe);
-  } else if (ap.provider == "bench") {
-    resources.benchmark_probes.emplace_back(std::move(probe));
-  } else if (ap.provider == "self") {
-    if (ap.target == "signal") {
-      resources.signal_probes.emplace_back(std::move(probe));
-    }
-  } else if ((type == ProbeType::watchpoint ||
-              type == ProbeType::asyncwatchpoint) &&
-             !ap.func.empty()) {
-    // (async)watchpoint - generate also the setup probe
-    resources.probes.emplace_back(generateWatchpointSetupProbe(ap, p));
-    resources.watchpoint_probes.emplace_back(std::move(probe));
-  } else {
-    resources.probes.emplace_back(std::move(probe));
-  }
-
-  if (type == ProbeType::iter)
-    has_iter_ = true;
-
-  // Preload symbol tables if necessary
-  if (resources.probes_using_usym.contains(&p) && util::is_exe(ap.target)) {
-    usyms_.cache(ap.target, this->pid());
-  }
-
-  return 0;
-}
-
-int BPFtrace::num_probes() const
-{
-  return resources.special_probes.size() + resources.probes.size() +
-         resources.signal_probes.size() + resources.benchmark_probes.size();
-}
-
 void BPFtrace::request_finalize()
 {
   finalize_ = true;
@@ -195,7 +100,7 @@ struct PerfEventContext {
   PerfEventContext(BPFtrace &b,
                    async_action::AsyncHandlers &handlers,
                    output::Output &o)
-      : bpftrace(b), handlers(handlers), output(o) {};
+      : bpftrace(b), handlers(handlers), output(o){};
   BPFtrace &bpftrace;
   async_action::AsyncHandlers &handlers;
   output::Output &output;
@@ -1266,7 +1171,8 @@ std::unordered_set<std::string> BPFtrace::get_raw_tracepoint_modules(
 
 const std::optional<struct stat> &BPFtrace::get_pidns_self_stat() const
 {
-  static std::optional<struct stat> pidns = []() -> std::optional<struct stat> {
+  static std::optional<struct stat> pidns = []() -> std::optional<struct stat>
+  {
     struct stat s;
     if (::stat("/proc/self/ns/pid", &s)) {
       if (errno == ENOENT)
@@ -1276,7 +1182,8 @@ const std::optional<struct stat> &BPFtrace::get_pidns_self_stat() const
           std::strerror(errno));
     }
     return s;
-  }();
+  }
+  ();
 
   return pidns;
 }

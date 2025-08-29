@@ -2,6 +2,7 @@
 
 #include "arch/arch.h"
 #include "ast/passes/builtins.h"
+#include "ast/passes/probe_expansion.h"
 #include "ast/visitor.h"
 #include "bpftrace.h"
 
@@ -11,72 +12,29 @@ namespace {
 
 class Builtins : public Visitor<Builtins, std::optional<Expression>> {
 public:
-  explicit Builtins(ASTContext &ast, BPFtrace &bpftrace)
-      : ast_(ast), bpftrace_(bpftrace) {};
+  explicit Builtins(ASTContext &ast,
+                    BPFtrace &bpftrace,
+                    const providers::Provider &provider,
+                    std::unique_ptr<providers::AttachPoint> &attach_point)
+      : ast_(ast),
+        bpftrace_(bpftrace),
+        provider_(provider),
+        attach_point_(attach_point){};
 
   using Visitor<Builtins, std::optional<Expression>>::visit;
   std::optional<Expression> visit(Builtin &builtin);
   std::optional<Expression> visit(Identifier &identifier);
   std::optional<Expression> visit(Expression &expression);
   std::optional<Expression> check(const std::string &ident, Node &node);
-  std::optional<Expression> visit(Probe &probe);
-  std::optional<Expression> visit(Subprog &subprog);
 
 private:
   ASTContext &ast_;
   BPFtrace &bpftrace_;
-
-  std::optional<ProbeType> probe_type_;
-  std::optional<bpf_prog_type> prog_type_;
+  const providers::Provider &provider_;
+  std::unique_ptr<providers::AttachPoint> &attach_point_;
 };
 
 } // namespace
-
-static std::string probe_type_name(ProbeType t)
-{
-  switch (t) {
-    case ProbeType::invalid:
-      return "invalid";
-    case ProbeType::special:
-      return "special";
-    case ProbeType::benchmark:
-      return "benchmark";
-    case ProbeType::kprobe:
-      return "kprobe";
-    case ProbeType::kretprobe:
-      return "kretprobe";
-    case ProbeType::uprobe:
-      return "uprobe";
-    case ProbeType::uretprobe:
-      return "uretprobe";
-    case ProbeType::usdt:
-      return "usdt";
-    case ProbeType::tracepoint:
-      return "tracepoint";
-    case ProbeType::profile:
-      return "profile";
-    case ProbeType::interval:
-      return "interval";
-    case ProbeType::software:
-      return "software";
-    case ProbeType::hardware:
-      return "hardware";
-    case ProbeType::watchpoint:
-      return "watchpoint";
-    case ProbeType::asyncwatchpoint:
-      return "asyncwatchpoint";
-    case ProbeType::fentry:
-      return "fentry";
-    case ProbeType::fexit:
-      return "fexit";
-    case ProbeType::iter:
-      return "iter";
-    case ProbeType::rawtracepoint:
-      return "rawtracepoint";
-    default:
-      return "unknown";
-  }
-}
 
 static std::string prog_type_name(bpf_prog_type t)
 {
@@ -169,28 +127,16 @@ std::optional<Expression> Builtins::check(const std::string &ident, Node &node)
   if (ident == "__builtin_safe_mode") {
     return ast_.make_node<Boolean>(bpftrace_.safe_mode_, Location(node.loc));
   }
-
-  // This is broken at the time of writing, but it's broken everywhere. In many
-  // places, the probe is generated based on the type of the first attachment,
-  // without regard for the fact that you may have multiple providers. This
-  // will be fixed by doing up front expansion, so these broken builtins will
-  // simply mirror the existing behavior temporarily. In the future, this
-  // comment will document older behavior (which hopefully does not apply).
   if (ident == "__builtin_probe_type") {
-    if (probe_type_) {
-      return ast_.make_node<String>(probe_type_name(probe_type_.value()),
-                                    Location(node.loc));
-    } else {
-      node.addError() << "probe type not available";
-    }
+    return ast_.make_node<String>(provider_.name(), Location(node.loc));
+  }
+  if (ident == "__builtin_attach_point") {
+    return ast_.make_node<String>(attach_point_->name(), Location(node.loc));
   }
   if (ident == "__builtin_prog_type") {
-    if (prog_type_) {
-      return ast_.make_node<String>(prog_type_name(prog_type_.value()),
-                                    Location(node.loc));
-    } else {
-      node.addError() << "program type not available";
-    }
+    auto prog_type = attach_point_->prog_type();
+    return ast_.make_node<String>(prog_type_name(prog_type),
+                                  Location(node.loc));
   }
   return std::nullopt;
 }
@@ -214,34 +160,15 @@ std::optional<Expression> Builtins::visit(Expression &expression)
   return std::nullopt;
 }
 
-std::optional<Expression> Builtins::visit(Probe &probe)
-{
-  if (!probe.attach_points.empty()) {
-    auto &ap = probe.attach_points[0];
-    probe_type_ = probetype(ap->provider);
-    prog_type_ = progtype(probe_type_.value());
-  } else {
-    probe_type_.reset();
-    prog_type_.reset();
-  }
-
-  return Visitor<Builtins, std::optional<Expression>>::visit(probe);
-}
-
-std::optional<Expression> Builtins::visit(Subprog &subprog)
-{
-  probe_type_.reset();
-  prog_type_.reset();
-
-  return Visitor<Builtins, std::optional<Expression>>::visit(subprog);
-}
-
 Pass CreateBuiltinsPass()
 {
-  auto fn = [&](ASTContext &ast, BPFtrace &bpftrace) {
-    Builtins builtins(ast, bpftrace);
-    builtins.visit(ast.root);
-  };
+  auto fn =
+      [&](ASTContext &ast, BPFtrace &bpftrace, ExpandedAttachPoints &expanded) {
+        for (auto &[probe, detail] : expanded.attach_points) {
+          auto &[provider, attach_point] = detail;
+          Builtins(ast, bpftrace, *provider, attach_point).visit(*probe);
+        }
+      };
 
   return Pass::create("Builtins", fn);
 };

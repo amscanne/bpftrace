@@ -9,13 +9,14 @@
 
 #include "ast/pass_manager.h"
 #include "ast/passes/link.h"
+#include "providers/provider.h"
 #include "usdt.h"
 
 namespace bpftrace::ast {
 
 class CompileContext : public ast::State<"compile-context"> {
 public:
-  CompileContext() : context(std::make_unique<llvm::LLVMContext>()) {};
+  CompileContext() : context(std::make_unique<llvm::LLVMContext>()){};
   std::unique_ptr<llvm::LLVMContext> context;
 };
 
@@ -27,7 +28,7 @@ Pass CreateLLVMInitPass();
 class CompiledModule : public ast::State<"compiled-module"> {
 public:
   CompiledModule(std::unique_ptr<llvm::Module> module)
-      : module(std::move(module)) {};
+      : module(std::move(module)){};
   std::unique_ptr<llvm::Module> module;
 };
 
@@ -51,8 +52,15 @@ Pass CreateOptimizePass();
 
 class BpfObject : public ast::State<"bpf-object"> {
 public:
-  BpfObject(std::span<char> data) : data(data.begin(), data.end()) {};
+  BpfObject(std::span<char> data) : data(data.begin(), data.end()){};
+
+  // This is the BPF object data.
   std::vector<char> data;
+
+  // This is the set of attach points, along with the name of the generated
+  // function of the suitable type. These can be serialized along with the rest
+  // of the BpfObject.
+  std::vector<std::pair<std::string, providers::AttachPointList>> attach_points;
 };
 
 // Produces the ELF data for the BPF bytecode as a `BpfObject`. This is

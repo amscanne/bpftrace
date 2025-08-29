@@ -1,5 +1,4 @@
 #include "ast/passes/probe_expansion.h"
-#include "ast/attachpoint_parser.h"
 #include "ast/passes/printer.h"
 #include "btf_common.h"
 #include "driver.h"
@@ -24,7 +23,6 @@ static void test(const std::string &prog,
   pm.put(ast)
       .put(bpftrace)
       .add(CreateParsePass())
-      .add(ast::CreateParseAttachpointsPass())
       .add(ast::CreateProbeExpansionPass());
   auto result = pm.run();
   ASSERT_TRUE(result && ast.diagnostics().ok());

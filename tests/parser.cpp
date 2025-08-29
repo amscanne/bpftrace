@@ -1,7 +1,6 @@
 #include <climits>
 #include <sstream>
 
-#include "ast/attachpoint_parser.h"
 #include "ast/passes/c_macro_expansion.h"
 #include "ast/passes/clang_parser.h"
 #include "ast/passes/printer.h"
@@ -19,12 +18,8 @@ void test_parse_failure(BPFtrace &bpftrace,
 {
   std::stringstream out;
   ast::ASTContext ast("stdin", input);
-  auto ok = ast::PassManager()
-                .put(ast)
-                .put(bpftrace)
-                .add(CreateParsePass())
-                .add(ast::CreateParseAttachpointsPass())
-                .run();
+  auto ok =
+      ast::PassManager().put(ast).put(bpftrace).add(CreateParsePass()).run();
   ASSERT_TRUE(bool(ok));
 
   ASSERT_FALSE(ast.diagnostics().ok());
@@ -82,12 +77,8 @@ void test(BPFtrace &bpftrace,
 {
   std::ostringstream out;
   ast::ASTContext ast("stdin", input);
-  auto ok = ast::PassManager()
-                .put(ast)
-                .put(bpftrace)
-                .add(CreateParsePass())
-                .add(ast::CreateParseAttachpointsPass())
-                .run();
+  auto ok =
+      ast::PassManager().put(ast).put(bpftrace).add(CreateParsePass()).run();
   ASSERT_TRUE(bool(ok));
 
   ast.diagnostics().emit(out);

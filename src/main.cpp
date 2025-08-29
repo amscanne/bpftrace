@@ -14,9 +14,7 @@
 #include <unistd.h>
 
 #include "aot/aot.h"
-#include "ast/attachpoint_parser.h"
 #include "ast/diagnostic.h"
-#include "ast/helpers.h"
 #include "ast/pass_manager.h"
 #include "ast/passes/clang_build.h"
 #include "ast/passes/clang_parser.h"
@@ -29,6 +27,7 @@
 #include "ast/passes/pid_filter_pass.h"
 #include "ast/passes/portability_analyser.h"
 #include "ast/passes/printer.h"
+#include "ast/passes/probe_expansion.h"
 #include "ast/passes/probe_prune.h"
 #include "ast/passes/recursion_check.h"
 #include "ast/passes/register_providers.h"
@@ -335,7 +334,11 @@ void CreateDynamicPasses(std::function<void(ast::Pass&& pass)> add)
   add(ast::CreateClangBuildPass());
   add(ast::CreateTypeSystemPass());
   add(ast::CreateSemanticPass());
+<<<<<<< HEAD
   add(ast::CreateProbePrunePass());
+=======
+  add(ast::CreateProbeMergePass());
+>>>>>>> 6c80b8fc (inrpgo)
   add(ast::CreateResourcePass());
 }
 
@@ -346,7 +349,11 @@ void CreateAotPasses(std::function<void(ast::Pass&& pass)> add)
   add(ast::CreateClangBuildPass());
   add(ast::CreateTypeSystemPass());
   add(ast::CreateSemanticPass());
+<<<<<<< HEAD
   add(ast::CreateProbePrunePass());
+=======
+  add(ast::CreateProbeMergePass());
+>>>>>>> 6c80b8fc (inrpgo)
   add(ast::CreateResourcePass());
 }
 
@@ -771,16 +778,35 @@ int main(int argc, char* argv[])
     }
 
     // Registers all known providers and extract the registry.
-    auto ok = ast::PassManager().add(ast::CreateRegisterProvidersPass())).run();
+    auto ok = ast::PassManager().add(ast::CreateRegisterProvidersPass()).run();
     if (!ok) {
       // This should not fail.
       LOG(BUG) << ok.takeError();
     }
 
     // List all matching probes.
-    auto& registry = ok->get<ProviderRegistry>();
-    for (const auto& str : registry.get_all_matching(args.search)) {
-      std::cout << str << std::endl;
+    std::string provider;
+    std::string target;
+    auto n = args.search.find(":");
+    if (n != std::string::npos) {
+      provider = args.search.substr(0, n);
+      target = args.search.substr(n + 1);
+    } else {
+      provider = "*";
+      target = args.search;
+    }
+    auto& registry = ok->get<ast::ProviderRegistry>();
+    auto result = registry.get_all_matching(provider, target);
+    if (!result) {
+      LOG(ERROR) << "Error listing probes: " << result.takeError();
+      return 1;
+    }
+    // Print it in the way that we parse it.
+    for (const auto& [provider, attach_points] : *result) {
+      for (const auto& attach_point : attach_points) {
+        std::cout << provider->name() << ":" << attach_point->name()
+                  << std::endl;
+      }
     }
 
     return 0;
@@ -851,10 +877,10 @@ int main(int argc, char* argv[])
     pm.add(CreateParsePass(bt_debug.contains(DebugStage::Parse)))
         .put(no_c_defs)
         .put(no_types)
-        .add(ast::CreateParseAttachpointsPass(args.listing))
         .add(CreateParseBTFPass())
         .add(ast::CreateMapSugarPass())
         .add(ast::CreateNamedParamsPass())
+        .add(ast::CreateProbeExpansionPass())
         .add(ast::CreateSemanticPass(args.listing));
 
     auto pmresult = pm.run();

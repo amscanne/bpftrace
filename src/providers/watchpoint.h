@@ -5,11 +5,9 @@
 namespace bpftrace::providers {
 
 /// Provider for watchpoint attach points.
-class WatchpointProvider : public ProviderImpl<WatchpointProvider> {
+class WatchpointProvider
+    : public ProviderImpl<WatchpointProvider, "watchpoint", "watch", "wp"> {
 public:
-  WatchpointProvider()
-      : ProviderImpl<WatchpointProvider>("watchpoint", { "watch", "wp" }) {};
-
   Result<AttachPointList> parse(
       const std::string &str,
       const BtfLookup &btf,

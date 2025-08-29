@@ -3,7 +3,6 @@
 
 #include "arch/arch.h"
 #include "ast/ast.h"
-#include "ast/attachpoint_parser.h"
 #include "ast/passes/c_macro_expansion.h"
 #include "ast/passes/clang_parser.h"
 #include "ast/passes/control_flow_analyser.h"
@@ -145,7 +144,6 @@ public:
                   .add(ast::CreateControlFlowPass())
                   .add(ast::CreateImportInternalScriptsPass())
                   .add(ast::CreateMacroExpansionPass())
-                  .add(ast::CreateParseAttachpointsPass())
                   .add(ast::CreateProbeExpansionPass())
                   .add(ast::CreateFieldAnalyserPass())
                   .add(ast::CreateClangParsePass())

@@ -2,7 +2,6 @@
 
 #include "ast/async_event_types.h"
 #include "async_action.h"
-#include "attached_probe.h"
 #include "bpftrace.h"
 #include "location.hh"
 #include "mocks.h"
@@ -24,7 +23,7 @@ public:
   AsyncActionTest()
       : bpftrace(get_mock_bpftrace()),
         output(out, out),
-        handlers(*bpftrace, no_c_defs, output) {};
+        handlers(*bpftrace, no_c_defs, output){};
 
   std::unique_ptr<MockBPFtrace> bpftrace;
   std::stringstream out;

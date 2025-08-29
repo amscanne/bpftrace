@@ -26,14 +26,22 @@ public:
   // Looks up a provider by name.
   const Provider *lookup(const std::string &name);
 
+  // Looks up a provider by type.
+  template <typename T>
+  const Provider *lookup()
+  {
+    return lookup(T().name());
+  }
+
   // Return matching attachpoints, given a glob.
   //
   // Note that these attach points could belong to different providers, and
   // need to be grouped appropriately in order to use multiple attachpoints.
   // This is left as the responsibility of the caller.
-  Result<AttachPointList> get_all_matching(
-      const std::string &glob,
-      const providers::BtfLookup &btf) const;
+  Result<std::vector<std::pair<Provider *, AttachPointList>>> get_all_matching(
+      const std::string &provider_glob,
+      const std::string &target_glob,
+      const providers::BtfLookup &btf = providers::BtfLookup{}) const;
 
 private:
   std::unordered_map<std::string, std::unique_ptr<Provider>> providers_by_name_;

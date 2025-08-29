@@ -1,19 +1,25 @@
-#include "providers/watchpoint.h"
+#include <utility>
+
 #include "bpfprogram.h"
-#include "log.h"
+#include "providers/watchpoint.h"
 #include "util/strings.h"
 
 namespace bpftrace::providers {
 
 class WatchpointAttachPoint : public AttachPoint {
 public:
-  WatchpointAttachPoint(const Provider &provider,
-                        const std::string &name,
-                        const std::string &address,
-                        size_t len,
-                        const std::string &mode)
-      : AttachPoint(provider, name), address(address), len(len), mode(mode)
+  WatchpointAttachPoint(std::string address, size_t len, std::string mode)
+      : address(std::move(address)), len(len), mode(std::move(mode)){};
+
+  std::string name() const override
   {
+    return "watchpoint:" + address + ":" + std::to_string(len) + ":" + mode;
+  }
+
+  template <class Archive>
+  void serialize([[maybe_unused]] Archive &ar)
+  {
+    ar(address, len, mode);
   }
 
   std::string address;
@@ -58,8 +64,13 @@ Result<AttachedProbeList> WatchpointProvider::attach_single(
     [[maybe_unused]] const BpfProgram &prog,
     [[maybe_unused]] std::optional<int> pid) const
 {
-  return make_error<AttachError>(std::move(attach_point),
+  return make_error<AttachError>(this,
+                                 std::move(attach_point),
                                  "watchpoint attach not yet implemented");
 }
 
 } // namespace bpftrace::providers
+
+CEREAL_REGISTER_TYPE(bpftrace::providers::WatchpointAttachPoint)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(bpftrace::providers::AttachPoint,
+                                     bpftrace::providers::WatchpointAttachPoint)

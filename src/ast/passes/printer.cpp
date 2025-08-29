@@ -512,7 +512,7 @@ void Printer::visit(Jump &jump)
 void Printer::visit(AttachPoint &ap)
 {
   std::string indent(depth_, ' ');
-  out_ << indent << ap.name() << std::endl;
+  out_ << indent << ap.provider << ":" << ap.target << std::endl;
 }
 
 void Printer::visit(Probe &probe)

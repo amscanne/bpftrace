@@ -5,12 +5,9 @@
 namespace bpftrace::providers {
 
 // Common base for special providers.
-class SpecialProvider : public ProviderImpl<SpecialProvider> {
+class SpecialProviderBase : virtual public Provider {
 public:
-  SpecialProvider(const std::string &name,
-                  const std::vector<std::string> &aliases,
-                  AttachPoint::Action action)
-      : ProviderImpl<SpecialProvider>(name, aliases), action_(action) {};
+  SpecialProviderBase(AttachPoint::Action action) : action_(action){};
 
   Result<AttachPointList> parse(
       const std::string &str,
@@ -30,21 +27,24 @@ private:
 };
 
 // Provider for begin probes.
-class BeginProvider : public SpecialProvider {
+class BeginProvider : public SpecialProviderBase,
+                      public ProviderImpl<BeginProvider, "begin"> {
 public:
-  BeginProvider() : SpecialProvider("begin", {}, AttachPoint::Action::Pre) {};
+  BeginProvider() : SpecialProviderBase(AttachPoint::Action::Pre){};
 };
 
 // Provider for end probes.
-class EndProvider : public SpecialProvider {
+class EndProvider : public SpecialProviderBase,
+                    public ProviderImpl<EndProvider, "end"> {
 public:
-  EndProvider() : SpecialProvider("begin", {}, AttachPoint::Action::Post) {};
+  EndProvider() : SpecialProviderBase(AttachPoint::Action::Post){};
 };
 
 // Provider for self probes.
-class SelfProvider : public SpecialProvider {
+class SelfProvider : public SpecialProviderBase,
+                     public ProviderImpl<SelfProvider, "self"> {
 public:
-  SelfProvider() : SpecialProvider("self", {}, AttachPoint::Action::Manual) {};
+  SelfProvider() : SpecialProviderBase(AttachPoint::Action::Manual){};
 
   Result<AttachPointList> parse(
       const std::string &str,
