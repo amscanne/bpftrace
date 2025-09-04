@@ -164,7 +164,6 @@ public:
 
   using Visitor<SemanticAnalyser>::visit;
   void visit(String &string);
-  void visit(StackMode &mode);
   void visit(Identifier &identifier);
   void visit(Builtin &builtin);
   void visit(Call &call);

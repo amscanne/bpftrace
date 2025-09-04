@@ -175,10 +175,6 @@ class Expression : public VariantNode<Integer,
 public:
   using VariantNode::VariantNode;
   Expression() : Expression(static_cast<BlockExpr *>(nullptr)) {};
-
-  // The `type` method is the only common thing required by all expression
-  // types. This will on the variant types.
-  const SizedType &type() const;
 };
 using ExpressionList = std::vector<Expression>;
 
@@ -225,49 +221,30 @@ public:
   explicit Integer(ASTContext &ctx,
                    uint64_t n,
                    Location &&loc,
-                   bool force_unsigned = false)
+                   bool force_unsigned = false,
+                   size_t bytes = sizeof(int64_t))
       : Node(ctx, std::move(loc)),
-        integer_type(force_unsigned || n > std::numeric_limits<int64_t>::max()
-                         ? CreateUInt64()
-                         : CreateInt64()),
-        value(n) {};
+        value(n), force_unsigned(force_unsigned), bytes(bytes) {};
   explicit Integer(ASTContext &ctx, const Integer &other, const Location &loc)
       : Node(ctx, loc + other.loc),
-        integer_type(other.integer_type),
-        value(other.value) {};
+        value(other.value), force_unsigned(other.force_unsigned), bytes(other.bytes) {};
 
-  const SizedType &type() const
-  {
-    return integer_type;
-  }
-
-  // This literal has a dynamic type, but it is not mutable. The type is
-  // generally signed if the signed value is capable of holding the literal,
-  // otherwise it is unsigned. This is the existing convention.
-  //
-  // However, the `force_unsigned` parameter can override this. This can be
-  // used for small cases that are explicitly unsigned (e.g. `sizeof`), and is
-  // preserved when folding literals in order to provide the intuitive type.
-  const SizedType integer_type;
   const uint64_t value;
+  const bool force_unsigned;
+  const size_t bytes;
 };
 
 class NegativeInteger : public Node {
 public:
-  explicit NegativeInteger(ASTContext &ctx, int64_t n, Location &&loc)
+  explicit NegativeInteger(ASTContext &ctx, int64_t n, Location &&loc, size_t bytes = sizeof(uint64_t))
       : Node(ctx, std::move(loc)), value(n) {};
   explicit NegativeInteger(ASTContext &ctx,
                            const NegativeInteger &other,
                            const Location &loc)
       : Node(ctx, loc + other.loc), value(other.value) {};
 
-  const SizedType &type() const
-  {
-    static SizedType int64 = CreateInt64();
-    return int64;
-  }
-
   const int64_t value;
+  const size_t bytes;
 };
 
 class Boolean : public Node {
@@ -277,12 +254,6 @@ public:
   explicit Boolean(ASTContext &ctx, const Boolean &other, const Location &loc)
       : Node(ctx, loc + other.loc), value(other.value) {};
 
-  const SizedType &type() const
-  {
-    static SizedType boolean = CreateBool();
-    return boolean;
-  }
-
   const bool value;
 };
 
@@ -291,12 +262,6 @@ public:
   explicit None(ASTContext &ctx, Location &&loc) : Node(ctx, std::move(loc)) {};
   explicit None(ASTContext &ctx, const None &other, const Location &loc)
       : Node(ctx, loc + other.loc) {};
-
-  const SizedType &type() const
-  {
-    static SizedType none = CreateNone();
-    return none;
-  }
 };
 
 class PositionalParameter : public Node {
@@ -307,12 +272,6 @@ public:
                                const PositionalParameter &other,
                                const Location &loc)
       : Node(ctx, loc + other.loc), n(other.n) {};
-
-  const SizedType &type() const
-  {
-    static SizedType none = CreateNone();
-    return none;
-  }
 
   const long n;
 };
@@ -326,12 +285,6 @@ public:
       [[maybe_unused]] const PositionalParameterCount &other,
       const Location &loc)
       : Node(ctx, loc + other.loc) {};
-
-  const SizedType &type() const
-  {
-    static SizedType none = CreateNone();
-    return none;
-  }
 };
 
 class String : public Node {
@@ -345,13 +298,7 @@ public:
         value(other.value),
         string_type(other.string_type) {};
 
-  const SizedType &type() const
-  {
-    return string_type;
-  }
-
   const std::string value;
-  SizedType string_type;
 };
 
 class Identifier : public Node {
@@ -365,13 +312,7 @@ public:
         ident(other.ident),
         ident_type(other.ident_type) {};
 
-  const SizedType &type() const
-  {
-    return ident_type;
-  }
-
   std::string ident;
-  SizedType ident_type;
 };
 
 class Builtin : public Node {
@@ -383,11 +324,6 @@ public:
         ident(other.ident),
         probe_id(other.probe_id),
         builtin_type(other.builtin_type) {};
-
-  const SizedType &type() const
-  {
-    return builtin_type;
-  }
 
   // Check if the builtin is 'arg0' - 'arg255'
   bool is_argx() const
@@ -411,7 +347,6 @@ public:
 
   std::string ident;
   int probe_id;
-  SizedType builtin_type;
 };
 
 class Call : public Node {
@@ -432,14 +367,8 @@ public:
         return_type(other.return_type),
         injected_args(other.injected_args) {};
 
-  const SizedType &type() const
-  {
-    return return_type;
-  }
-
   std::string func;
   ExpressionList vargs;
-  SizedType return_type;
 
   // Some passes may inject new arguments to the call, which is always
   // done at the beginning (in order to support variadic arguments) for
@@ -458,13 +387,6 @@ public:
       : Node(ctx, std::move(loc)), record(expr) {};
   explicit Sizeof(ASTContext &ctx, const Sizeof &other, const Location &loc)
       : Node(ctx, loc + other.loc), record(clone(ctx, other.record, loc)) {};
-
-  const SizedType &type() const
-  {
-    // See exception for Integer type construction.
-    static SizedType uint64 = CreateUInt64();
-    return uint64;
-  }
 
   std::variant<Expression, SizedType> record;
 };
@@ -486,13 +408,6 @@ public:
         record(clone(ctx, other.record, loc + other.loc)),
         field(other.field) {};
 
-  const SizedType &type() const
-  {
-    // See exception for Integer type construction.
-    static SizedType uint64 = CreateUInt64();
-    return uint64;
-  }
-
   std::variant<Expression, SizedType> record;
   std::vector<std::string> field;
 };
@@ -506,15 +421,6 @@ public:
   explicit Typeof(ASTContext &ctx, const Typeof &other, const Location &loc)
       : Node(ctx, loc + other.loc),
         record(clone(ctx, other.record, loc + other.loc)) {};
-
-  const SizedType &type() const
-  {
-    if (std::holds_alternative<SizedType>(record)) {
-      return std::get<SizedType>(record);
-    } else {
-      return std::get<Expression>(record).type();
-    }
-  }
 
   std::variant<Expression, SizedType> record;
 };
