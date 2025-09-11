@@ -363,8 +363,12 @@ subprog_arg:
                 ;
 
 macro:
-                MACRO IDENT "(" macro_args ")" block_expr { $$ = driver.ctx.make_node<ast::Macro>($2, std::move($4), $6, @1+@4); }
-        |       MACRO IDENT "(" macro_args ")" bare_block { $$ = driver.ctx.make_node<ast::Macro>($2, std::move($4), $6, @1+@4); }
+                MACRO IDENT "(" macro_args ")" block_expr                       { $$ = driver.ctx.make_node<ast::Macro>($2, std::move($4), nullptr, $6, @1+@4); }
+        |       MACRO IDENT "(" macro_args ")" bare_block                       { $$ = driver.ctx.make_node<ast::Macro>($2, std::move($4), nullptr, $6, @1+@4); }
+        |       MACRO IDENT "(" macro_args "," ident DOT DOT DOT ")" block_expr { $$ = driver.ctx.make_node<ast::Macro>($2, std::move($4), driver.ctx.make_node<ast::Identifier>($6, @6), $11, @1+@4); }
+        |       MACRO IDENT "(" macro_args "," ident DOT DOT DOT ")" bare_block { $$ = driver.ctx.make_node<ast::Macro>($2, std::move($4), driver.ctx.make_node<ast::Identifier>($6, @6), $11, @1+@4); }
+        |       MACRO IDENT "(" ident DOT DOT DOT ")" block_expr                { $$ = driver.ctx.make_node<ast::Macro>($2, ast::ExpressionList({}), driver.ctx.make_node<ast::Identifier>($4, @4), $9, @1+@4); }
+        |       MACRO IDENT "(" ident DOT DOT DOT ")" bare_block                { $$ = driver.ctx.make_node<ast::Macro>($2, ast::ExpressionList({}), driver.ctx.make_node<ast::Identifier>($4, @4), $9, @1+@4); }
                 ;
 
 macro_args:

@@ -76,9 +76,12 @@ static size_t distance(const Macro *macro, const std::vector<Expression> &args)
 {
   // Any missing arguments either way are wrong; these dominate the other
   // differences by far, so we ensure that these are the least close macros.
-  size_t d = 1024 * static_cast<size_t>(
-                        std::abs(static_cast<long>(macro->vargs.size()) -
-                                 static_cast<long>(args.size())));
+  size_t d = 0;
+  if (args.size() < macro->vargs.size()) {
+    d += 1024 * (macro->vargs.size() - args.size());
+  } else if (args.size() > macro->vargs.size() && !macro->varargs) {
+    d += 1024 * (args.size() - macro->vargs.size());
+  }
   for (size_t i = 0; i < macro->vargs.size() && i < args.size(); i++) {
     if ((macro->vargs[i].is<Map>() && !args[i].is<Map>()) ||
         (macro->vargs[i].is<Variable>() && !args[i].is<Variable>())) {
@@ -375,8 +378,20 @@ std::string MacroExpander::get_new_var_ident(std::string original_ident)
 
 std::optional<BlockExpr *> MacroExpander::expand(const Macro &macro, Call &call)
 {
-  if (macro.vargs.size() != call.vargs.size()) {
-    return std::nullopt;
+  // This will only match if the arguments are correct. If the macro accepts
+  // varargs, then we need to wrap the final arguments into a tuple
+  // expression.
+  //
+  // Note that this may be an empty tuple which is passed to the macro also.
+  if (macro.varargs != nullptr) {
+    std::vector<Expression> tuple;
+    while (call.vargs.size() > macro.vargs.size()) {
+      tuple.push_back(call.vargs.back());
+      call.vargs.pop_back();
+    }
+    std::reverse(tuple.begin(), tuple.end());
+    passed_exprs_[macro.varargs->ident] = ast_.make_node<Tuple>(
+        std::move(tuple), Location(call.loc));
   }
 
   StatementList stmt_list;
@@ -408,11 +423,13 @@ std::optional<BlockExpr *> MacroExpander::expand(const Macro &macro, Call &call)
 std::optional<BlockExpr *> MacroExpander::expand(const Macro &macro,
                                                  Identifier &ident)
 {
-  if (!macro.vargs.empty()) {
-    ident.addError() << "Call to " << macro.name
-                     << "() has the wrong number of arguments. Expected: "
-                     << macro.vargs.size() << " but got 0.";
-    return std::nullopt;
+  // It is possible that this is a vararg macro, in which case we must
+  // construct the empty tuple type that is passed here.
+  if (macro.varargs) {
+    auto *mident = macro.vargs.back().as<Identifier>();
+    assert(mident != nullptr);
+    passed_exprs_[mident->ident] = ast_.make_node<Tuple>(ExpressionList({}),
+                                                         Location(ident.loc));
   }
 
   auto *cloned_block = clone(ast_, macro.block, ident.loc);

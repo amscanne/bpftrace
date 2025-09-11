@@ -771,6 +771,19 @@ public:
   SizedType element_type;
 };
 
+class TupleExpand : public Node {
+public:
+  explicit TupleExpand(ASTContext &ctx, Expression expr, Location &&loc)
+      : Node(ctx, std::move(loc)), expr(std::move(expr)) {};
+  explicit TupleExpand(ASTContext &ctx,
+                       const TupleExpand &other,
+                       const Location &loc)
+      : Node(ctx, loc + other.loc),
+        expr(clone(ctx, other.expr, loc)) {};
+
+  Expression expr;
+};
+
 class MapAccess : public Node {
 public:
   explicit MapAccess(ASTContext &ctx, Map *map, Expression key, Location &&loc)
@@ -1312,20 +1325,24 @@ public:
   Macro(ASTContext &ctx,
         std::string name,
         ExpressionList &&vargs,
+        Identifier *varargs,
         BlockExpr *block,
         Location &&loc)
       : Node(ctx, std::move(loc)),
         name(std::move(name)),
         vargs(std::move(vargs)),
+        varargs(varargs),
         block(block) {};
   explicit Macro(ASTContext &ctx, const Macro &other, const Location &loc)
       : Node(ctx, loc + other.loc),
         name(other.name),
         vargs(clone(ctx, other.vargs, loc)),
+        varargs(clone(ctx, other.varargs, loc)),
         block(clone(ctx, other.block, loc)) {};
 
   std::string name;
   ExpressionList vargs;
+  Identifier *varargs = nullptr; // May be null.
   BlockExpr *block = nullptr;
 };
 using MacroList = std::vector<Macro *>;
