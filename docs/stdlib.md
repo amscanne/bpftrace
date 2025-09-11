@@ -356,6 +356,21 @@ kprobe:dummy {
 ```
 
 
+### is_array
+
+Determine whether the given expression is an array.
+
+
+### is_ptr
+
+Determine whether the given expression is a pointer.
+
+
+### is_str
+
+Determine whether the given expression is a string.
+
+
 ### jiffies
 - `uint64 jiffies()`
 - `uint64 jiffies`
