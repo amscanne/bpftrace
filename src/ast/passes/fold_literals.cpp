@@ -33,6 +33,19 @@ public:
   std::optional<Expression> visit(Builtin &builtin);
   std::optional<Expression> visit(BlockExpr &block_expr);
   std::optional<Expression> visit(TupleAccess &acc);
+  std::optional<Expression> visit(Comptime &comptime);
+  std::optional<Expression> visit(Variable &var);
+  std::optional<Expression> visit(Map &map);
+
+  // Skip visiting in type expressions.
+  std::optional<Expression> visit([[maybe_unused]] Typeof &typeof)
+  {
+    return std::nullopt;
+  }
+  std::optional<Expression> visit([[maybe_unused]] Typeinfo &typeinfo)
+  {
+    return std::nullopt;
+  }
 
 private:
   // Return nullopt if we can't compare the tuples now
@@ -42,6 +55,7 @@ private:
   ASTContext &ast_;
   std::optional<std::reference_wrapper<BPFtrace>> bpftrace_;
 
+  bool comptime = false; // See recursively.
   Node *top_level_node_ = nullptr;
 };
 
@@ -616,15 +630,33 @@ std::optional<Expression> LiteralFolder::visit(Binop &op)
 
 std::optional<Expression> LiteralFolder::visit(IfExpr &if_expr)
 {
-  visit(if_expr.cond);
   visit(if_expr.left);
   visit(if_expr.right);
 
-  if (if_expr.cond.is_literal()) {
-    if (eval_bool(if_expr.cond)) {
-      return if_expr.left;
-    } else {
-      return if_expr.right;
+  if (auto *comptime = if_expr.cond.as<Comptime>()) {
+    visit(comptime->expr);
+    if (comptime->expr.is_literal()) {
+      if (eval_bool(comptime->expr)) {
+        return if_expr.left;
+      } else {
+        return if_expr.right;
+      }
+    }
+  } else {
+    visit(if_expr.cond);
+    if (if_expr.cond.is_literal()) {
+      // If everything is a literal, we can still fold.
+      if (if_expr.left.is_literal() && if_expr.right.is_literal()) {
+        if (eval_bool(if_expr.cond)) {
+          return if_expr.left;
+        } else {
+          return if_expr.right;
+        }
+      } else {
+        // At least simplify the conditional expression.
+        if_expr.cond = ast_.make_node<Boolean>(eval_bool(if_expr.cond),
+                                               Location(if_expr.cond.loc()));
+      }
     }
   }
 
@@ -731,8 +763,13 @@ std::optional<Expression> LiteralFolder::visit(Call &call)
     }
     return ast_.make_node<String>(s, Location(call.loc));
   } else {
-    // Visit normally.
-    Visitor<LiteralFolder, std::optional<Expression>>::visit(call);
+    if (!comptime) {
+      // Visit normally; we are just simplifying literals.
+      Visitor<LiteralFolder, std::optional<Expression>>::visit(call);
+    } else {
+      // We can't evalute the call here; ensure the error is recorded.
+      call.addError() << "Unable to evaluate call at compilation time.";
+    }
   }
 
   return std::nullopt;
@@ -777,28 +814,11 @@ std::optional<Expression> LiteralFolder::visit(BlockExpr &expr)
   Visitor<LiteralFolder, std::optional<Expression>>::visit(expr);
 
   // We fold this only if the statement list is empty, and we find a literal
-  // as the expression value.
-  if (expr.stmts.empty() &&
-      (expr.expr.is<Integer>() || expr.expr.is<NegativeInteger>() ||
-       expr.expr.is<Boolean>() || expr.expr.is<String>())) {
+  // as the expression value. We should have recorded an error if there was an
+  // attempt to access variables, calls, or generally do anything non-hermetic.
+  if (comptime && expr.expr.is_literal()) {
     return expr.expr;
   }
-
-  StatementList stmt_list;
-  for (auto &stmt : expr.stmts) {
-    visit(stmt);
-    if (auto *while_stmt = stmt.as<While>()) {
-      visit(while_stmt->cond);
-      if (while_stmt->cond.is_literal()) {
-        if (!eval_bool(while_stmt->cond)) {
-          continue;
-        }
-      }
-    }
-    stmt_list.push_back(std::move(stmt));
-  }
-
-  expr.stmts = std::move(stmt_list);
 
   return std::nullopt;
 }
@@ -806,12 +826,49 @@ std::optional<Expression> LiteralFolder::visit(BlockExpr &expr)
 std::optional<Expression> LiteralFolder::visit(TupleAccess &acc)
 {
   visit(acc.expr);
-  if (auto *tuple = acc.expr.as<Tuple>()) {
-    if (acc.index >= tuple->elems.size()) {
-      // This access error happens in a later pass
-      return std::nullopt;
+
+  // Other elements may contain blocks or statements that are evaluated. We
+  // only toss these if we are in a comptime block.
+  if (comptime) {
+    if (auto *tuple = acc.expr.as<Tuple>()) {
+      if (acc.index >= tuple->elems.size()) {
+        // This access error happens in a later pass.
+        return std::nullopt;
+      }
+      return tuple->elems[acc.index];
     }
-    return tuple->elems[acc.index];
+  }
+
+  return std::nullopt;
+}
+
+std::optional<Expression> LiteralFolder::visit(Comptime &comptime)
+{
+  // This will fold into an expression directly. If this should not be used for
+  // cases where folding needs to happen above the comptime, e.g. `IfExpr`,
+  // which handles this in a special way.
+  bool old_comptime = this->comptime;
+  this->comptime = true;
+  visit(comptime.expr);
+  this->comptime = old_comptime;
+  if (comptime.expr.is_literal()) {
+    return comptime.expr;
+  }
+  return std::nullopt;
+}
+
+std::optional<Expression> LiteralFolder::visit(Variable &var)
+{
+  if (comptime) {
+    var.addError() << "Unable to evaluate at compile time.";
+  }
+  return std::nullopt;
+}
+
+std::optional<Expression> LiteralFolder::visit(Map &map)
+{
+  if (comptime) {
+    map.addError() << "Unable to evaluate at compile time.";
   }
   return std::nullopt;
 }
