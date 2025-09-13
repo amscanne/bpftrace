@@ -12,8 +12,10 @@
 #include "ast/passes/macro_expansion.h"
 #include "ast/passes/map_sugar.h"
 #include "ast/passes/named_param.h"
+#include "ast/passes/pid_filter_pass.h"
 #include "ast/passes/probe_expansion.h"
 #include "ast/passes/resolve_imports.h"
+#include "ast/passes/return_path_analyser.h"
 #include "ast/passes/unstable_feature.h"
 #include "ast/passes/usdt_arguments.h"
 #include "btf.h"
@@ -38,11 +40,12 @@ inline std::vector<Pass> AllParsePasses(
   // that internal scripts are except from the unstable feature warning.
   passes.emplace_back(CreateImportExternalScriptsPass());
   passes.emplace_back(CreateUnstableFeaturePass());
-  passes.emplace_back(CreateImportInternalScriptsPass());
   passes.emplace_back(CreateDeprecatedPass());
   passes.emplace_back(CreateParseAttachpointsPass());
-  passes.emplace_back(CreateCheckAttachpointsPass());
-  passes.emplace_back(CreateUSDTImportPass()); // Import USDT stdlib if needed
+  passes.emplace_back(CreatePidFilterPass());
+  passes.emplace_back(CreateReturnPathPass());
+  passes.emplace_back(CreateUSDTImportPass());
+  passes.emplace_back(CreateImportInternalScriptsPass());
   passes.emplace_back(CreateMacroExpansionPass());
   passes.emplace_back(CreateParseBTFPass());
   passes.emplace_back(CreateProbeExpansionPass());

@@ -8,6 +8,7 @@
 #include "ast/passes/probe_expansion.h"
 #include "ast/passes/resolve_imports.h"
 #include "ast/passes/resource_analyser.h"
+#include "ast/passes/return_path_analyser.h"
 #include "ast/passes/semantic_analyser.h"
 #include "ast/passes/type_system.h"
 #include "bpftrace.h"
@@ -38,6 +39,7 @@ void gen_bytecode(const std::string &input, std::stringstream &out)
                 .add(CreateParsePass())
                 .add(ast::CreateResolveImportsPass())
                 .add(ast::CreateParseAttachpointsPass())
+                .add(ast::CreateReturnPathPass())
                 .add(ast::CreateProbeExpansionPass())
                 .add(ast::CreateMacroExpansionPass())
                 .add(CreateParseBTFPass())

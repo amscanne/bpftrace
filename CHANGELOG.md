@@ -9,6 +9,12 @@ and this project adheres to
 ## Unreleased
 
 #### Breaking Changes
+- Unreachable code is now an error
+  - [#4587](https://github.com/bpftrace/bpftrace/pull/4587)
+- `return` is no longer allowed in `while` loops
+  - [#4587](https://github.com/bpftrace/bpftrace/pull/4587)
+- `exit()` is not allowed from loops. Return was always disallowed, and `exit()` implicitly returns. This would have resulted in undefined behavior in some cases.
+  - [#4587](https://github.com/bpftrace/bpftrace/pull/4587)
 #### Added
 - Add support for indexing string types
   - [#4540](https://github.com/bpftrace/bpftrace/pull/4540)

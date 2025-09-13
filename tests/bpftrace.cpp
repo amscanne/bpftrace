@@ -10,6 +10,7 @@
 #include "ast/passes/map_sugar.h"
 #include "ast/passes/named_param.h"
 #include "ast/passes/probe_expansion.h"
+#include "ast/passes/return_path_analyser.h"
 #include "ast/passes/semantic_analyser.h"
 #include "ast/passes/type_system.h"
 #include "bpfmap.h"
@@ -67,6 +68,7 @@ static auto parse_probe(const std::string &str,
                 .add(CreateParsePass())
                 .add(ast::CreateParseAttachpointsPass())
                 .add(ast::CreateCheckAttachpointsPass())
+                .add(ast::CreateReturnPathPass())
                 .add(ast::CreateProbeExpansionPass())
                 .add(ast::CreateMacroExpansionPass())
                 .add(ast::CreateFieldAnalyserPass())

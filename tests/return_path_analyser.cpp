@@ -1,6 +1,5 @@
 #include "ast/passes/return_path_analyser.h"
 #include "ast/passes/parser.h"
-#include "ast/passes/semantic_analyser.h"
 #include "ast/passes/type_system.h"
 #include "mocks.h"
 #include "gtest/gtest.h"
@@ -23,8 +22,6 @@ void test(BPFtrace &bpftrace, const std::string &input, int expected_result = 0)
                 .put(bpftrace)
                 .put(no_types)
                 .add(ast::AllParsePasses())
-                .add(ast::CreateSemanticPass())
-                .add(ast::CreateReturnPathPass())
                 .run();
   ast.diagnostics().emit(out);
   EXPECT_EQ(int(!ast.diagnostics().ok()), expected_result)

@@ -15,6 +15,7 @@
 #include "ast/passes/printer.h"
 #include "ast/passes/probe_expansion.h"
 #include "ast/passes/resolve_imports.h"
+#include "ast/passes/return_path_analyser.h"
 #include "ast/passes/semantic_analyser.h"
 #include "ast/passes/type_system.h"
 #include "bpftrace.h"
@@ -141,6 +142,7 @@ public:
                   .put(types->types)
                   .add(CreateParsePass())
                   .add(ast::CreateResolveImportsPass())
+                  .add(ast::CreateReturnPathPass())
                   .add(ast::CreateImportInternalScriptsPass())
                   .add(ast::CreateMacroExpansionPass())
                   .add(ast::CreateParseAttachpointsPass())
@@ -482,10 +484,7 @@ TEST_F(SemanticAnalyserTest, ternary_expressions)
        "(struct "
        "Foo*)arg1 }");
   test(
-      R"(kprobe:f { pid < 10000 ? ("a", "hellolongstr") : ("hellolongstr", "b") })");
-
-  test(
-      R"(kprobe:f { pid < 10000 ? ("a", "hellolongstr") : ("hellolongstr", "b") })",
+      R"(kprobe:f { pid < 10000 ? ("a", "hellolongstr") : ("hellolongstr", "b"); exit() })",
       ExpectedAST{ R"(
 Program
  kprobe:f
@@ -504,9 +503,10 @@ Program
 )" });
 
   // Error location is incorrect: #3063
-  test("kprobe:f { pid < 10000 ? 3 : cat(\"/proc/uptime\") }", Error{ R"(
+  test("kprobe:f { pid < 10000 ? 3 : cat(\"/proc/uptime\"); exit(); }",
+       Error{ R"(
 stdin:1:12-49: ERROR: Branches must return the same type: have 'int64' and 'none'
-kprobe:f { pid < 10000 ? 3 : cat("/proc/uptime") }
+kprobe:f { pid < 10000 ? 3 : cat("/proc/uptime"); exit(); }
            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 )" });
   // Error location is incorrect: #3063
@@ -3368,7 +3368,6 @@ TEST_F(SemanticAnalyserTest, while_loop)
   test("i:s:1 { $a = 1; while (1) { if($a > 50) { break } $a++ }}");
   test("i:s:1 { $a = 1; while ($a < 10) { $a++ }}");
   test("i:s:1 { $a = 1; while (1) { if($a > 50) { break } $a++ }}");
-  test("i:s:1 { $a = 1; while (1) { if($a > 50) { return } $a++ }}");
   test(R"(
 i:s:1 {
   $a = 1;
@@ -3379,15 +3378,24 @@ i:s:1 {
     }
   }
 })");
+  test("i:s:1 { $a = 1; while (1) { if($a > 50) { return } $a++ }}", Error{ R"(
+stdin:1:43-49: ERROR: 'return' statement is not allowed in a while-loop
+i:s:1 { $a = 1; while (1) { if($a > 50) { return } $a++ }}
+                                          ~~~~~~
+)" });
 
   test("i:s:1 { $a = 1; while ($a < 10) { break; $a++ }}",
-       Warning{ "code after a 'break'" });
+       Error{ "Unreachable" });
   test("i:s:1 { $a = 1; while ($a < 10) { continue; $a++ }}",
-       Warning{ "code after a 'continue'" });
-  test("i:s:1 { $a = 1; while ($a < 10) { return; $a++ }}",
-       Warning{ "code after a 'return'" });
+       Error{ "Unreachable" });
   test("i:s:1 { $a = 1; while ($a < 10) { @=$a++; print(@); }}",
        Warning{ "'print()' in a loop" });
+
+  test("i:s:1 { $a = 1; while ($a < 10) { return; $a++ }}", Error{ R"(
+stdin:1:35-41: ERROR: 'return' statement is not allowed in a while-loop
+i:s:1 { $a = 1; while ($a < 10) { return; $a++ }}
+                                  ~~~~~~
+)" });
 }
 
 TEST_F(SemanticAnalyserTest, builtin_args)
