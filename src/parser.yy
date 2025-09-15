@@ -605,12 +605,9 @@ primary_expr:
 
 postfix_expr:
                 primary_expr                   { $$ = $1; }
-/* pointer  */
-        |       postfix_expr DOT external_name { $$ = driver.ctx.make_node<ast::FieldAccess>($1, $3, @2); }
-        |       postfix_expr PTR external_name { $$ = driver.ctx.make_node<ast::FieldAccess>(driver.ctx.make_node<ast::Unop>($1, ast::Operator::MUL, false, @2), $3, @$); }
-/* tuple  */
         |       tuple_access_expr              { $$ = $1; }
-/* array  */
+        |       postfix_expr DOT external_name { $$ = driver.ctx.make_node<ast::FieldAccess>($1, $3, @2); }
+        |       postfix_expr PTR external_name { $$ = driver.ctx.make_node<ast::FieldAccess>($1, $3, @2); }
         |       postfix_expr "[" expr "]"      { $$ = driver.ctx.make_node<ast::ArrayAccess>($1, $3, @2 + @4); }
         |       sizeof_expr                    { $$ = $1; }
         |       offsetof_expr                  { $$ = $1; }

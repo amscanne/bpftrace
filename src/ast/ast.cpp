@@ -401,8 +401,11 @@ void Program::clear_empty_probes()
 SizedType ident_to_record(const std::string &ident, int pointer_level)
 {
   SizedType result = CreateRecord(ident);
-  for (int i = 0; i < pointer_level; i++)
-    result = CreatePointer(result);
+  // All the probes should have BTF types, and therefore we assume that
+  // the explicit casts from the AST are user addresses.
+  for (int i = 0; i < pointer_level; i++) {
+    result = CreatePointer(result, AddrSpace::user);
+  }
   return result;
 }
 

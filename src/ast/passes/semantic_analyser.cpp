@@ -2382,16 +2382,7 @@ void SemanticAnalyser::visit(ArrayAccess &arr)
   else if (type.IsStringTy())
     arr.element_type = CreateInt8();
   arr.element_type.SetAS(type.GetAS());
-
-  // BPF verifier cannot track BTF information for double pointers so we
-  // cannot propagate is_internal for arrays of pointers and we need to reset
-  // it on the array type as well. Indexing a pointer as an array also can't
-  // be verified, so the same applies there.
-  if (arr.element_type.IsPtrTy() || type.IsPtrTy()) {
-    arr.element_type.is_internal = false;
-  } else {
-    arr.element_type.is_internal = type.is_internal;
-  }
+  mark_lazy_struct(arr.element_type);
 }
 
 void SemanticAnalyser::visit(TupleAccess &acc)
@@ -2815,8 +2806,8 @@ void SemanticAnalyser::visit(IfExpr &if_expr)
 
   if (!lhs.IsSameType(rhs)) {
     if (is_final_pass()) {
-      if_expr.addError() << "Branches must return the same type: "
-                         << "have '" << lhs << "' and '" << rhs << "'";
+      if_expr.addError() << "Branches must return the same type: " << "have '"
+                         << lhs << "' and '" << rhs << "'";
     }
     // This assignment is just temporary to prevent errors
     // before the final pass
@@ -3131,14 +3122,17 @@ void SemanticAnalyser::visit(For &f)
 void SemanticAnalyser::visit(FieldAccess &acc)
 {
   visit(acc.expr);
-  const SizedType &type = acc.expr.type();
+  SizedType type = acc.expr.type(); // Copied.
 
   if (type.IsPtrTy()) {
-    acc.addError() << "Can not access field '" << acc.field << "' on type '"
-                   << type << "'. Try dereferencing it first, or using '->'";
-    return;
+    // By default, field accesses will automatically resolve through pointers.
+    // This allows us to use simple semantics for fields: the field access
+    // operator will also only return a pointer (which can be subsequently
+    // accessed in the standard way) when the type is an aggregate, otherwise it
+    // will read the actual value. An explicit dereference will yield the full
+    // value as always.
+    type = type.GetElementType();
   }
-
   if (!type.IsRecordTy()) {
     if (is_final_pass()) {
       acc.addError() << "Can not access field '" << acc.field
@@ -3162,6 +3156,7 @@ void SemanticAnalyser::visit(FieldAccess &acc)
     } else {
       acc.addError() << "Can't find function parameter " << acc.field;
     }
+    mark_lazy_struct(acc.field_type);
     return;
   }
 
@@ -3227,6 +3222,7 @@ void SemanticAnalyser::visit(FieldAccess &acc)
       }
       acc.field_type.is_internal = type.is_internal;
       acc.field_type.SetAS(acc.expr.type().GetAS());
+      mark_lazy_struct(acc.field_type);
 
       // The kernel uses the first 8 bytes to store `struct pt_regs`. Any
       // access to the first 8 bytes results in verifier error.

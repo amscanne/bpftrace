@@ -108,7 +108,7 @@ namespace {
 
 class InternalError : public ErrorInfo<InternalError> {
 public:
-  InternalError(std::string msg) : msg_(std::move(msg)) {};
+  InternalError(std::string msg) : msg_(std::move(msg)){};
   static char ID;
   void log(llvm::raw_ostream &OS) const override
   {
@@ -2647,7 +2647,7 @@ ScopedExpr CodegenLLVM::visit(FieldAccess &acc)
 
   const auto &field = type.GetField(acc.field);
 
-  if (inBpfMemory(type)) {
+  if (type.IsRecordTy()) {
     return readDatastructElemFromStack(
         std::move(scoped_arg), b_.getInt64(field.offset), type, field.type);
   } else {
@@ -5068,10 +5068,10 @@ ScopedExpr CodegenLLVM::visit(For &f, Map &map)
     b_.getPtrTy(), b_.getPtrTy(), b_.getPtrTy(), b_.getPtrTy()
   };
   Struct debug_args;
-  debug_args.AddField("map", CreatePointer(CreateInt8()));
-  debug_args.AddField("key", CreatePointer(CreateInt8()));
-  debug_args.AddField("value", CreatePointer(CreateInt8()));
-  debug_args.AddField("ctx", CreatePointer(CreateInt8()));
+  debug_args.AddField("map", CreatePointer(CreateInt8(), AddrSpace::none));
+  debug_args.AddField("key", CreatePointer(CreateInt8(), AddrSpace::none));
+  debug_args.AddField("value", CreatePointer(CreateInt8(), AddrSpace::none));
+  debug_args.AddField("ctx", CreatePointer(CreateInt8(), AddrSpace::none));
 
   const std::string name = "map_for_each_cb";
   auto *cb = createForCallback(
