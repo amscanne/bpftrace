@@ -107,8 +107,6 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %token <std::string> BUILTIN "builtin"
 %token <std::string> INT_TYPE "integer type"
 %token <std::string> BUILTIN_TYPE "builtin type"
-%token <std::string> SUBPROG "subprog"
-%token <std::string> MACRO "macro"
 %token <std::string> SIZED_TYPE "sized type"
 %token <std::string> IDENT "identifier"
 %token <std::string> PATH "path"
@@ -133,9 +131,13 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %token <std::string> OFFSETOF "offsetof"
 %token <std::string> TYPEOF "typeof"
 %token <std::string> TYPEINFO "typeinfo"
-%token <std::string> LET "let"
 %token <std::string> IMPORT "import"
 %token <bool> BOOL "bool"
+
+// These tokens carry documentation with them.
+%token <std::pair<std::string, ast::Documentation>> MACRO "macro"
+%token <std::pair<std::string, ast::Documentation>> SUBPROG "subprog"
+%token <std::pair<std::string, ast::Documentation>> LET "let"
 
 %type <ast::Operator> unary_op compound_op
 %type <std::string> attach_point_def c_definitions ident keyword external_name
@@ -346,10 +348,10 @@ config_assign_stmt:
 
 subprog:
                 SUBPROG IDENT "(" subprog_args ")" ":" any_type none_block {
-                    $$ = driver.ctx.make_node<ast::Subprog>($2, $7, std::move($4), std::move($8), @$);
+                    $$ = driver.ctx.make_node<ast::Subprog>($2, $1.second, $7, std::move($4), std::move($8), @$);
                 }
         |       SUBPROG IDENT "(" ")" ":" any_type none_block {
-                    $$ = driver.ctx.make_node<ast::Subprog>($2, $6, ast::SubprogArgList(), std::move($7), @$);
+                    $$ = driver.ctx.make_node<ast::Subprog>($2, $1.second, $6, ast::SubprogArgList(), std::move($7), @$);
                 }
                 ;
 
@@ -363,8 +365,8 @@ subprog_arg:
                 ;
 
 macro:
-                MACRO IDENT "(" macro_args ")" bare_block { $$ = driver.ctx.make_node<ast::Macro>($2, std::move($4), $6, @$); }
-        |       MACRO IDENT "(" macro_args ")" block_expr { $$ = driver.ctx.make_node<ast::Macro>($2, std::move($4), $6, @$); }
+                MACRO IDENT "(" macro_args ")" bare_block { std::cerr << $2 << " COMMENTS ARE: " << *$1.second << "\n"; $$ = driver.ctx.make_node<ast::Macro>($2, $1.second, std::move($4), $6, @$); }
+        |       MACRO IDENT "(" macro_args ")" block_expr { std::cerr << $2 << " COMMENTS ARE: " << *$1.second << "\n"; $$ = driver.ctx.make_node<ast::Macro>($2, $1.second, std::move($4), $6, @$); }
                 ;
 
 macro_args:
@@ -559,7 +561,7 @@ assign_stmt:
         ;
 
 map_decl_stmt:
-                LET MAP ASSIGN IDENT LPAREN UNSIGNED_INT RPAREN ";" { $$ = driver.ctx.make_node<ast::MapDeclStatement>($2, $4, $6, @$); }
+                LET MAP ASSIGN IDENT LPAREN UNSIGNED_INT RPAREN ";" { $$ = driver.ctx.make_node<ast::MapDeclStatement>($2, $1.second, $4, $6, @$); }
         ;
 
 var_decl_stmt:
@@ -807,13 +809,14 @@ keyword:
         |       ELSE          { $$ = $1; }
         |       FOR           { $$ = $1; }
         |       IF            { $$ = $1; }
-        |       LET           { $$ = $1; }
+        |       LET           { $$ = $1.first; }
         |       OFFSETOF      { $$ = $1; }
         |       RETURN        { $$ = $1; }
         |       SIZEOF        { $$ = $1; }
         |       UNROLL        { $$ = $1; }
         |       WHILE         { $$ = $1; }
-        |       SUBPROG       { $$ = $1; }
+        |       SUBPROG       { $$ = $1.first; }
+        |       MACRO         { $$ = $1.first; }
         |       TYPEOF        { $$ = $1; }
         |       TYPEINFO      { $$ = $1; }
         ;

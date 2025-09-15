@@ -23,6 +23,7 @@ public:
   std::optional<ast::Expression> parse_expr();
 
   void error(const location &l, const std::string &m);
+  ast::Documentation make_docs();
 
   // These are accessible to the parser and lexer, but are not mutable.
   ast::ASTContext &ctx;
@@ -32,6 +33,7 @@ public:
   location loc;
   std::string struct_type;
   std::string buffer;
+  std::vector<std::string> comments;
 
   // This is the token injected into the lexer.
   std::optional<Parser::symbol_type> token;

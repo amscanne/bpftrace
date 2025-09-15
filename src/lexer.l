@@ -62,7 +62,10 @@ oct_esc  [0-7]{1,3}
 %x STRUCT
 %x ENUM
 %x BRACE
-%x COMMENT
+%x CCOMMENT
+%x CCOMMENTNL
+%x CPPCOMMENT
+%x CPPCOMMENTNL
 %x AFTER_COLON
 %x STRUCT_AFTER_COLON
 
@@ -80,18 +83,63 @@ oct_esc  [0-7]{1,3}
 {vspace}+               { driver.loc.lines(yyleng); driver.loc.step(); }
 
 ^"#!".*$                // executable line
-"//".*$                 // single-line comments
-"/*"                    yy_push_state(COMMENT, yyscanner);
-<COMMENT>{
+"/* "                   { yy_push_state(CCOMMENT, yyscanner); driver.comments.clear(); }
+"/*"                    { yy_push_state(CCOMMENT, yyscanner); driver.comments.clear(); }
+"// "                   { yy_push_state(CPPCOMMENT, yyscanner); driver.comments.clear(); }
+"//"                    { yy_push_state(CPPCOMMENT, yyscanner); driver.comments.clear(); }
+<CCOMMENT>{
   "*/"                  yy_pop_state(yyscanner);
-  [^*\n]+|"*"           {}
-  \n                    driver.loc.lines(1); driver.loc.step();
-  <<EOF>>               yy_pop_state(yyscanner); driver.error(driver.loc, "end of file during comment");
+  [^\n]+                driver.comments.push_back(yytext);
+  \n                    {
+                           driver.loc.lines(1);
+                           driver.loc.step();
+                           yy_pop_state(yyscanner);
+                           yy_push_state(CCOMMENTNL, yyscanner);
+                        }
+  <<EOF>>               {
+                           yy_pop_state(yyscanner);
+                           driver.error(driver.loc, "end of file during comment");
+                        }
+}
+<CCOMMENTNL>{
+  "*/"                  yy_pop_state(yyscanner);
+  " */"                 yy_pop_state(yyscanner);
+  " * "                 { yy_pop_state(yyscanner); yy_push_state(CCOMMENT, yyscanner); }
+  " *"                  { yy_pop_state(yyscanner); yy_push_state(CCOMMENT, yyscanner); }
+  "   "                 { yy_pop_state(yyscanner); yy_push_state(CCOMMENT, yyscanner); }
+  \n                    {
+                          driver.loc.lines(1);
+                          driver.loc.step();
+                          driver.comments.push_back("");
+                        }
+  .                     { unput(yytext[0]); yy_pop_state(yyscanner); yy_push_state(CCOMMENT, yyscanner); }
+  <<EOF>>               {
+                           yy_pop_state(yyscanner);
+                           driver.error(driver.loc, "end of file during comment");
+                        }
+}
+<CPPCOMMENT>{
+  [^\n]+                driver.comments.push_back(yytext);
+  \n                    {
+                           driver.loc.lines(1);
+                           driver.loc.step();
+                           yy_pop_state(yyscanner);
+                           yy_push_state(CPPCOMMENTNL, yyscanner);
+                        }
+  <<EOF>>               yy_pop_state(yyscanner);
+}
+<CPPCOMMENTNL>{
+  [/][/][ ]\n           driver.comments.push_back("");
+  [/][/]\n              driver.comments.push_back("");
+  "// "                 { yy_pop_state(yyscanner); yy_push_state(CPPCOMMENT, yyscanner); }
+  "//"                  { yy_pop_state(yyscanner); yy_push_state(CPPCOMMENT, yyscanner); }
+  .                     { unput(yytext[0]); yy_pop_state(yyscanner); yy_push_state(CPPCOMMENT, yyscanner); }
+  <<EOF>>               yy_pop_state(yyscanner);
 }
 
 {builtin}               { return Parser::make_BUILTIN(yytext, driver.loc); }
-{subprog}               { return Parser::make_SUBPROG(yytext, driver.loc); }
-{macro}                 { return Parser::make_MACRO(yytext, driver.loc); }
+{subprog}               { return Parser::make_SUBPROG(std::make_pair(yytext, driver.make_docs()), driver.loc); }
+{macro}                 { return Parser::make_MACRO(std::make_pair(yytext, driver.make_docs()), driver.loc); }
 {int}|{hex}|{exponent}  {
                           // Note that we have no unsigned integers in the lexer, these
                           // are purely derived as a result of folding constants.
@@ -180,7 +228,7 @@ oct_esc  [0-7]{1,3}
 "offsetof"              { return Parser::make_OFFSETOF(yytext, driver.loc); }
 "typeof"                { return Parser::make_TYPEOF(yytext, driver.loc); }
 "typeinfo"              { return Parser::make_TYPEINFO(yytext, driver.loc); }
-"let"                   { return Parser::make_LET(yytext, driver.loc); }
+"let"                   { return Parser::make_LET(std::make_pair(yytext, driver.make_docs()), driver.loc); }
 "import"                { return Parser::make_IMPORT(yytext, driver.loc); }
 
 {int_type}              { return Parser::make_INT_TYPE(yytext, driver.loc); }

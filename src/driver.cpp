@@ -53,6 +53,18 @@ void Driver::error(const location &l, const std::string &m)
   ctx.state_->diagnostics_->addError(ctx.wrap(l)) << m;
 }
 
+ast::Documentation Driver::make_docs()
+{
+  // Join all the comments into a single string, and allocate as a shared
+  // pointer for the node itself.
+  std::stringstream ss;
+  for (auto &comment : comments) {
+    ss << std::move(comment) << "\n";
+  }
+  comments.clear();
+  return std::make_shared<std::string>(ss.str());
+}
+
 ast::Pass CreateParsePass(bool debug)
 {
   return ast::Pass::create("parse", [=](ast::ASTContext &ast) {

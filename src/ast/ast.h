@@ -543,11 +543,13 @@ class MapDeclStatement : public Node {
 public:
   explicit MapDeclStatement(ASTContext &ctx,
                             std::string ident,
+                            Documentation docs,
                             std::string bpf_type,
                             int max_entries,
                             Location &&loc)
       : Node(ctx, std::move(loc)),
         ident(std::move(ident)),
+        docs(std::move(docs)),
         bpf_type(std::move(bpf_type)),
         max_entries(max_entries) {};
   explicit MapDeclStatement(ASTContext &ctx,
@@ -555,10 +557,12 @@ public:
                             const Location &loc)
       : Node(ctx, loc + other.loc),
         ident(other.ident),
+        docs(other.docs),
         bpf_type(other.bpf_type),
         max_entries(other.max_entries) {};
 
   const std::string ident;
+  Documentation docs;
   const std::string bpf_type;
   const int max_entries;
 };
@@ -1275,26 +1279,30 @@ class Subprog : public Node {
 public:
   explicit Subprog(ASTContext &ctx,
                    std::string name,
+                   Documentation docs,
                    Typeof *return_type,
                    SubprogArgList &&args,
                    BlockExpr *block,
                    Location &&loc)
       : Node(ctx, std::move(loc)),
         name(std::move(name)),
+        docs(std::move(docs)),
         return_type(return_type),
         args(std::move(args)),
         block(block) {};
   explicit Subprog(ASTContext &ctx, const Subprog &other, const Location &loc)
       : Node(ctx, loc + other.loc),
         name(other.name),
+        docs(other.docs),
         return_type(clone(ctx, other.return_type, loc)),
         args(clone(ctx, other.args, loc)),
         block(clone(ctx, other.block, loc)) {};
 
   const std::string name;
+  Documentation docs;
   Typeof *return_type;
   SubprogArgList args;
-  BlockExpr *block = nullptr;
+  BlockExpr *block;
 };
 using SubprogList = std::vector<Subprog *>;
 
@@ -1313,20 +1321,24 @@ class Macro : public Node {
 public:
   Macro(ASTContext &ctx,
         std::string name,
+        Documentation docs,
         ExpressionList &&vargs,
         BlockExpr *block,
         Location &&loc)
       : Node(ctx, std::move(loc)),
         name(std::move(name)),
+        docs(std::move(docs)),
         vargs(std::move(vargs)),
         block(block) {};
   explicit Macro(ASTContext &ctx, const Macro &other, const Location &loc)
       : Node(ctx, loc + other.loc),
         name(other.name),
+        docs(other.docs),
         vargs(clone(ctx, other.vargs, loc)),
         block(clone(ctx, other.block, loc)) {};
 
   std::string name;
+  Documentation docs;
   ExpressionList vargs;
   BlockExpr *block = nullptr;
 };

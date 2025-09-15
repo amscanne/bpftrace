@@ -41,6 +41,7 @@
 #include "build_info.h"
 #include "child.h"
 #include "config.h"
+#include "gendoc.h"
 #include "globalvars.h"
 #include "lockdown.h"
 #include "log.h"
@@ -68,6 +69,7 @@ enum class TestMode {
   CODEGEN,
   COMPILER_BENCHMARK,
   BPF_BENCHMARK,
+  GENDOC,
 };
 
 enum class BuildMode {
@@ -487,6 +489,8 @@ Args parse_args(int argc, char* argv[])
           args.test_mode = TestMode::COMPILER_BENCHMARK;
         } else if (std::strcmp(optarg, "bench") == 0) {
           args.test_mode = TestMode::BPF_BENCHMARK;
+        } else if (std::strcmp(optarg, "gendoc") == 0) {
+          args.test_mode = TestMode::GENDOC;
         } else {
           LOG(ERROR) << "USAGE: --test can only be 'codegen', "
                         "'compiler-bench', or 'bench'.";
@@ -999,7 +1003,7 @@ int main(int argc, char* argv[])
     return 1;
   }
 
-  // Emits warnings
+  // Emits warnings.
   ast.diagnostics().emit(std::cout);
 
   if (args.build_mode == BuildMode::AHEAD_OF_TIME) {
@@ -1010,8 +1014,12 @@ int main(int argc, char* argv[])
         bpftrace.resources, args.aot, out.data.data(), out.data.size());
   }
 
-  if (args.test_mode == TestMode::CODEGEN)
+  if (args.test_mode == TestMode::CODEGEN) {
     return 0;
+  } else if (args.test_mode == TestMode::GENDOC) {
+    gendoc(ast, std::cout);
+    return 0;
+  }
 
   auto c_definitions = pmresult->get<ast::CDefinitions>();
   auto& bytecode = pmresult->get<BpfBytecode>();

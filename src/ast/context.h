@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -37,6 +38,14 @@ private:
 
   friend class SourceLocation;
 };
+
+// Refers to a comment block in the original source file.
+//
+// As nodes are parsed, these may be constructed. Since the documentation is
+// always immutable, this is standardized as a shared pointer to the immutable
+// docs. The documentation is not associated with any specific location, only
+// the nodes themselves have a precise location.
+using Documentation = std::shared_ptr<std::string>;
 
 // Manages the lifetime of AST nodes.
 //
