@@ -764,14 +764,23 @@ public:
 class Comptime : public Node {
 public:
   explicit Comptime(ASTContext &ctx, Expression expr, Location &&loc)
-      : Node(ctx, std::move(loc)), expr(std::move(expr)) {};
+      : Node(ctx, std::move(loc)), expr(std::move(expr)){};
   explicit Comptime(ASTContext &ctx, const Comptime &other, const Location &loc)
       : Node(ctx, loc + other.loc),
-        expr(clone(ctx, other.expr, loc + other.loc)) {};
+        expr(clone(ctx, other.expr, loc + other.loc)){};
 
   const SizedType &type() const
   {
     return expr.type();
+  }
+
+  bool operator==(const Comptime &other) const
+  {
+    return expr == other.expr;
+  }
+  std::strong_ordering operator<=>(const Comptime &other) const
+  {
+    return expr <=> other.expr;
   }
 
   Expression expr;
@@ -888,7 +897,7 @@ public:
                         const Location &loc)
       : Node(ctx, loc + other.loc),
         var(clone(ctx, other.var, loc)),
-        var_addr_type(other.var_addr_type) {};
+        var_addr_type(other.var_addr_type){};
 
   const SizedType &type() const
   {
@@ -915,7 +924,7 @@ public:
   explicit MapAddr(ASTContext &ctx, Map *map, Location &&loc)
       : Node(ctx, std::move(loc)), map(map){};
   explicit MapAddr(ASTContext &ctx, const MapAddr &other, const Location &loc)
-      : Node(ctx, loc + other.loc), map(clone(ctx, other.map, loc)) {};
+      : Node(ctx, loc + other.loc), map(clone(ctx, other.map, loc)){};
 
   const SizedType &type() const
   {
