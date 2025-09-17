@@ -6,7 +6,9 @@ namespace bpftrace::providers {
 
 class BenchmarkAttachPoint : public SimpleAttachPoint {
 public:
-  BenchmarkAttachPoint(const std::string &name) : SimpleAttachPoint(name){};
+  BenchmarkAttachPoint([[maybe_unused]] Provider &provider,
+                       const std::string &name)
+      : SimpleAttachPoint(name){};
 
   Action action() const override
   {
