@@ -41,6 +41,7 @@
 #include "build_info.h"
 #include "child.h"
 #include "config.h"
+#include "gendoc.h"
 #include "globalvars.h"
 #include "lockdown.h"
 #include "log.h"
@@ -66,6 +67,7 @@ enum class Mode {
   BPF_BENCHMARK,
   BPF_TEST,
   FORMAT,
+  GENDOC,
 };
 
 enum class BuildMode {
@@ -538,6 +540,8 @@ Args parse_args(int argc, char* argv[])
           args.mode = Mode::BPF_TEST;
         } else if (std::strcmp(optarg, "format") == 0) {
           args.mode = Mode::FORMAT;
+        } else if (std::strcmp(optarg, "gendoc") == 0) {
+          args.mode = Mode::GENDOC;
         } else {
           LOG(ERROR) << "USAGE: --mode can only be 'codegen', "
                         "'compiler-bench', 'bench', 'test' or 'format'.";
@@ -974,6 +978,9 @@ int main(int argc, char* argv[])
       printer.visit(ast.root);
     }
     return 0; // All done.
+  } else if (args.mode == TestMode::GENDOC) {
+    gendoc(ast, std::cout);
+    return 0;
   }
 
   for (const auto& param : args.params) {
@@ -1143,6 +1150,7 @@ int main(int argc, char* argv[])
 
   if (args.mode == Mode::CODEGEN)
     return 0;
+  }
 
   auto c_definitions = pmresult->get<ast::CDefinitions>();
   auto& bytecode = pmresult->get<BpfBytecode>();
