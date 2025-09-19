@@ -8,11 +8,16 @@ namespace bpftrace::ast {
 
 class Printer : public Visitor<Printer> {
 public:
-  explicit Printer(std::ostream &out) : out_(out)
-  {
-  }
+  enum Mode {
+    Normal, // Print with full comments and spacing.
+    Debug,  // Print with no comments, spacing but full types.
+  };
+  explicit Printer(const ASTContext &ast,
+                   std::ostream &out,
+                   Mode mode = Normal);
 
   using Visitor<Printer>::visit;
+  void visit(CStatement &cstmt);
   void visit(Integer &integer);
   void visit(NegativeInteger &integer);
   void visit(Boolean &boolean);
@@ -42,7 +47,6 @@ public:
   void visit(MapAccess &acc);
   void visit(Cast &cast);
   void visit(Tuple &tuple);
-  void visit(ExprStatement &expr);
   void visit(AssignMapStatement &assignment);
   void visit(AssignScalarMapStatement &assignment);
   void visit(AssignVarStatement &assignment);
@@ -60,12 +64,34 @@ public:
   void visit(Subprog &subprog);
   void visit(Import &imp);
   void visit(Program &program);
+  void visit(BlockExpr &block);
+  void visit(Comptime &comptime);
+  void visit(Statement &stmt);
+  void visit(Macro &macro);
+  void visit(ExprStatement &stmt);
+  void visit(Expression &expr);
+  void visit(const SizedType &type);
+
+  // These are used to override the behavior in specific scenarios. Nested
+  // expressions will still always be visited directly by the parent visitor.
+  void visit_bare(Expression &expr);
+  void visit_bare(Tuple &tuple);
+  void visit_multiline(IfExpr &if_expr);
+  void visit_multiline(BlockExpr &block);
 
 private:
-  std::ostream &out_;
+  std::stringstream out_;
+  std::ostream &real_out_;
   int depth_ = 0;
+  Mode mode_;
+  MetadataIndex metadata_;
 
-  std::string type(const SizedType &ty);
+  void print_meta(const Node &node,
+                  std::optional<size_t> min_vspace = std::nullopt);
+  void print_meta(const std::vector<MetadataIndex::Variant> &metadata,
+                  std::optional<size_t> min_vspace = std::nullopt);
+  void print_type(const SizedType &ty);
+  void print_indent();
 };
 
 } // namespace bpftrace::ast
