@@ -1,66 +1,96 @@
-#include "ast/passes/printer.h"
-
+#include <algorithm>
 #include <cctype>
 #include <iomanip>
 #include <sstream>
+#include <variant>
 
 #include "ast/ast.h"
-#include "struct.h"
+#include "ast/passes/printer.h"
 
 namespace bpftrace::ast {
 
-std::string Printer::type(const SizedType &ty)
+template <typename T>
+static Location getloc(const T &t)
 {
-  if (ty.IsNoneTy())
-    return "";
-  std::stringstream buf;
-  buf << " :: [" << typestr(ty, true);
-  if (ty.IsCtxAccess())
-    buf << ", ctx: 1";
-  if (ty.GetAS() != AddrSpace::none)
-    buf << ", AS(" << ty.GetAS() << ")";
-  buf << "]";
-  return buf.str();
+  if constexpr (std::is_same_v<T, Expression>) {
+    return t.node().loc;
+  } else {
+    return t->loc;
+  }
+}
+
+template <typename T>
+static void foreach(Printer &printer,
+                    std::vector<T> &items,
+                    bool top_level,
+                    const std::string &sep = "")
+{
+  bool first = true;
+  for (auto &item : items) {
+    auto loc = getloc(item);
+    if (!loc->comments().empty()) {
+      printer.print_meta(loc, top_level, first ? 0 : 1);
+    } else if (loc->vspace() > 0 && top_level) {
+      printer.print_meta(loc, top_level, 0);
+    }
+    if (first) {
+      first = false;
+    } else if (!top_level) {
+      printer.emit(sep);
+    }
+    first = false;
+    if constexpr (std::is_same_v<T, Expression>) {
+      printer.visit(item, top_level);
+    } else {
+      printer.visit(item);
+    }
+  }
+}
+
+void Printer::visit(CStatement &cstmt)
+{
+  out_ << cstmt.data << std::endl;
 }
 
 void Printer::visit(Integer &integer)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "int: " << integer.value << type(integer.integer_type)
-       << std::endl;
+  if (integer.original) {
+    // This typically means that it has special characters such as separately,
+    // suffixes, etc. We preserve these as an esthetic choice.
+    out_ << *integer.original;
+  } else {
+    out_ << integer.value;
+  }
 }
 
 void Printer::visit(NegativeInteger &integer)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "negative int: " << integer.value << std::endl;
+  out_ << integer.value;
 }
 
 void Printer::visit(Boolean &boolean)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "bool: " << (boolean.value ? "true" : "false") << std::endl;
+  if (boolean.value) {
+    out_ << "true";
+  } else {
+    out_ << "false";
+  }
 }
 
 void Printer::visit(PositionalParameter &param)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "param: $" << param.n << std::endl;
+  out_ << "$" << param.n;
 }
 
 void Printer::visit([[maybe_unused]] PositionalParameterCount &param)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "param: $#" << std::endl;
+  out_ << "$#";
 }
 
-void Printer::visit(String &string)
+static std::string escape(const std::string &s)
 {
-  std::string indent(depth_, ' ');
   std::stringstream ss;
-
-  for (char c : string.value) {
-    // the argument of isprint() must be an unsigned char or EOF
+  for (char c : s) {
     int code = static_cast<unsigned char>(c);
     if (std::isprint(code)) {
       if (c == '\\')
@@ -80,510 +110,689 @@ void Printer::visit(String &string)
         ss << "\\x" << std::setfill('0') << std::setw(2) << std::hex << code;
     }
   }
+  return ss.str();
+}
 
-  out_ << indent << "string: " << ss.str() << std::endl;
+void Printer::visit(String &string)
+{
+  out_ << "\"" << escape(string.value) << "\"";
 }
 
 void Printer::visit([[maybe_unused]] None &none)
 {
-  // Just omit this, since it adds tons of noise.
+  // Does not have a syntactic representation.
 }
 
 void Printer::visit(Builtin &builtin)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "builtin: " << builtin.ident << type(builtin.builtin_type)
-       << std::endl;
+  out_ << builtin.ident;
 }
 
 void Printer::visit(Identifier &identifier)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "identifier: " << identifier.ident
-       << type(identifier.ident_type) << std::endl;
+  out_ << identifier.ident;
 }
 
 void Printer::visit(Call &call)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "call: " << call.func << type(call.return_type)
-       << std::endl;
-
-  ++depth_;
-  visit(call.vargs);
-  --depth_;
+  out_ << call.func;
+  out_ << "(";
+  foreach(*this, call.vargs, false, ", ");
+  out_ << ")";
 }
 
 void Printer::visit(Sizeof &szof)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "sizeof: " << std::endl;
-
-  ++depth_;
+  out_ << "sizeof(";
   visit(szof.record);
-  --depth_;
+  out_ << ")";
 }
 
 void Printer::visit(Offsetof &offof)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "offsetof: " << std::endl;
-
-  ++depth_;
-  std::string indentParam(depth_, ' ');
-
-  // Print the args
-  if (std::holds_alternative<Expression>(offof.record)) {
-    visit(std::get<Expression>(offof.record));
-  } else {
-    out_ << indentParam << std::get<SizedType>(offof.record) << std::endl;
-  }
-
+  out_ << "offsetof(";
+  visit(offof.record);
+  out_ << ", ";
+  bool first = true;
   for (const auto &field : offof.field) {
-    out_ << indentParam << field << std::endl;
+    if (!first) {
+      out_ << ".";
+    } else {
+      first = false;
+    }
+    out_ << field;
   }
-  --depth_;
+  out_ << ")";
 }
 
 void Printer::visit(Typeof &typeof)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "typeof: " << std::endl;
-
-  ++depth_;
-  visit(typeof.record);
-  --depth_;
+  if (std::holds_alternative<Expression>(typeof.record)) {
+    out_ << "typeof(";
+    visit(typeof.record);
+    out_ << ")";
+  } else {
+    // Prefer the simpler form for direct types.
+    out_ << typestr(std::get<SizedType>(typeof.record));
+  }
 }
 
 void Printer::visit(Typeinfo &typeinfo)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "typeinfo: " << std::endl;
-
-  ++depth_;
+  out_ << "typeinfo(";
   visit(typeinfo.typeof);
-  --depth_;
+  out_ << ")";
 }
 
 void Printer::visit(MapDeclStatement &decl)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "map decl: " << decl.ident << std::endl;
-
-  ++depth_;
-  std::string indentType(depth_, ' ');
-  out_ << indentType << "bpf type: " << decl.bpf_type << std::endl;
-  out_ << indentType << "max entries: " << decl.max_entries << std::endl;
-  --depth_;
+  out_ << "let " << decl.ident << " = " << decl.bpf_type << "("
+       << decl.max_entries << ");" << std::endl;
 }
 
 void Printer::visit(Map &map)
 {
-  // Use a slightly customized format for the map type here, since it is never
-  // going to be marked as `is_ctx` or have an associated address space.
-  std::string indent(depth_, ' ');
-  out_ << indent << "map: " << map.ident;
-  if (!map.key_type.IsNoneTy() || !map.value_type.IsNoneTy()) {
-    out_ << " :: ";
-  }
-  if (!map.key_type.IsNoneTy()) {
-    out_ << "[" << typestr(map.key_type, true) << "]";
-  }
-  if (!map.value_type.IsNoneTy()) {
-    out_ << typestr(map.value_type, true);
-  }
-  out_ << std::endl;
+  out_ << map.ident;
 }
 
 void Printer::visit(MapAddr &map_addr)
 {
-  std::string indent(depth_, ' ');
-
-  out_ << indent << "&" << std::endl;
-
-  ++depth_;
-  visit(map_addr.map);
-  --depth_;
+  out_ << "&" << map_addr.map->ident;
 }
 
 void Printer::visit(Variable &var)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "variable: " << var.ident << type(var.var_type)
-       << std::endl;
+  out_ << var.ident;
 }
 
 void Printer::visit(VariableAddr &var_addr)
 {
-  std::string indent(depth_, ' ');
-
-  out_ << indent << "&" << std::endl;
-
-  ++depth_;
-  visit(var_addr.var);
-  --depth_;
+  out_ << "&" << var_addr.var->ident;
 }
 
 void Printer::visit(Binop &binop)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << opstr(binop) << type(binop.result_type) << std::endl;
-
-  ++depth_;
-  visit(binop.left);
-  visit(binop.right);
-  --depth_;
+  visit(binop.left, false);
+  out_ << " " << opstr(binop) << " ";
+  visit(binop.right, false);
 }
 
 void Printer::visit(Unop &unop)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << opstr(unop) << type(unop.result_type) << std::endl;
+  switch (unop.op) {
+    case Operator::LNOT:
+      out_ << "!";
+      visit(unop.expr, false);
+      break;
+    case Operator::BNOT:
+      out_ << "~";
+      visit(unop.expr, false);
+      break;
+    case Operator::MINUS:
+      out_ << "-";
+      visit(unop.expr, false);
+      break;
+    case Operator::MUL:
+      out_ << "*";
+      visit(unop.expr, false);
+      break;
+    case Operator::INCREMENT:
+      if (unop.is_post_op) {
+        visit(unop.expr, false);
+        out_ << "++";
 
-  ++depth_;
-  visit(unop.expr);
-  --depth_;
+        break;
+      } else {
+        out_ << "++";
+        visit(unop.expr, false);
+      }
+      break;
+    case Operator::DECREMENT:
+      if (unop.is_post_op) {
+        visit(unop.expr, false);
+        out_ << "--";
+
+        break;
+      } else {
+        out_ << "--";
+        visit(unop.expr, false);
+      }
+      break;
+    default:
+      out_ << "???";
+      visit(unop.expr, false);
+      break;
+  }
 }
 
 void Printer::visit(IfExpr &if_expr)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "if" << type(if_expr.result_type) << std::endl;
-
-  ++depth_;
-  visit(if_expr.cond);
-
-  ++depth_;
-  out_ << indent << " then" << std::endl;
-  visit(if_expr.left);
-
-  if (!if_expr.right.is<None>()) {
-    out_ << indent << " else" << std::endl;
-    visit(if_expr.right);
+  out_ << "if ";
+  visit(if_expr.cond, false);
+  out_ << " ";
+  bool force_block = if_expr.right.is<BlockExpr>() ||
+                     if_expr.right.is<IfExpr>();
+  if (if_expr.left.is<BlockExpr>()) {
+    visit(if_expr.left, false);
+    force_block = true;
+  } else if (force_block) {
+    out_ << "{" << std::endl;
+    depth_++;
+    print_indent();
+    visit(if_expr.left, true);
+    out_ << std::endl;
+    depth_--;
+    print_indent();
+    out_ << "}";
   }
-
-  depth_ -= 2;
+  if (if_expr.right.is<BlockExpr>() || if_expr.right.is<IfExpr>()) {
+    out_ << " else ";
+    visit(if_expr.right, false);
+  } else if (!if_expr.right.is<None>()) {
+    if (force_block) {
+      out_ << " else {" << std::endl;
+      depth_++;
+      print_indent();
+      visit(if_expr.right, true);
+      out_ << std::endl;
+      depth_--;
+      print_indent();
+      out_ << "}";
+    } else {
+      out_ << " else { ";
+      visit(if_expr.right, false);
+      out_ << " }";
+    }
+  }
 }
 
 void Printer::visit(FieldAccess &acc)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "." << type(acc.field_type) << std::endl;
-
-  ++depth_;
-  visit(acc.expr);
-  --depth_;
-
-  out_ << indent << " " << acc.field << std::endl;
+  visit(acc.expr, false);
+  out_ << "." << acc.field;
 }
 
 void Printer::visit(ArrayAccess &arr)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "[]" << type(arr.element_type) << std::endl;
-
-  ++depth_;
-  visit(arr.expr);
-  visit(arr.indexpr);
-  --depth_;
+  visit(arr.expr, false);
+  out_ << "[";
+  visit(arr.indexpr, false);
+  out_ << "]";
 }
 
 void Printer::visit(TupleAccess &acc)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "." << type(acc.element_type) << std::endl;
-
-  ++depth_;
-  visit(acc.expr);
-  --depth_;
-
-  out_ << indent << " " << acc.index << std::endl;
+  visit(acc.expr, false);
+  out_ << "." << acc.index;
 }
 
 void Printer::visit(MapAccess &acc)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "[]" << type(acc.type()) << std::endl;
-
-  ++depth_;
   visit(acc.map);
-  visit(acc.key);
-  --depth_;
+  out_ << "[";
+  visit(acc.key, false);
+  out_ << "]";
 }
 
 void Printer::visit(Cast &cast)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "(" << cast.type() << ")" << std::endl;
-
-  ++depth_;
-  visit(cast.expr);
-  --depth_;
+  out_ << "(";
+  visit(cast.typeof);
+  out_ << ")";
+  // Avoid ambiguity: if the expression is a unop, then it needs to be
+  // put into parenthesis or it may be ambiguously parsed as a binop.
+  if (cast.expr.is<Unop>()) {
+    out_ << "(";
+    visit(cast.expr, true);
+    out_ << ")";
+  } else {
+    // Binops and others will be automatically parenthesized.
+    visit(cast.expr, false);
+  }
 }
 
-void Printer::visit(Tuple &tuple)
+void Printer::visit(Tuple &tuple, bool omit_parens)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "tuple:" << type(tuple.type()) << std::endl;
-
-  ++depth_;
-  visit(tuple.elems);
-  --depth_;
-}
-
-void Printer::visit(ExprStatement &expr)
-{
-  visit(expr.expr);
+  if (!omit_parens) {
+    out_ << "(";
+  }
+  for (size_t i = 0; i < tuple.elems.size(); i++) {
+    visit(tuple.elems.at(i), false);
+    if (i == 0 || i < tuple.elems.size() - 1) {
+      out_ << ",";
+    }
+  }
+  if (!omit_parens) {
+    out_ << ")";
+  }
 }
 
 void Printer::visit(AssignScalarMapStatement &assignment)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "=" << std::endl;
-
-  ++depth_;
   visit(assignment.map);
-  visit(assignment.expr);
-  --depth_;
+  // Is this a compound operator?
+  auto *binop = assignment.expr.as<Binop>();
+  if (binop && binop->left.is<Map>() &&
+      binop->left.as<Map>()->ident == assignment.map->ident) {
+    out_ << " " << opstr(*binop) << "= ";
+    visit(binop->right, true);
+  } else {
+    out_ << " = ";
+    visit(assignment.expr, true);
+  }
 }
 
 void Printer::visit(AssignMapStatement &assignment)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "=" << std::endl;
-
-  ++depth_;
   visit(assignment.map);
-  ++depth_;
-  visit(assignment.key);
-  --depth_;
-  visit(assignment.expr);
-  --depth_;
+  out_ << "[";
+  if (auto *tuple = assignment.key.as<Tuple>()) {
+    visit(*tuple, true);
+  } else {
+    visit(assignment.key, true);
+  }
+  out_ << "]";
+  // Is this a compound operator?
+  auto *binop = assignment.expr.as<Binop>();
+  if (binop && binop->left.is<MapAccess>() &&
+      binop->left.as<MapAccess>()->map->ident == assignment.map->ident &&
+      binop->left.as<MapAccess>()->key.value == assignment.key.value) {
+    out_ << " " << opstr(*binop) << "= ";
+    visit(binop->right, true);
+  } else {
+    out_ << " = ";
+    visit(assignment.expr, true);
+  }
 }
 
 void Printer::visit(AssignVarStatement &assignment)
 {
-  std::string indent(depth_, ' ');
-
-  if (std::holds_alternative<VarDeclStatement *>(assignment.var_decl)) {
-    visit(std::get<VarDeclStatement *>(assignment.var_decl));
-    ++depth_;
-    visit(assignment.expr);
-    --depth_;
+  visit(assignment.var_decl);
+  // Is this a compound operator?
+  auto *binop = assignment.expr.as<Binop>();
+  if (binop && binop->left.is<Variable>() &&
+      binop->left.as<Variable>()->ident == assignment.var()->ident) {
+    out_ << " " << opstr(*binop) << "= ";
+    visit(binop->right, true);
   } else {
-    out_ << indent << "=" << std::endl;
-
-    ++depth_;
-    visit(std::get<Variable *>(assignment.var_decl));
-    visit(assignment.expr);
-    --depth_;
+    out_ << " = ";
+    visit(assignment.expr, true);
   }
 }
 
 void Printer::visit(AssignConfigVarStatement &assignment)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "=" << std::endl;
-
-  ++depth_;
-  std::string indentVar(depth_, ' ');
-  out_ << indentVar << "var: " << assignment.var << std::endl;
+  print_indent();
+  out_ << assignment.var << " = ";
   std::visit(
       [&](auto &v) {
-        if constexpr (std::is_same_v<std::decay_t<decltype(v)>, std::string>) {
-          out_ << indentVar << "string: " << v << std::endl;
-        } else if constexpr (std::is_same_v<std::decay_t<decltype(v)>, bool>) {
-          out_ << indentVar << "bool: " << (v ? "true" : "false") << std::endl;
-        } else {
-          out_ << indentVar << "int: " << v << std::endl;
+        using T = std::decay_t<decltype(v)>;
+        if constexpr (std::is_same_v<T, bool>) {
+          if (v) {
+            out_ << "true";
+          } else {
+            out_ << "false";
+          }
+        } else if constexpr (std::is_same_v<T, uint64_t>) {
+          out_ << v;
+        } else if constexpr (std::is_same_v<T, std::string>) {
+          // Prefer to use a naked identifier for the configuration,
+          // it is rare that we need actual string paths.
+          if (escape(v) == v) {
+            out_ << v;
+          } else {
+            out_ << "\"" << escape(v) << "\"";
+          }
         }
       },
       assignment.value);
-  --depth_;
+  out_ << ";" << std::endl;
 }
 
 void Printer::visit(VarDeclStatement &decl)
 {
-  std::string indent(depth_, ' ');
-
-  if (decl.typeof) {
-    out_ << indent << "decl" << type(decl.typeof->type()) << std::endl;
-  } else {
-    out_ << indent << "decl" << std::endl;
-  }
-
-  ++depth_;
+  out_ << "let ";
   visit(decl.var);
-  --depth_;
+  if (decl.typeof) {
+    out_ << " : ";
+    visit(decl.typeof);
+  }
 }
 
 void Printer::visit(Unroll &unroll)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "unroll" << std::endl;
-
-  ++depth_;
-  visit(unroll.expr);
-  out_ << indent << " block" << std::endl;
-
-  ++depth_;
+  out_ << "unroll (";
+  visit(unroll.expr, true);
+  out_ << ") ";
   visit(unroll.block);
-  depth_ -= 2;
 }
 
 void Printer::visit(While &while_block)
 {
-  std::string indent(depth_, ' ');
-
-  out_ << indent << "while(" << std::endl;
-
-  ++depth_;
-  visit(while_block.cond);
-
-  ++depth_;
-  out_ << indent << " )" << std::endl;
-
+  out_ << "while (";
+  visit(while_block.cond, true);
+  out_ << ") ";
   visit(while_block.block);
 }
 
 void Printer::visit(Range &range)
 {
-  std::string indent(depth_, ' ');
-
-  out_ << indent << "start\n";
-  ++depth_;
-  visit(range.start);
-  --depth_;
-
-  out_ << indent << "end\n";
-  ++depth_;
-  visit(range.end);
-  --depth_;
+  if (!range.start.is_literal() || with_types_) {
+    out_ << "(";
+    visit(range.start, false);
+    out_ << ")";
+  } else {
+    visit(range.start, false);
+  }
+  out_ << "..";
+  if (!range.end.is_literal()) {
+    out_ << "(";
+    visit(range.end, false);
+    out_ << ")";
+  } else {
+    visit(range.end, false);
+  }
 }
 
 void Printer::visit(For &for_loop)
 {
   std::string indent(depth_, ' ');
-  out_ << indent << "for" << std::endl;
-
-  ++depth_;
-  if (for_loop.ctx_type.IsRecordTy() &&
-      !for_loop.ctx_type.GetFields().empty()) {
-    out_ << indent << " ctx\n";
-    for (const auto &field : for_loop.ctx_type.GetFields()) {
-      out_ << indent << "  " << field.name << type(field.type) << "\n";
-    }
-  }
-
-  out_ << indent << " decl\n";
-  ++depth_;
+  out_ << "for (";
   visit(for_loop.decl);
+  out_ << " : ";
   visit(for_loop.iterable);
-  --depth_;
-
-  out_ << indent << " stmts\n";
-  ++depth_;
+  out_ << ") ";
+  print_type(for_loop.ctx_type);
   visit(for_loop.block);
-  --depth_;
-
-  --depth_;
 }
 
 void Printer::visit(Config &config)
 {
   std::string indent(depth_, ' ');
 
-  out_ << indent << "config" << std::endl;
-
+  out_ << "config = {" << std::endl;
   ++depth_;
-  visit(config.stmts);
+  foreach(*this, config.stmts, true);
   --depth_;
+  out_ << "}" << std::endl;
 }
 
 void Printer::visit(Jump &jump)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << opstr(jump) << std::endl;
-  ++depth_;
-  visit(jump.return_value);
-  --depth_;
+  switch (jump.ident) {
+    case JumpType::RETURN:
+      if (jump.return_value) {
+        out_ << "return ";
+        visit(*jump.return_value, true);
+      } else {
+        out_ << "return";
+      }
+      break;
+    case JumpType::BREAK:
+      out_ << "break";
+      break;
+    case JumpType::CONTINUE:
+      out_ << "continue";
+      break;
+    default:
+      break;
+  }
 }
 
 void Printer::visit(AttachPoint &ap)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << ap.name() << std::endl;
+  // If the original string escapes, just keep it.
+  auto raw = ap.raw_input;
+  if (raw == escape(raw)) {
+    out_ << raw;
+    return;
+  }
+  // Otherwise, favor the newly constructed one.
+  auto rebuilt = ap.name();
+  std::string escaped = escape(rebuilt);
+  if (rebuilt == escaped) {
+    out_ << rebuilt;
+    return;
+  }
+  out_ << "\"" << escaped << "\"";
 }
 
 void Printer::visit(Probe &probe)
 {
-  visit(probe.attach_points);
-
-  ++depth_;
+  bool first = true;
+  for (const auto &ap : probe.attach_points) {
+    if (first) {
+      first = false;
+    } else {
+      out_ << "," << std::endl;
+    }
+    visit(ap);
+  }
+  out_ << " ";
   visit(probe.block);
-  --depth_;
+  out_ << std::endl;
 }
 
 void Printer::visit(SubprogArg &arg)
 {
-  std::string indent(depth_, ' ');
-
-  ++depth_;
-  out_ << indent << arg.var->ident << type(arg.typeof->type()) << std::endl;
-  --depth_;
+  out_ << arg.var->ident << " : ";
+  visit(arg.typeof);
 }
 
 void Printer::visit(Subprog &subprog)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "subprog: " << subprog.name
-       << type(subprog.return_type->type()) << std::endl;
-
-  ++depth_;
-
-  if (!subprog.args.empty()) {
-    ++depth_;
-    out_ << indent << " args" << std::endl;
-    visit(subprog.args);
-    --depth_;
-  }
-
+  out_ << "fn " << subprog.name << "(";
+  foreach(*this, subprog.args, false, ", ");
+  out_ << ") : ";
+  visit(subprog.return_type);
+  out_ << " ";
   visit(subprog.block);
-
-  --depth_;
+  out_ << std::endl;
 }
 
 void Printer::visit(Import &imp)
 {
-  std::string indent(depth_, ' ');
-  out_ << indent << "import " << imp.name << std::endl;
+  out_ << "import \"" << imp.name << "\";" << std::endl;
+}
+
+void Printer::visit(BlockExpr &block)
+{
+  if (block.stmts.empty()) {
+    if (block.expr.is<None>()) {
+      out_ << "{}";
+    } else {
+      out_ << "{ ";
+      visit(block.expr, false);
+      out_ << " }";
+    }
+  } else {
+    out_ << "{" << std::endl;
+    depth_++;
+    visit(block.stmts);
+    if (!block.expr.is<None>()) {
+      print_indent();
+      visit(block.expr, false);
+      out_ << std::endl;
+    }
+    depth_--;
+    print_indent();
+    out_ << "}";
+  }
+}
+
+void Printer::visit(Comptime &comptime)
+{
+  out_ << "comptime ";
+  visit(comptime.expr, false);
 }
 
 void Printer::visit(Program &program)
 {
-  for (const auto &stmt : program.c_statements) {
-    out_ << stmt->data << std::endl;
+  bool first = true;
+  auto check_first = [&] {
+    if (!first) {
+      out_ << std::endl;
+    } else {
+      first = false;
+    }
+  };
+
+  if (program.header && program.header->size() > 0) {
+    check_first();
+    std::cerr << *program.header;
   }
 
-  std::string indent(depth_, ' ');
-  out_ << indent << "Program" << std::endl;
+  if (!program.c_statements.empty()) {
+    check_first();
+    foreach(*this, program.c_statements, true);
+  }
 
-  ++depth_;
-  visit(program.config);
-  --depth_;
+  if (program.config != nullptr && !program.config->stmts.empty()) {
+    check_first();
+    print_meta(program.config->loc, true, 0);
+    visit(program.config);
+  }
 
-  ++depth_;
-  visit(program.imports);
-  --depth_;
+  if (!program.imports.empty()) {
+    check_first();
+    foreach(*this, program.imports, true);
+  }
 
-  ++depth_;
-  visit(program.map_decls);
-  --depth_;
+  if (!program.map_decls.empty()) {
+    check_first();
+    foreach(*this, program.map_decls, true);
+  }
 
-  ++depth_;
-  visit(program.functions);
-  visit(program.probes);
-  --depth_;
+  if (!program.macros.empty()) {
+    check_first();
+    foreach(*this, program.macros, true);
+  }
+
+  if (!program.functions.empty()) {
+    check_first();
+    foreach(*this, program.functions, true);
+  }
+
+  if (!program.probes.empty()) {
+    check_first();
+    foreach(*this, program.probes, true);
+  }
+}
+
+static bool is_block(Expression &expr, bool block_ok)
+{
+  if (auto *if_expr = expr.as<IfExpr>()) {
+    return is_block(if_expr->left, true) &&
+           (if_expr->right.is<None>() || is_block(if_expr->right, true));
+  } else if (block_ok && expr.is<BlockExpr>()) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+void Printer::visit(Macro &macro)
+{
+  out_ << "macro " << macro.name << "(";
+  foreach(*this, macro.vargs, true, ", ");
+  out_ << ") ";
+  visit(macro.block);
+  out_ << std::endl;
+}
+
+void Printer::visit(Statement &stmt)
+{
+  print_meta(stmt.node().loc, true, 0);
+  print_indent();
+  visit(stmt.value);
+  // Emit a semi-colon if it is not a block statement.
+  if (!stmt.is<For>() && !stmt.is<While>() && !stmt.is<Unroll>()) {
+    auto *expr = stmt.as<ExprStatement>();
+    if (expr == nullptr || !is_block(expr->expr, false)) {
+      out_ << ";";
+    }
+  }
+  out_ << std::endl;
+}
+
+void Printer::visit(ExprStatement &stmt)
+{
+  visit(stmt.expr, true);
+}
+
+void Printer::visit(Expression &expr, bool top_level)
+{
+  bool needs_parens = !top_level &&
+                      (expr.is<Binop>() || (expr.is<Unop>() && with_types_) ||
+                       expr.is<Cast>());
+  if (needs_parens) {
+    out_ << "(";
+  }
+  visit(expr.value);
+  if (needs_parens) {
+    out_ << ")";
+  }
+  print_type(expr.type());
+}
+
+void Printer::visit(const SizedType &type)
+{
+  out_ << typestr(type, false);
+}
+
+void Printer::print_type(const SizedType &ty)
+{
+  if (!with_types_ || ty.IsNoneTy())
+    return;
+  out_ << " /* " << typestr(ty, true);
+  if (ty.IsCtxAccess())
+    out_ << ", ctx: 1";
+  if (ty.GetAS() != AddrSpace::none)
+    out_ << ", AS(" << ty.GetAS() << ")";
+  out_ << " */";
+}
+
+void Printer::print_meta(const Location &loc, bool top_level, size_t min_vspace)
+{
+  if (top_level) {
+    size_t vspace = loc->vspace();
+    vspace = std::min<size_t>(vspace, min_vspace);
+    for (size_t i = 0; i < loc->vspace(); i++) {
+      out_ << std::endl;
+    }
+  }
+  const auto &comments = loc->comments();
+  auto parts = util::split_string(comments, '\n');
+  if (top_level) {
+    for (const auto &part : parts) {
+      print_indent();
+      out_ << "// " << part << std::endl;
+    }
+  } else if (!parts.empty()) {
+    out_ << "/* ";
+    bool first = true;
+    for (const auto &part : parts) {
+      if (first) {
+        first = false;
+      } else {
+        out_ << " ";
+      }
+      out_ << part;
+    }
+    out_ << "*/ ";
+  }
+}
+
+void Printer::emit(const std::string &s)
+{
+  out_ << s;
+}
+
+void Printer::print_indent()
+{
+  for (int i = 0; i < depth_ * 2; i++) {
+    out_ << ' ';
+  }
 }
 
 } // namespace bpftrace::ast
