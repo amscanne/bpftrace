@@ -24,6 +24,7 @@ public:
   bool has_builtin_retval = false;
 };
 
+<<<<<<< HEAD
 class TypeResolver : public Visitor<TypeResolver> {
 public:
   TypeResolver(BPFtrace &bpftrace, std::vector<Dwarf *> &&dwarves)
@@ -41,13 +42,22 @@ private:
   std::map<std::string, std::shared_ptr<Struct>> resolved_;
 };
 
+=======
+>>>>>>> e6c00df0 (field_analyser: simplify type resolution)
 class FieldAnalyser : public Visitor<FieldAnalyser> {
 public:
   explicit FieldAnalyser(BPFtrace &bpftrace, ExpansionResult &expansions)
       : bpftrace_(bpftrace), expansions_(expansions){};
 
   using Visitor<FieldAnalyser>::visit;
+<<<<<<< HEAD
   void visit(Probe &probe);
+=======
+  void visit(Builtin &builtin);
+  void visit(Identifier &identifier);
+  void visit(Probe &probe);
+  void visit(SizedType &type);
+>>>>>>> e6c00df0 (field_analyser: simplify type resolution)
 
   BPFtrace &bpftrace_;
   ExpansionResult &expansions_;
@@ -55,6 +65,7 @@ public:
 
 } // namespace
 
+<<<<<<< HEAD
 auto *probe = get_probe(builtin, builtin.ident);
 if (probe == nullptr)
   return;
@@ -97,6 +108,26 @@ if (type == ProbeType::invalid) {
     builtin.builtin_type.is_internal = true;
 } else if (type != ProbeType::tracepoint) // no special action for
                                           // tracepoint
+=======
+void BuiltinChecker::visit(Builtin &builtin)
+{
+  if (builtin.ident == "args") {
+    has_builtin_args = true;
+  }
+  if (builtin.ident == "__builtin_retval") {
+    has_builtin_retval = true;
+  }
+}
+
+void FieldAnalyser::visit(Builtin &builtin)
+{
+  if (builtin.ident == "__builtin_curtask") {
+    bpftrace_.btf_set_.insert("struct task_struct");
+  }
+}
+
+void FieldAnalyser::visit(Identifier &identifier)
+>>>>>>> e6c00df0 (field_analyser: simplify type resolution)
 {
   builtin.addError() << "The args builtin can only be used with "
                         "tracepoint/fentry/uprobe probes ("
@@ -219,6 +250,7 @@ void TypeResolver::visit(Identifier &identifier)
   bpftrace_.btf_set_.insert(identifier.ident);
 }
 
+<<<<<<< HEAD
 void TypeResolver::visit(SizedType &type)
 {
   if (type.IsNoneTy()) {
@@ -287,6 +319,13 @@ void FieldAnalyser::visit(Probe &probe)
                                checker.has_builtin_retval;
 
   std::vector<Dwarf *> dwarves;
+=======
+void FieldAnalyser::visit(Probe &probe)
+{
+  BuiltinChecker checker;
+  checker.visit(probe);
+
+>>>>>>> e6c00df0 (field_analyser: simplify type resolution)
   for (auto *ap : probe.attach_points) {
     auto probe_type = probetype(ap->provider);
     auto prog_type = progtype(probe_type);
@@ -309,14 +348,27 @@ void FieldAnalyser::visit(Probe &probe)
       bpftrace_.btf_set_.insert("struct bpf_iter__" + attach_func);
     }
 
+<<<<<<< HEAD
     // These are constructed elsewhere.
+=======
+    // These are constructed elsehwere.
+>>>>>>> e6c00df0 (field_analyser: simplify type resolution)
     if (probe_type != ProbeType::fentry && probe_type != ProbeType::fexit &&
         probe_type != ProbeType::rawtracepoint &&
         probe_type != ProbeType::uprobe) {
       continue;
     }
+<<<<<<< HEAD
     has_typed_attachpoint = true;
 
+=======
+
+    // The rest is only if the arguments are BTF-based or uprobes.
+    if (!checker.has_builtin_args && !checker.has_builtin_retval) {
+      continue;
+    }
+
+>>>>>>> e6c00df0 (field_analyser: simplify type resolution)
     // load probe arguments into a special record type "struct
     // <probename>_args".
     std::shared_ptr<Struct> probe_args;
@@ -399,6 +451,7 @@ void FieldAnalyser::visit(Probe &probe)
     }
 
     // check if we already stored arguments for this probe.
+<<<<<<< HEAD
     if (probe_args) {
       auto args = bpftrace_.structs.Lookup(probe.args_typename()).lock();
       if (args) {
@@ -438,6 +491,66 @@ void FieldAnalyser::visit(Probe &probe)
   }
   // Catch all other explicit types.
   resolver.visit(probe.block);
+=======
+    auto args = bpftrace_.structs.Lookup(probe.args_typename()).lock();
+    if (args) {
+      if (*args != *probe_args) {
+        // we did, and it's different...trigger the error.
+        ap->addError() << "Probe has attach points with mixed arguments";
+      }
+    } else {
+      // store/save args for each ap for later processing.
+      bpftrace_.structs.Add(probe.args_typename(), std::move(probe_args));
+    }
+
+    if (checker.has_builtin_retval) {
+      // Load the retval for this probe. Note that this was *not* checked for
+      // consistency at any point, so we preserve this behavior.
+      const auto *retval = bpftrace_.structs.GetProbeArg(probe,
+                                                         RETVAL_FIELD_NAME);
+      if (!retval) {
+        probe.addError() << "Probe uses return value, but not defined";
+      }
+    }
+  }
+
+  Visitor::visit(probe.block);
+}
+
+void FieldAnalyser::visit(SizedType &type)
+{
+  if (type.IsNoneTy()) {
+    // Leave this as is, it will be resolved by the semantic analysis pass later
+    // on, we only care about types that are half-resolved because they are used
+    // in casts, etc. We don't have a type name or anything else relevant here.
+  } else if (type.IsPtrTy()) {
+    auto pointee = *type.GetPointeeTy();
+    visit(pointee);
+    if (!pointee.IsNoneTy()) {
+      type = CreatePointer(pointee);
+    }
+  } else if (type.IsArrayTy()) {
+    auto elem = *type.GetElementTy();
+    visit(elem);
+    if (!elem.IsNoneTy()) {
+      type = CreateArray(type.GetNumElements(), elem);
+    }
+  } else if (type.IsRecordTy()) {
+    if (bpftrace_.has_btf_data()) {
+      auto ntype = bpftrace_.btf_->get_stype(type.GetName());
+      if (!ntype.IsNoneTy() && ntype.IsRecordTy()) {
+        bpftrace_.btf_->resolve_fields(ntype);
+        // Load all elements recursively.
+        for (auto &field : ntype.GetFields()) {
+          visit(field.type);
+        }
+        type = ntype;
+        return;
+      }
+    }
+    bpftrace_.btf_set_.insert(type.GetName());
+  }
+>>>>>>> e6c00df0 (field_analyser: simplify type resolution)
 }
 
 Pass CreateFieldAnalyserPass()
