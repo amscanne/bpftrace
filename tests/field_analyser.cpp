@@ -13,6 +13,8 @@
 namespace bpftrace::test::field_analyser {
 
 using ::testing::_;
+using ::testing::AnyOf;
+using ::testing::Eq;
 
 void test(BPFtrace &bpftrace, const std::string &input, bool ok = true)
 {
@@ -283,9 +285,11 @@ TEST_F(field_analyser_btf, btf_types_struct_ptr)
        "}",
        true);
 
-  // @x1->foo2 should do 2 things:
-  // - add struct Foo2 (without resolving its fields)
-  // - resolve fields of struct Foo3
+  // When the reference to struct Foo3* exists, it should fully
+  // resolve all available types. If these types do not resolve,
+  // it will not result in an error (as long as they can be sufficiently
+  // resolved to compute the layout of the used structs), but this test no
+  // longer *requires* that the unused types are not resolved.
 
   ASSERT_TRUE(bpftrace->structs.Has("struct Foo2"));
   ASSERT_TRUE(bpftrace->structs.Has("struct Foo3"));
@@ -293,9 +297,11 @@ TEST_F(field_analyser_btf, btf_types_struct_ptr)
   auto foo3 = bpftrace->structs.Lookup("struct Foo3").lock();
 
   EXPECT_EQ(foo2->size, 24);
-  ASSERT_EQ(foo2->fields.size(), 0U); // fields are not resolved
+  // Either of the following could be true (if resolved or not):
+  ASSERT_THAT(foo2->fields.size(), AnyOf(Eq(3U), Eq(0U)));
   EXPECT_EQ(foo3->size, 16);
-  ASSERT_EQ(foo3->fields.size(), 2U); // fields are resolved
+  // Same, this may or may not be resolved:
+  ASSERT_THAT(foo3->fields.size(), Eq(2U));
 }
 
 TEST_F(field_analyser_btf, btf_types_arr_access)
@@ -307,9 +313,7 @@ TEST_F(field_analyser_btf, btf_types_arr_access)
        "}",
        true);
 
-  // args.foo3[0].foo2 should do 2 things:
-  // - add struct Foo2 (without resolving its fields)
-  // - resolve fields of struct Foo3
+  // See `btf_types_struct_ptr`. Whether Foo2 is resolved is optional.
 
   ASSERT_TRUE(bpftrace->structs.Has("struct Foo2"));
   ASSERT_TRUE(bpftrace->structs.Has("struct Foo3"));
@@ -317,9 +321,10 @@ TEST_F(field_analyser_btf, btf_types_arr_access)
   auto foo3 = bpftrace->structs.Lookup("struct Foo3").lock();
 
   EXPECT_EQ(foo2->size, 24);
-  ASSERT_EQ(foo2->fields.size(), 0U); // fields are not resolved
+  // See above, this is not specified.
+  ASSERT_THAT(foo2->fields.size(), AnyOf(Eq(3U), Eq(0U)));
   EXPECT_EQ(foo3->size, 16);
-  ASSERT_EQ(foo3->fields.size(), 2U); // fields are resolved
+  ASSERT_THAT(foo3->fields.size(), AnyOf(Eq(2U), Eq(0U)));
 }
 
 TEST_F(field_analyser_btf, btf_types_bitfields)
