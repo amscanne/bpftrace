@@ -4,6 +4,7 @@
 #include <cstring>
 #include <optional>
 #include <regex>
+#include <sstream>
 #include <string>
 #include <sys/stat.h>
 
@@ -846,19 +847,6 @@ void SemanticAnalyser::visit(Identifier &identifier)
   }
 }
 
-void SemanticAnalyser::builtin_args_tracepoint(AttachPoint *attach_point,
-                                               Builtin &builtin)
-{
-  std::string tracepoint_struct = TracepointFormatParser::get_struct_name(
-      *attach_point);
-  builtin.builtin_type = CreateRecord(
-      tracepoint_struct, bpftrace_.structs.Lookup(tracepoint_struct));
-  builtin.builtin_type.SetAS(
-      attach_point->target == "syscalls" ? AddrSpace::user : AddrSpace::kernel);
-  builtin.builtin_type.MarkCtxAccess();
-  builtin.builtin_type.is_tparg = true;
-}
-
 ProbeType SemanticAnalyser::single_provider_type(Probe *probe)
 {
   ProbeType type = ProbeType::invalid;
@@ -912,59 +900,7 @@ AddrSpace SemanticAnalyser::find_addrspace(ProbeType pt)
 void SemanticAnalyser::visit(Builtin &builtin)
 {
   if (builtin.ident == "ctx") {
-    auto *probe = get_probe(builtin, builtin.ident);
-    if (probe == nullptr)
-      return;
-    ProbeType pt = probetype(probe->attach_points[0]->provider);
-    bpf_prog_type bt = progtype(pt);
-    std::string func = probe->attach_points[0]->func;
-
-    for (auto *attach_point : probe->attach_points) {
-      ProbeType pt = probetype(attach_point->provider);
-      bpf_prog_type bt2 = progtype(pt);
-      if (bt != bt2)
-        builtin.addError()
-            << "ctx cannot be used in different BPF program types: "
-            << progtypeName(bt) << " and " << progtypeName(bt2);
-    }
-    switch (bt) {
-      case BPF_PROG_TYPE_KPROBE: {
-        auto record = bpftrace_.structs.Lookup("struct pt_regs");
-        if (!record.expired()) {
-          builtin.builtin_type = CreatePointer(
-              CreateRecord("struct pt_regs", record), AddrSpace::kernel);
-          builtin.builtin_type.MarkCtxAccess();
-        } else {
-          builtin.builtin_type = CreatePointer(CreateNone());
-        }
-        break;
-      }
-      case BPF_PROG_TYPE_TRACEPOINT:
-        builtin.addError() << "Use args instead of ctx in tracepoint";
-        break;
-      case BPF_PROG_TYPE_PERF_EVENT:
-        builtin.builtin_type = CreatePointer(
-            CreateRecord("struct bpf_perf_event_data",
-                         bpftrace_.structs.Lookup(
-                             "struct bpf_perf_event_data")),
-            AddrSpace::kernel);
-        builtin.builtin_type.MarkCtxAccess();
-        break;
-      case BPF_PROG_TYPE_TRACING:
-        if (pt == ProbeType::iter) {
-          std::string type = "struct bpf_iter__" + func;
-          builtin.builtin_type = CreatePointer(
-              CreateRecord(type, bpftrace_.structs.Lookup(type)),
-              AddrSpace::kernel);
-          builtin.builtin_type.MarkCtxAccess();
-        } else {
-          builtin.addError() << "invalid program type";
-        }
-        break;
-      default:
-        builtin.addError() << "invalid program type";
-        break;
-    }
+    assert(!builtin.builtin_type.IsNoneTy());
   } else if (builtin.ident == "pid" || builtin.ident == "tid") {
     builtin.builtin_type = CreateUInt32();
   } else if (builtin.ident == "nsecs" || builtin.ident == "__builtin_elapsed" ||
@@ -977,36 +913,9 @@ void SemanticAnalyser::visit(Builtin &builtin)
              builtin.ident == "__builtin_ncpus") {
     builtin.builtin_type = CreateUInt64();
   } else if (builtin.ident == "__builtin_curtask") {
-    // Retype curtask to its original type: struct task_struct.
-    builtin.builtin_type = CreatePointer(
-        CreateRecord("struct task_struct",
-                     bpftrace_.structs.Lookup("struct task_struct")),
-        AddrSpace::kernel);
+    assert(!builtin.builtin_type.IsNoneTy());
   } else if (builtin.ident == "__builtin_retval") {
-    auto *probe = get_probe(builtin, builtin.ident);
-    if (probe == nullptr)
-      return;
-    ProbeType type = single_provider_type(probe);
-
-    if (type == ProbeType::kretprobe || type == ProbeType::uretprobe) {
-      builtin.builtin_type = CreateUInt64();
-    } else if (type == ProbeType::fentry || type == ProbeType::fexit) {
-      const auto *arg = bpftrace_.structs.GetProbeArg(*probe,
-                                                      RETVAL_FIELD_NAME);
-      if (arg) {
-        builtin.builtin_type = arg->type;
-      } else
-        builtin.addError() << "Can't find a field " << RETVAL_FIELD_NAME;
-    } else {
-      builtin.addError()
-          << "The retval builtin can only be used with 'kretprobe' and "
-          << "'uretprobe' and 'fentry' probes"
-          << (type == ProbeType::tracepoint ? " (try to use args.ret instead)"
-                                            : "");
-    }
-    // For kretprobe, fentry, fexit -> AddrSpace::kernel
-    // For uretprobe -> AddrSpace::user
-    builtin.builtin_type.SetAS(find_addrspace(type));
+    assert(!builtin.builtin_type.IsNoneTy());
   } else if (builtin.ident == "kstack") {
     builtin.builtin_type = CreateStack(
         true, StackType{ .mode = bpftrace_.config_->stack_mode });
@@ -1118,53 +1027,7 @@ void SemanticAnalyser::visit(Builtin &builtin)
     }
     builtin.builtin_type = CreateUInt32();
   } else if (builtin.ident == "args") {
-    auto *probe = get_probe(builtin, builtin.ident);
-    if (probe == nullptr)
-      return;
-    for (auto *attach_point : probe->attach_points) {
-      ProbeType type = probetype(attach_point->provider);
-
-      if (type == ProbeType::tracepoint) {
-        builtin_args_tracepoint(attach_point, builtin);
-      }
-    }
-
-    ProbeType type = single_provider_type(probe);
-
-    if (type == ProbeType::invalid) {
-      builtin.addError()
-          << "The args builtin can only be used within the context of a single "
-             "probe type, e.g. \"probe1 {args}\" is valid while "
-             "\"probe1,probe2 {args}\" is not.";
-    } else if (type == ProbeType::fentry || type == ProbeType::fexit ||
-               type == ProbeType::uprobe || type == ProbeType::rawtracepoint) {
-      for (auto *attach_point : probe->attach_points) {
-        if (attach_point->target == "bpf") {
-          builtin.addError() << "The args builtin cannot be used for "
-                                "'fentry/fexit:bpf' probes";
-          return;
-        }
-      }
-      auto type_name = probe->args_typename();
-      builtin.builtin_type = CreateRecord(type_name,
-                                          bpftrace_.structs.Lookup(type_name));
-      if (builtin.builtin_type.GetFieldCount() == 0)
-        builtin.addError() << "Cannot read function parameters";
-
-      builtin.builtin_type.MarkCtxAccess();
-      builtin.builtin_type.is_funcarg = true;
-      builtin.builtin_type.SetAS(type == ProbeType::uprobe ? AddrSpace::user
-                                                           : AddrSpace::kernel);
-      // We'll build uprobe args struct on stack
-      if (type == ProbeType::uprobe)
-        builtin.builtin_type.is_internal = true;
-    } else if (type != ProbeType::tracepoint) // no special action for
-                                              // tracepoint
-    {
-      builtin.addError() << "The args builtin can only be used with "
-                            "tracepoint/fentry/uprobe probes ("
-                         << type << " used here)";
-    }
+    assert(!builtin.builtin_type.IsNoneTy());
   } else if (builtin.ident == "__builtin_session_is_return") {
     builtin.builtin_type = CreateBool();
   } else {
@@ -2005,8 +1868,8 @@ void SemanticAnalyser::visit(Call &call)
           continue;
         }
         call.addError() << "Unable to convert argument type, "
-                        << "function requires '" << type << "', "
-                        << "found '" << typestr(call.vargs[i].type())
+                        << "function requires '" << type << "', " << "found '"
+                        << typestr(call.vargs[i].type())
                         << "': " << compat_arg_type.takeError();
         continue;
       }
@@ -2805,8 +2668,8 @@ void SemanticAnalyser::visit(IfExpr &if_expr)
 
   if (!lhs.IsSameType(rhs)) {
     if (is_final_pass()) {
-      if_expr.addError() << "Branches must return the same type: "
-                         << "have '" << lhs << "' and '" << rhs << "'";
+      if_expr.addError() << "Branches must return the same type: " << "have '"
+                         << lhs << "' and '" << rhs << "'";
     }
     // This assignment is just temporary to prevent errors
     // before the final pass
@@ -3177,37 +3040,22 @@ void SemanticAnalyser::visit(FieldAccess &acc)
     return;
   }
 
-  std::map<std::string, std::shared_ptr<const Struct>> structs;
-
-  if (type.is_tparg) {
-    auto *probe = get_probe(acc);
-    if (probe == nullptr)
-      return;
-
-    for (AttachPoint *attach_point : probe->attach_points) {
-      if (probetype(attach_point->provider) != ProbeType::tracepoint) {
-        // The args builtin can only be used with tracepoint
-        // an error message is already generated in visit(Builtin)
-        // just continue semantic analysis
-        continue;
-      }
-
-      std::string tracepoint_struct = TracepointFormatParser::get_struct_name(
-          *attach_point);
-      structs[tracepoint_struct] =
-          bpftrace_.structs.Lookup(tracepoint_struct).lock();
-    }
-  } else {
-    structs[type.GetName()] = type.GetStruct();
-  }
+  structs[type.GetName()] = type.GetStruct();
 
   for (auto it : structs) {
     std::string cast_type = it.first;
     const auto record = it.second;
     if (!record->HasField(acc.field)) {
-      acc.addError() << "Struct/union of type '" << cast_type
-                     << "' does not contain " << "a field named '" << acc.field
-                     << "'";
+      auto &err = acc.addError();
+      err << "Struct/union of type '" << cast_type << "' does not contain "
+          << "a field named '" << acc.field << "'";
+      auto &hint = err.addHint();
+      hint << "Valid fields are:" << std::endl;
+      for (const auto &field : record->fields) {
+        hint << "* " << field.name << ":" << typestr(field.type) << std::endl;
+      }
+      hint << "STRUCT IS: " << static_cast<const void *>(record.get())
+           << std::endl;
     } else {
       const auto &field = record->GetField(acc.field);
 

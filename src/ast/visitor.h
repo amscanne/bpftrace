@@ -277,7 +277,7 @@ public:
   {
     return visitImpl(stmt.value);
   }
-  R visit([[maybe_unused]] const SizedType &type)
+  R visit([[maybe_unused]] SizedType &type)
   {
     return default_value();
   }
