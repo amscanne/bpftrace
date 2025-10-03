@@ -349,7 +349,7 @@ ast::Pass printPass(const std::string& name)
   return ast::Pass::create("print-" + name, [=](ast::ASTContext& ast) {
     std::cerr << "AST after: " << name << std::endl;
     std::cerr << "-------------------" << std::endl;
-    ast::Printer printer(std::cerr, false, true);
+    ast::Printer printer(ast, std::cerr, ast::Printer::Mode::Debug);
     printer.visit(ast.root);
     std::cerr << std::endl;
   });
@@ -857,8 +857,9 @@ int main(int argc, char* argv[])
       std::cerr << ok.takeError() << "\n";
       return 2;
     }
-    ast::Printer printer(std::cout, true, false);
+    ast::Printer printer(ast, std::cout);
     printer.visit(ast.root);
+    ast.diagnostics().emit(std::cerr);
     return 0; // All done.
   }
 

@@ -3,25 +3,8 @@
 
 #include "ast/context.h"
 #include "ast/location.h"
-#include "util/strings.h"
 
 namespace bpftrace::ast {
-
-std::vector<std::string> SourceLocation::comments() const
-{
-  if (!comments_) {
-    return {};
-  }
-  auto s = comments_->str();
-  // Trim all leading and trailing whitespace.
-  s.erase(0, s.find_first_not_of(" \t\n\r\f\v"));
-  s.erase(s.find_last_not_of(" \t\n\r\f\v") + 1);
-  auto parts = util::split_string(s, '\n');
-  if (parts.empty() && parts[0].empty()) {
-    return {};
-  }
-  return parts;
-}
 
 std::string SourceLocation::filename() const
 {
@@ -72,13 +55,6 @@ SourceLocation operator+(const SourceLocation &orig, const SourceLocation &loc)
     result.end.column = std::max(orig.end.column, loc.end.column);
   } else {
     result.end.column = orig.end.column;
-  }
-
-  // Anything that spans inherits the *first* location's comments.
-  result.comments_ = orig.comments_;
-  result.vspace_ = orig.vspace_ + loc.vspace_;
-  if (loc.comments_) {
-    result.add_comment(loc.comments_->str());
   }
 
   return result;
@@ -144,6 +120,37 @@ Location operator+(const Location &orig, const Location &expansion)
   nlink->parent.emplace(LocationChain::Context(Location(orig)));
   nlink->parent->msg << "expanded from";
   return nlink;
+}
+
+std::strong_ordering operator<=>(const SourceLocation &lhs,
+                                 const SourceLocation &rhs)
+{
+  if (auto cmp = lhs.begin.line <=> rhs.begin.line; cmp != 0) {
+    return cmp;
+  }
+  if (auto cmp = lhs.begin.column <=> rhs.begin.column; cmp != 0) {
+    return cmp;
+  }
+
+  // If begin positions are equal, compare by span length. Whichever spans
+  // longer is considered to be the more significant node (and therefore comes
+  // first).
+  auto lhs_span_lines = lhs.end.line - lhs.begin.line;
+  auto rhs_span_lines = rhs.end.line - rhs.begin.line;
+  if (auto cmp = rhs_span_lines <=> lhs_span_lines; cmp != 0) {
+    return cmp;
+  }
+
+  auto lhs_span_cols = lhs.end.column - lhs.begin.column;
+  auto rhs_span_cols = rhs.end.column - rhs.begin.column;
+  return rhs_span_cols <=> lhs_span_cols;
+}
+
+bool operator==(const SourceLocation &lhs, const SourceLocation &rhs)
+{
+  return lhs.begin.line == rhs.begin.line &&
+         lhs.begin.column == rhs.begin.column && lhs.end.line == rhs.end.line &&
+         lhs.end.column == rhs.end.column;
 }
 
 } // namespace bpftrace::ast

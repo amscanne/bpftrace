@@ -79,14 +79,13 @@ oct_esc  [0-7]{1,3}
     driver.token.reset();
     return t;
   }
-  driver.loc.reset_meta();
 %}
 
 ^"#!".*$                {
                           yy_push_state(SCRIPT, yyscanner);
                           return Parser::make_HEADER(yytext, driver.loc);
                         }
-{vspace}+               { driver.loc.advance_columns(yyleng); }
+{vspace}+               { driver.loc.advance_lines(yyleng); }
 \r                      { driver.loc.reset_column(); }
 .                       {
                           driver.loc.advance_columns(-1);
@@ -96,8 +95,12 @@ oct_esc  [0-7]{1,3}
 
 <CCOMMENT>{
   "*/"                  yy_pop_state(yyscanner);
-  \n                    { driver.loc.advance_lines(1); yy_pop_state(yyscanner); yy_push_state(CCOMMENTNL, yyscanner); driver.loc.add_comment("\n"); }
-  .                     { driver.loc.add_comment(yytext); }
+  \n                    { 
+                          driver.loc.advance_lines(1);
+                          yy_pop_state(yyscanner);
+                          yy_push_state(CCOMMENTNL, yyscanner);
+                        }
+  ([^*\n]|[*][^/\n])+   { driver.ctx.add_comment(driver.loc); }
   <<EOF>>               {
                            yy_pop_state(yyscanner);
                            driver.error(driver.loc, "end of file during comment");
@@ -106,12 +109,12 @@ oct_esc  [0-7]{1,3}
 <CCOMMENTNL>{
   "*/\n"                yy_pop_state(yyscanner);
   "*/"                  yy_pop_state(yyscanner);
-  " */\n"               yy_pop_state(yyscanner);
-  " */"                 yy_pop_state(yyscanner);
-  " * "                 { yy_pop_state(yyscanner); yy_push_state(CCOMMENT, yyscanner); }
-  " *"                  { yy_pop_state(yyscanner); yy_push_state(CCOMMENT, yyscanner); }
-  "   "                 { yy_pop_state(yyscanner); yy_push_state(CCOMMENT, yyscanner); }
-  \n                    { driver.loc.advance_lines(1); driver.loc.add_comment("\n"); }
+  "*"                   { }
+  {hspace}+             { }
+  \n                    {
+                          driver.loc.advance_lines(1);
+                          driver.ctx.add_comment(driver.loc); // Blank comment.
+                        }
   .                     {
                            driver.loc.advance_columns(-1);
                            unput(yytext[0]);
@@ -124,7 +127,7 @@ oct_esc  [0-7]{1,3}
                         }
 }
 <CPPCOMMENT>{
-  [^\n]+                { driver.loc.add_comment(yytext); }
+  [^\n]+                { driver.ctx.add_comment(driver.loc); }
   \n                    {
                           driver.loc.advance_lines(1);
                           yy_pop_state(yyscanner);
@@ -133,18 +136,22 @@ oct_esc  [0-7]{1,3}
   <<EOF>>               yy_pop_state(yyscanner);
 }
 <CPPCOMMENTNL>{
-  [/][/][ ]\n           { driver.loc.advance_lines(1); driver.loc.add_comment("\n"); }
-  [/][/]\n              { driver.loc.advance_lines(1); driver.loc.add_comment("\n"); }
-  \n                    { driver.loc.advance_lines(1); driver.loc.add_comment("\n"); }
+  {hspace}+             { }
+  [/][/][ ]\n           {
+                          driver.loc.advance_lines(1);
+                          driver.ctx.add_comment(driver.loc); // Empty.
+                        }
+  [/][/]\n              {
+                          driver.loc.advance_lines(1);
+                          driver.ctx.add_comment(driver.loc); // Empty.
+                        }
   "// "                 {
                           yy_pop_state(yyscanner);
                           yy_push_state(CPPCOMMENT, yyscanner);
-                          driver.loc.add_comment("\n");
                         }
   "//"                  {
                           yy_pop_state(yyscanner);
                           yy_push_state(CPPCOMMENT, yyscanner);
-                          driver.loc.add_comment("\n");
                         }
   .                     {
                           driver.loc.advance_columns(-1);
@@ -156,9 +163,13 @@ oct_esc  [0-7]{1,3}
 
 <SCRIPT>{
   {hspace}+               { }
-  {vspace}+               { driver.loc.advance_lines(yyleng); driver.loc.advance_vspace(yyleng); }
+  {vspace}+               {
+                            driver.ctx.add_vspace(driver.loc);
+                            driver.loc.advance_lines(yyleng);
+                          }
   \r                      { driver.loc.reset_column(); }
   "/* "                   { yy_push_state(CCOMMENT, yyscanner); }
+  "/**"                   { yy_push_state(CCOMMENT, yyscanner); }
   "/*"                    { yy_push_state(CCOMMENT, yyscanner); }
   "// "                   { yy_push_state(CPPCOMMENT, yyscanner); }
   "//"                    { yy_push_state(CPPCOMMENT, yyscanner); }

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <map>
 #include <memory>
+#include <variant>
 #include <vector>
 
 #include "ast/diagnostic.h"
@@ -31,6 +33,9 @@ public:
 
   const std::string filename;
   const std::string contents;
+
+  // Reads the contents of the source corresponding to a specific location.
+  std::string read(const SourceLocation &loc);
 
 private:
   std::vector<std::string> lines_;
@@ -87,6 +92,28 @@ public:
     return source_;
   }
 
+  void add_comment(SourceLocation loc)
+  {
+    state_->metadata_[loc] = Metadata::Comment;
+  }
+
+  void add_vspace(SourceLocation loc)
+  {
+    state_->metadata_[loc] = Metadata::VerticalSpace;
+  }
+
+  // This function builds a comment map for the parsed AST. For every created
+  // node, it provides a list of all the preceding (aka "owned") comments as
+  // well as the vertical space.
+  //
+  // For the vector, a string indicates a comment, while the size_t indicates
+  // that amount of vertical space. The reason that these are stored separately,
+  // is because a single node can have multiple comment groups separated by
+  // spacing. This general construction is preserved.
+  using MetaVariant = std::variant<std::string, size_t>;
+  using MetaMap = std::map<const Node *, std::vector<MetaVariant>>;
+  MetaMap build_meta_map() const;
+
   // clears all the nodes and diagnostics, but does not affect the underlying
   // `ASTSource` object. This is useful if you want to e.g. reparse the full
   // syntax tree in place.
@@ -96,6 +123,12 @@ public:
   Program *root = nullptr;
 
 private:
+  // Metadata tracks comments and vertical spacing.
+  enum Metadata {
+    Comment,
+    VerticalSpace,
+  };
+
   // State owns the underlying nodes; they are permitted to take a reference to
   // this object since their lifetimes are bound.
   class State {
@@ -103,6 +136,7 @@ private:
     State();
     std::vector<std::unique_ptr<Node>> nodes_;
     std::unique_ptr<Diagnostics> diagnostics_;
+    std::map<SourceLocation, Metadata> metadata_;
   };
 
   // wrap potentially converts external types to internal ones. At the moment,
