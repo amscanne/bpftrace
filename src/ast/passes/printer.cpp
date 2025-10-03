@@ -8,32 +8,53 @@
 namespace bpftrace::ast {
 
 template <typename T>
-static Location getloc(const T &t)
+static Node &getnode(const T &t)
 {
   if constexpr (std::is_same_v<T, Expression> || std::is_same_v<T, Statement>) {
-    return t.node().loc;
+    return t.node();
   } else {
-    return t->loc;
+    return *t;
   }
 }
 
+enum Layout {
+  Newlines,
+  Commas,
+  Both,
+};
+
 template <typename T>
 static void foreach(Printer &printer,
+                    std::ostream &out,
                     std::vector<T> &items,
-                    std::function<void(const Location &loc)> sep,
-                    bool inline_style)
+                    Layout layout = Newlines)
 {
   bool first = true;
   for (auto &item : items) {
-    auto loc = getloc(item);
     if (first) {
       first = false;
-    } else {
-      sep(loc);
+    } else if (layout == Layout::Both || layout == Layout::Commas) {
+      out << ", ";
     }
     first = false;
-    printer.print_meta(loc, inline_style);
+    printer.print_meta(getnode(item),
+                       layout == Layout::Commas,
+                       layout != Layout::Commas);
     printer.visit(item);
+  }
+  if (layout != Layout::Commas && !first) {
+    out << std::endl;
+  }
+}
+
+Printer::Printer(const ASTContext &ast, std::ostream &out, Mode mode)
+    : out_(out), mode_(mode)
+{
+  // If we are printing comments, we collect the metamap with vertical space and
+  // comment information. If we are not printing comments, then we don't need to
+  // bother doing this, and the empty map will result in nothing printed.
+  if (mode_ == Mode::Normal) {
+    meta_ = ast.build_meta_map();
   }
 }
 
@@ -127,11 +148,7 @@ void Printer::visit(Call &call)
 {
   out_ << call.func;
   out_ << "(";
-  foreach(
-      *this,
-      call.vargs,
-      [&]([[maybe_unused]] const Location &loc) { out_ << ", "; },
-      true);
+  foreach(*this, out_, call.vargs, Layout::Commas);
   out_ << ")";
 }
 
@@ -181,7 +198,7 @@ void Printer::visit(Typeinfo &typeinfo)
 void Printer::visit(MapDeclStatement &decl)
 {
   out_ << "let " << decl.ident << " = " << decl.bpf_type << "("
-       << decl.max_entries << ");" << std::endl;
+       << decl.max_entries << ");";
 }
 
 void Printer::visit(Map &map)
@@ -491,7 +508,7 @@ void Printer::visit(AssignConfigVarStatement &assignment)
         }
       },
       assignment.value);
-  out_ << ";" << std::endl;
+  out_ << ";";
 }
 
 void Printer::visit(VarDeclStatement &decl)
@@ -522,7 +539,7 @@ void Printer::visit(While &while_block)
 
 void Printer::visit(Range &range)
 {
-  if (!range.start.is_literal() || with_types_) {
+  if (!range.start.is_literal() || mode_ == Mode::Debug) {
     out_ << "(";
     visit(range.start);
     out_ << ")";
@@ -554,19 +571,11 @@ void Printer::visit(Config &config)
 {
   std::string indent(depth_, ' ');
 
-  out_ << "config = {" << std::endl;
+  out_ << "config = {";
   ++depth_;
-  foreach(
-      *this,
-      config.stmts,
-      [&](const Location &loc) {
-        if (loc && !loc->comments().empty()) {
-          out_ << std::endl;
-        }
-      },
-      false);
+  foreach(*this, out_, config.stmts, Layout::Newlines);
   --depth_;
-  out_ << "}" << std::endl;
+  out_ << "}";
 }
 
 void Printer::visit(Jump &jump)
@@ -605,24 +614,19 @@ void Printer::visit(Probe &probe)
 {
   // Emit all attachpoints with their respective comments. These are both
   // top-level statements and require a separator.
-  foreach(
-      *this,
-      probe.attach_points,
-      [&]([[maybe_unused]] const Location &loc) { out_ << ", " << std::endl; },
-      false);
+  foreach(*this, out_, probe.attach_points, Layout::Both);
   // Match the parsed predicate pattern, and format appropriately.
   auto *if_expr = probe.block->expr.as<IfExpr>();
   if (if_expr && probe.block->stmts.empty() && if_expr->left.is<BlockExpr>() &&
       if_expr->right.is<None>()) {
-    out_ << " /";
+    out_ << "/";
     visit_bare(if_expr->cond);
-    out_ << "/ ";
+    out_ << "/";
+    out_ << std::endl;
     visit_multiline(*if_expr->left.as<BlockExpr>());
   } else {
-    out_ << " ";
     visit(probe.block);
   }
-  out_ << std::endl;
 }
 
 void Printer::visit(SubprogArg &arg)
@@ -634,21 +638,16 @@ void Printer::visit(SubprogArg &arg)
 void Printer::visit(Subprog &subprog)
 {
   out_ << "fn " << subprog.name << "(";
-  foreach(
-      *this,
-      subprog.args,
-      [&]([[maybe_unused]] const Location &loc) { out_ << ", "; },
-      true);
+  foreach(*this, out_, subprog.args, Layout::Commas);
   out_ << ") : ";
   visit(subprog.return_type);
   out_ << " ";
   visit(subprog.block);
-  out_ << std::endl;
 }
 
 void Printer::visit(Import &imp)
 {
-  out_ << "import \"" << imp.name << "\";" << std::endl;
+  out_ << "import \"" << imp.name << "\";";
 }
 
 void Printer::visit(BlockExpr &block)
@@ -675,25 +674,12 @@ void Printer::visit(BlockExpr &block)
 
 void Printer::visit_multiline(BlockExpr &block)
 {
-  bool first = true;
-  auto lazy_sep = [&](const Location &loc) {
-    if (first) {
-      first = false;
-      return;
-    }
-    if (!loc) {
-      return;
-    }
-    if (loc && (!loc->comments().empty() || loc->vspace() != 0)) {
-      out_ << std::endl;
-    }
-  };
-  out_ << "{" << std::endl;
+  out_ << "{";
   depth_++;
-  foreach(*this, block.stmts, lazy_sep, false);
+  foreach(*this, out_, block.stmts, Layout::Newlines);
   if (!block.expr.is<None>()) {
     print_indent();
-    visit(block.expr);
+    visit(block.expr); // Will always print inline metadata.
     out_ << std::endl;
   }
   depth_--;
@@ -709,62 +695,21 @@ void Printer::visit(Comptime &comptime)
 
 void Printer::visit(Program &program)
 {
-  bool first = true;
-  auto check_first = [&]() {
-    if (!first) {
-      out_ << std::endl;
-    } else {
-      first = false;
-    }
-  };
-  auto always_sep = [&]([[maybe_unused]] const Location &loc) {
-    out_ << std::endl;
-  };
-  auto lazy_sep = [&](const Location &loc) {
-    if (loc && !loc->comments().empty()) {
-      out_ << std::endl;
-    }
-  };
-
   if (program.header && program.header->size() > 0) {
     out_ << *program.header << std::endl;
   }
 
-  if (!program.c_statements.empty()) {
-    check_first();
-    foreach(*this, program.c_statements, lazy_sep, false);
-  }
-
   if (program.config != nullptr && !program.config->stmts.empty()) {
-    check_first();
-    print_meta(program.config->loc, false);
+    print_meta(*program.config, false);
     visit(program.config);
   }
 
-  if (!program.imports.empty()) {
-    check_first();
-    foreach(*this, program.imports, lazy_sep, false);
-  }
-
-  if (!program.macros.empty()) {
-    check_first();
-    foreach(*this, program.macros, always_sep, false);
-  }
-
-  if (!program.map_decls.empty()) {
-    check_first();
-    foreach(*this, program.map_decls, lazy_sep, false);
-  }
-
-  if (!program.functions.empty()) {
-    check_first();
-    foreach(*this, program.functions, always_sep, false);
-  }
-
-  if (!program.probes.empty()) {
-    check_first();
-    foreach(*this, program.probes, always_sep, false);
-  }
+  foreach(*this, out_, program.c_statements, Layout::Newlines);
+  foreach(*this, out_, program.imports, Layout::Newlines);
+  foreach(*this, out_, program.macros, Layout::Newlines);
+  foreach(*this, out_, program.map_decls, Layout::Newlines);
+  foreach(*this, out_, program.functions, Layout::Newlines);
+  foreach(*this, out_, program.probes, Layout::Newlines);
 }
 
 static bool is_block(Expression &expr, bool block_ok)
@@ -782,19 +727,14 @@ static bool is_block(Expression &expr, bool block_ok)
 void Printer::visit(Macro &macro)
 {
   out_ << "macro " << macro.name << "(";
-  foreach(
-      *this,
-      macro.vargs,
-      [&]([[maybe_unused]] const Location &loc) { out_ << ", "; },
-      true);
+  foreach(*this, out_, macro.vargs, Layout::Commas);
   out_ << ") ";
   visit(macro.block);
-  out_ << std::endl;
 }
 
 void Printer::visit(Statement &stmt)
 {
-  print_meta(stmt.node().loc, false);
+  print_meta(stmt.node(), false);
   print_indent();
   visit(stmt.value);
   // Emit a semi-colon if it is not a block statement.
@@ -804,7 +744,6 @@ void Printer::visit(Statement &stmt)
       out_ << ";";
     }
   }
-  out_ << std::endl;
 }
 
 void Printer::visit(ExprStatement &stmt)
@@ -814,8 +753,9 @@ void Printer::visit(ExprStatement &stmt)
 
 void Printer::visit(Expression &expr)
 {
-  bool needs_parens = expr.is<Binop>() || (expr.is<Unop>() && with_types_) ||
-                      (expr.is<Cast>() && with_types_);
+  bool needs_parens = expr.is<Binop>() ||
+                      (expr.is<Unop>() && mode_ == Mode::Debug) ||
+                      (expr.is<Cast>() && mode_ == Mode::Debug);
   if (needs_parens) {
     out_ << "(";
   }
@@ -828,7 +768,7 @@ void Printer::visit(Expression &expr)
 
 void Printer::visit_bare(Expression &expr)
 {
-  print_meta(expr.node().loc, true);
+  print_meta(expr.node(), true);
   visit(expr.value);
 }
 
@@ -839,7 +779,7 @@ void Printer::visit(const SizedType &type)
 
 void Printer::print_type(const SizedType &ty)
 {
-  if (!with_types_ || ty.IsNoneTy())
+  if (mode_ != Mode::Debug || ty.IsNoneTy())
     return;
   out_ << " /* " << typestr(ty, true);
   if (ty.IsCtxAccess())
@@ -849,35 +789,49 @@ void Printer::print_type(const SizedType &ty)
   out_ << " */";
 }
 
-void Printer::print_meta(const Location &loc, bool inline_style)
+void Printer::print_meta(const Node &node, bool inline_style, bool force_vspace)
 {
-  if (!with_comments_ || !loc) {
-    return;
+  auto it = meta_.find(&node);
+  if (it == meta_.end()) {
+    return; // Nothing to print.
   }
-  const auto &comments = loc->comments();
   if (!inline_style) {
-    for (const auto &part : comments) {
-      print_indent();
-      out_ << "// " << part << std::endl;
-    }
-  } else if (!comments.empty()) {
-    out_ << "/* ";
-    bool first = true;
-    for (const auto &part : comments) {
-      if (first) {
-        first = false;
+    size_t total_vspace = 0;
+    for (const auto &part : it->second) {
+      if (std::holds_alternative<size_t>(part)) {
+        for (size_t i = 0; i < std::get<size_t>(part); i++) {
+          out_ << std::endl;
+          total_vspace++;
+        }
       } else {
-        out_ << " ";
+        print_indent();
+        out_ << "// " << std::get<std::string>(part) << std::endl;
       }
-      out_ << part;
     }
-    out_ << "*/ ";
+    if (total_vspace == 0 && force_vspace) {
+      out_ << std::endl;
+    }
+  } else {
+    // In the style is inline, then we drop the vertical space.
+    bool first = true;
+    for (const auto &part : it->second) {
+      if (std::holds_alternative<std::string>(part)) {
+        if (first) {
+          out_ << "/* ";
+          first = false;
+        } else {
+          out_ << " ";
+        }
+        out_ << std::get<std::string>(part);
+      }
+      if (!first) {
+        out_ << "*/ ";
+      }
+    }
   }
-}
-
-void Printer::emit(const std::string &s)
-{
-  out_ << s;
+  // Remove all comments and vertical spacing once it has been incorporated
+  // and printed by a single node.
+  meta_.erase(it);
 }
 
 void Printer::print_indent()

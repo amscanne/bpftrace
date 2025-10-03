@@ -8,10 +8,13 @@ namespace bpftrace::ast {
 
 class Printer : public Visitor<Printer> {
 public:
-  explicit Printer(std::ostream &out,
-                   bool with_comments = false,
-                   bool with_types = false)
-      : out_(out), with_comments_(with_comments), with_types_(with_types) {};
+  enum Mode {
+    Normal, // Print with full comments and spacing.
+    Debug,  // Print with no comments, spacing but full types.
+  };
+  explicit Printer(const ASTContext &ast,
+                   std::ostream &out,
+                   Mode mode = Normal);
 
   using Visitor<Printer>::visit;
   void visit(CStatement &cstmt);
@@ -77,14 +80,15 @@ public:
   void visit_multiline(BlockExpr &block);
 
   // Used by helpers.
-  void print_meta(const Location &loc, bool inline_style);
-  void emit(const std::string &s);
+  void print_meta(const Node &node,
+                  bool inline_style,
+                  bool force_vspace = false);
 
 private:
   std::ostream &out_;
   int depth_ = 0;
-  bool with_comments_ = false;
-  bool with_types_ = false;
+  Mode mode_;
+  ASTContext::MetaMap meta_;
 
   void print_type(const SizedType &ty);
   void print_indent();
