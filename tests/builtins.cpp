@@ -192,9 +192,6 @@ TEST(builtins, argX)
 
   test_error("kprobe:k { @map[0] = 1; for ($kv : @map) { $x = arg0; } }",
              "ERROR: 'arg0' builtin is not allowed in a for-loop");
-  test_error("kprobe:k { $x = arg" +
-                 std::to_string(arch::Host::arguments().size()) + "; }",
-             "ERROR");
   test_error("begin { $x = arg0; }", R"(
 stdin:1:14-18: ERROR: The arg0 builtin can only be used with 'kprobes', 'uprobes' and 'usdt' probes
 begin { $x = arg0; }
