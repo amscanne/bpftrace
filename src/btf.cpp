@@ -569,7 +569,6 @@ Result<std::shared_ptr<Struct>> BTF::resolve_args(std::string_view func,
             "function not traceable (probably it is inlined or marked as "
             "\"notrace\")");
       }
-      return nullptr;
     }
   }
 

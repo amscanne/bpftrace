@@ -3691,7 +3691,6 @@ TEST_F(SemanticAnalyserTest, type_ctx)
   auto *fieldaccess = assignment->expr.as<ast::FieldAccess>();
   EXPECT_EQ(CreateInt64(), fieldaccess->field_type);
   auto *unop = fieldaccess->expr.as<ast::Unop>();
-  EXPECT_TRUE(unop->result_type.IsCtxAccess());
   auto *var = unop->expr.as<ast::Variable>();
   EXPECT_TRUE(var->var_type.IsPtrTy());
 
@@ -3701,9 +3700,7 @@ TEST_F(SemanticAnalyserTest, type_ctx)
   auto *arrayaccess = assignment->expr.as<ast::ArrayAccess>();
   EXPECT_EQ(CreateInt16(), arrayaccess->element_type);
   fieldaccess = arrayaccess->expr.as<ast::FieldAccess>();
-  EXPECT_TRUE(fieldaccess->field_type.IsCtxAccess());
   unop = fieldaccess->expr.as<ast::Unop>();
-  EXPECT_TRUE(unop->result_type.IsCtxAccess());
   var = unop->expr.as<ast::Variable>();
   EXPECT_TRUE(var->var_type.IsPtrTy());
 
@@ -3720,9 +3717,7 @@ TEST_F(SemanticAnalyserTest, type_ctx)
   fieldaccess = assignment->expr.as<ast::FieldAccess>();
   EXPECT_EQ(chartype, fieldaccess->field_type);
   fieldaccess = fieldaccess->expr.as<ast::FieldAccess>();
-  EXPECT_TRUE(fieldaccess->field_type.IsCtxAccess());
   unop = fieldaccess->expr.as<ast::Unop>();
-  EXPECT_TRUE(unop->result_type.IsCtxAccess());
   var = unop->expr.as<ast::Variable>();
   EXPECT_TRUE(var->var_type.IsPtrTy());
 
@@ -3736,7 +3731,6 @@ TEST_F(SemanticAnalyserTest, type_ctx)
   fieldaccess = unop->expr.as<ast::FieldAccess>();
   EXPECT_TRUE(fieldaccess->field_type.IsPtrTy());
   unop = fieldaccess->expr.as<ast::Unop>();
-  EXPECT_TRUE(unop->result_type.IsCtxAccess());
   var = unop->expr.as<ast::Variable>();
   EXPECT_TRUE(var->var_type.IsPtrTy());
 

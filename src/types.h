@@ -183,7 +183,6 @@ private:
   AddrSpace as_ = AddrSpace::none;
   bool is_signed_ = false;
   bool is_anon_ = false;
-  bool ctx_ = false;                              // Is bpf program context
   std::unordered_set<std::string> btf_type_tags_; // Only populated for
                                                   // Type::pointer
   size_t num_elements_ = 0; // Only populated for array types
@@ -203,7 +202,6 @@ private:
             is_signed_,
             element_type_,
             name_,
-            ctx_,
             as_,
             size_bits_,
             inner_struct_);
@@ -246,16 +244,6 @@ public:
     return btf_type_tags_;
   }
 
-  bool IsCtxAccess() const
-  {
-    return ctx_;
-  };
-
-  void MarkCtxAccess()
-  {
-    ctx_ = true;
-  };
-
   bool IsByteArray() const;
   bool IsAggregate() const;
   bool IsStack() const;
@@ -270,7 +258,7 @@ public:
   {
     return type_ != Type::none && type_ != Type::stack_mode &&
            type_ != Type::timestamp_mode &&
-           (!IsCtxAccess() || is_funcarg); // args builtin is printable
+           !is_funcarg; // args builtin is printable
   }
 
   void SetSign(bool is_signed)

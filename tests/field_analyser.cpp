@@ -2,6 +2,7 @@
 #include "ast/passes/ap_probe_expansion.h"
 #include "ast/passes/args_resolver.h"
 #include "ast/passes/attachpoint_passes.h"
+#include "ast/passes/macro_expansion.h"
 #include "driver.h"
 #include "mocks.h"
 #include "gtest/gtest.h"
@@ -27,6 +28,7 @@ void test(BPFtrace &bpftrace, const std::string &input, bool ok = true)
                     .add(CreateParsePass())
                     .add(ast::CreateParseAttachpointsPass())
                     .add(ast::CreateProbeAndApExpansionPass())
+                    .add(ast::CreateMacroExpansionPass())
                     .add(ast::CreateArgsResolverPass())
                     .add(ast::CreateFieldAnalyserPass())
                     .run();

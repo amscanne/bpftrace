@@ -15,8 +15,6 @@ std::string Printer::type(const SizedType &ty)
     return "";
   std::stringstream buf;
   buf << " :: [" << typestr(ty);
-  if (ty.IsCtxAccess())
-    buf << ", ctx: 1";
   if (ty.GetAS() != AddrSpace::none)
     buf << ", AS(" << ty.GetAS() << ")";
   buf << "]";
