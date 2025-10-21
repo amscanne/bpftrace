@@ -652,15 +652,37 @@ void TextOutput::runtime_error(int retcode, const RuntimeErrorInfo &info)
   }
 }
 
-void TextOutput::benchmark_results(
-    const std::vector<std::pair<std::string, uint32_t>> &results)
+void TextOutput::test_result(const std::vector<std::string> &all_tests,
+                             size_t index,
+                             bool passed,
+                             const std::string &output)
+{
+  if (passed) {
+    // On success, just print a check.
+    out_ << " ✓ " << all_tests[index] << std::endl;
+    return;
+  }
+
+  // On failure, print the contents of the test.
+  out_ << " ✗ " << all_tests[index] << std::endl;
+  auto lines = util::split_string(output, '\n');
+  for (const auto &line : lines) {
+    if (!line.empty()) {
+      out_ << " | " << line << std::endl;
+    }
+  }
+}
+
+void TextOutput::benchmark_result(const std::vector<std::string> &all_benches,
+                                  size_t index,
+                                  uint32_t result)
 {
   const std::string BENCHMARK = "BENCHMARK";
   const std::string AVERAGE_TIME = "AVERAGE TIME";
   size_t longest_name = BENCHMARK.size();
 
-  for (const auto &benchmark : results) {
-    longest_name = std::max(longest_name, benchmark.first.size());
+  for (const auto &name : all_benches) {
+    longest_name = std::max(longest_name, name.size());
   }
 
   auto sep = [&]() {
@@ -669,24 +691,24 @@ void TextOutput::benchmark_results(
          << std::endl;
   };
 
-  sep();
-  out_ << "| " << std::left << std::setw(longest_name) << std::setfill(' ')
-       << BENCHMARK << " | " << AVERAGE_TIME << " |" << std::endl;
-  sep();
-
-  for (const auto &benchmark : results) {
-    auto [unit, scale] = util::duration_str(
-        std::chrono::nanoseconds(benchmark.second));
-    std::stringstream val;
-    val << benchmark.second / scale << unit;
+  if (index == 0) {
+    sep();
     out_ << "| " << std::left << std::setw(longest_name) << std::setfill(' ')
-         << benchmark.first << " | " << std::left
-         << std::setw(AVERAGE_TIME.size()) << std::setfill(' ') << val.str()
-         << " |" << std::endl;
+         << BENCHMARK << " | " << AVERAGE_TIME << " |" << std::endl;
+    sep();
   }
 
-  sep();
-  out_ << std::endl;
+  auto [unit, scale] = util::duration_str(std::chrono::nanoseconds(result));
+  std::stringstream val;
+  val << (result / scale) << unit;
+  out_ << "| " << std::left << std::setw(longest_name) << std::setfill(' ')
+       << all_benches[index] << " | " << std::left
+       << std::setw(AVERAGE_TIME.size()) << std::setfill(' ') << val.str()
+       << " |" << std::endl;
+
+  if (index == all_benches.size() - 1) {
+    sep();
+  }
 }
 
 void TextOutput::end()

@@ -507,10 +507,22 @@ void JsonOutput::runtime_error(int retcode, const RuntimeErrorInfo &info)
   out_ << R"(})" << std::endl;
 }
 
-void JsonOutput::benchmark_results(
-    const std::vector<std::pair<std::string, uint32_t>> &results)
+void JsonOutput::test_result(const std::vector<std::string> &all_tests,
+                             size_t index,
+                             bool passed,
+                             const std::string &output)
 {
-  emit_data(out_, "benchmark_results", std::nullopt, results);
+  Primitive::Record result;
+  result.fields.emplace_back("passed", passed);
+  result.fields.emplace_back("output", output);
+  emit_data(out_, "test_result", all_tests[index], result);
+}
+
+void JsonOutput::benchmark_result(const std::vector<std::string> &all_benches,
+                                  size_t index,
+                                  uint32_t result)
+{
+  emit_data(out_, "benchmark_result", all_benches[index], result);
 }
 
 void JsonOutput::end()
