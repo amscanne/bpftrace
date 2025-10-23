@@ -90,6 +90,7 @@ enum Options {
   DEBUG,
   DRY_RUN,
   VERIFY_LLVM_IR,
+  FMT,
 };
 
 constexpr auto FULL_SEARCH = "*:*";
@@ -424,6 +425,10 @@ Args parse_args(int argc, char* argv[])
             .has_arg = required_argument,
             .flag = nullptr,
             .val = Options::TEST_MODE },
+    option{ .name = "fmt",
+            .has_arg = no_argument,
+            .flag = nullptr,
+            .val = Options::FMT },
     option{ .name = "aot",
             .has_arg = required_argument,
             .flag = nullptr,
@@ -486,6 +491,13 @@ Args parse_args(int argc, char* argv[])
                         "'compiler-bench', 'bench' or 'format'.";
           exit(1);
         }
+        break;
+      case Options::FMT: // --fmt
+        if (args.test_mode != TestMode::NONE) {
+          LOG(ERROR) << "ERROR: --fmt conflicts with another mode.";
+          exit(1);
+        }
+        args.test_mode = TestMode::FORMAT;
         break;
       case Options::AOT: // --aot
         args.aot = optarg;
@@ -857,8 +869,19 @@ int main(int argc, char* argv[])
       std::cerr << ok.takeError() << "\n";
       return 2;
     }
-    ast::Printer printer(ast, std::cout);
-    printer.visit(ast.root);
+    if (!args.output_file.empty()) {
+      std::ofstream out(args.output_file);
+      if (out.fail()) {
+        LOG(ERROR) << "failed to open file '" << args.output_file
+                   << "': " << std::strerror(errno);
+        exit(1);
+      }
+      ast::Printer printer(ast, out);
+      printer.visit(ast.root);
+    } else {
+      ast::Printer printer(ast, std::cout);
+      printer.visit(ast.root);
+    }
     ast.diagnostics().emit(std::cerr);
     return 0; // All done.
   }

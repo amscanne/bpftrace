@@ -125,32 +125,17 @@ Location operator+(const Location &orig, const Location &expansion)
 std::strong_ordering operator<=>(const SourceLocation &lhs,
                                  const SourceLocation &rhs)
 {
+  // Compare the location of the first character.
   if (auto cmp = lhs.begin.line <=> rhs.begin.line; cmp != 0) {
     return cmp;
   }
-  if (auto cmp = lhs.begin.column <=> rhs.begin.column; cmp != 0) {
-    return cmp;
-  }
-
-  // If begin positions are equal, compare by span length. Whichever spans
-  // longer is considered to be the more significant node (and therefore comes
-  // first).
-  auto lhs_span_lines = lhs.end.line - lhs.begin.line;
-  auto rhs_span_lines = rhs.end.line - rhs.begin.line;
-  if (auto cmp = rhs_span_lines <=> lhs_span_lines; cmp != 0) {
-    return cmp;
-  }
-
-  auto lhs_span_cols = lhs.end.column - lhs.begin.column;
-  auto rhs_span_cols = rhs.end.column - rhs.begin.column;
-  return rhs_span_cols <=> lhs_span_cols;
+  return lhs.begin.column <=> rhs.begin.column;
 }
 
 bool operator==(const SourceLocation &lhs, const SourceLocation &rhs)
 {
   return lhs.begin.line == rhs.begin.line &&
-         lhs.begin.column == rhs.begin.column && lhs.end.line == rhs.end.line &&
-         lhs.end.column == rhs.end.column;
+         lhs.begin.column == rhs.begin.column;
 }
 
 } // namespace bpftrace::ast

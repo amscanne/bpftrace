@@ -79,17 +79,15 @@ public:
   void visit_multiline(IfExpr &if_expr);
   void visit_multiline(BlockExpr &block);
 
-  // Used by helpers.
-  void print_meta(const Node &node,
-                  bool inline_style,
-                  bool force_vspace = false);
-
 private:
   std::ostream &out_;
   int depth_ = 0;
   Mode mode_;
-  ASTContext::MetaMap meta_;
+  MetaMap meta_;
 
+  void print_meta(const Node &node,
+                  std::optional<size_t> min_vspace = std::nullopt,
+                  std::optional<size_t> max_vspace = std::nullopt);
   void print_type(const SizedType &ty);
   void print_indent();
 };

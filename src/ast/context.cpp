@@ -18,8 +18,8 @@ ASTSource::ASTSource(std::string &&filename, std::string &&input)
 std::string ASTSource::read(const SourceLocation &loc)
 {
   std::stringstream ss;
-  for (int line = loc.begin.line - 1; line <= loc.end.line - 1; line++) {
-    auto &srcline = lines_[line];
+  for (int line = loc.begin.line; line <= loc.end.line; line++) {
+    auto &srcline = lines_[line - 1];
     if (line == loc.begin.line && line == loc.end.line) {
       ss << srcline.substr(loc.begin.column - 1,
                            loc.end.column - loc.begin.column);
@@ -28,10 +28,21 @@ std::string ASTSource::read(const SourceLocation &loc)
     } else if (line < loc.end.line - 1) {
       ss << srcline;
     } else {
-      ss << srcline.substr(0, loc.end.column);
+      ss << srcline.substr(0, loc.end.column - 1);
     }
   }
   return ss.str();
+}
+
+std::vector<MetaMap::Variant> MetaMap::pop(const Node &node)
+{
+  auto it = map_.find(node.loc->current);
+  if (it == map_.end()) {
+    return {};
+  }
+  auto result = std::move(it->second);
+  map_.erase(it);
+  return result;
 }
 
 ASTContext::ASTContext(std::string &&filename, std::string &&contents)
@@ -61,22 +72,15 @@ ASTContext::State::State() : diagnostics_(std::make_unique<Diagnostics>())
 {
 }
 
-ASTContext::MetaMap ASTContext::build_meta_map() const
+MetaMap ASTContext::build_meta_map() const
 {
   // Build a location index for all nodes.
-  std::map<SourceLocation, const Node *> loc_map;
+  std::set<SourceLocation> loc_map;
   for (const auto &node : state_->nodes_) {
-    // This overrides any existing nodes with identical locations with later
-    // nodes. The later nodes are likely to be the ones used by any
-    // transformations, etc. and therefore the ones to get printed.
-    loc_map[node->loc->current] = node.get();
+    loc_map.insert(node->loc->current);
   }
 
-  // Now, for each piece of metadata, find the closest node. This relies on the
-  // comparison operators for SourceLocation, which indicates that larger
-  // entries come *first* in the node hierarchy, when their beginning locations
-  // are matching. This allows for the comment and space to be associated with
-  // the largest logical component in the AST, as is the likely intention.
+  // Now, for each piece of metadata, find the closest node.
   MetaMap result;
   for (auto &[meta_loc, meta_type] : state_->metadata_) {
     auto it = loc_map.upper_bound(meta_loc);
@@ -84,7 +88,7 @@ ASTContext::MetaMap ASTContext::build_meta_map() const
       // This is a trailing comment? Weird. We lose this.
       continue;
     }
-    auto &vec = result[it->second];
+    auto &vec = result.map_[*it];
     switch (meta_type) {
       case VerticalSpace:
         vec.emplace_back(

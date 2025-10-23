@@ -107,8 +107,8 @@ oct_esc  [0-7]{1,3}
                         }
 }
 <CCOMMENTNL>{
-  "*/\n"                yy_pop_state(yyscanner);
   "*/"                  yy_pop_state(yyscanner);
+  "* "                  { }
   "*"                   { }
   {hspace}+             { }
   \n                    {
@@ -168,8 +168,9 @@ oct_esc  [0-7]{1,3}
                             driver.loc.advance_lines(yyleng);
                           }
   \r                      { driver.loc.reset_column(); }
-  "/* "                   { yy_push_state(CCOMMENT, yyscanner); }
+  "/** "                  { yy_push_state(CCOMMENT, yyscanner); }
   "/**"                   { yy_push_state(CCOMMENT, yyscanner); }
+  "/* "                   { yy_push_state(CCOMMENT, yyscanner); }
   "/*"                    { yy_push_state(CCOMMENT, yyscanner); }
   "// "                   { yy_push_state(CPPCOMMENT, yyscanner); }
   "//"                    { yy_push_state(CPPCOMMENT, yyscanner); }

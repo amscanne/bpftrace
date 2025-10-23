@@ -43,6 +43,29 @@ private:
   friend class SourceLocation;
 };
 
+// MetaMap is an index of comments, etc.
+//
+// It lookups and removes comments associated with each node.
+class MetaMap {
+public:
+  MetaMap() = default;
+  MetaMap(const MetaMap &other) = delete;
+  MetaMap &operator=(const MetaMap &other) = delete;
+  MetaMap(MetaMap &&other) = default;
+  MetaMap &operator=(MetaMap &&other) = default;
+
+  // Variant covers comments and vertical space.
+  //
+  // Pop will remove the information from the map. This is expected
+  // to be processed by the first matching node during formatting.
+  using Variant = std::variant<std::string, size_t>;
+  std::vector<Variant> pop(const Node &node);
+
+private:
+  std::map<SourceLocation, std::vector<Variant>> map_;
+  friend class ASTContext;
+};
+
 // Manages the lifetime of AST nodes.
 //
 // Nodes allocated by an ASTContext will be kept alive for the duration of the
@@ -105,13 +128,6 @@ public:
   // This function builds a comment map for the parsed AST. For every created
   // node, it provides a list of all the preceding (aka "owned") comments as
   // well as the vertical space.
-  //
-  // For the vector, a string indicates a comment, while the size_t indicates
-  // that amount of vertical space. The reason that these are stored separately,
-  // is because a single node can have multiple comment groups separated by
-  // spacing. This general construction is preserved.
-  using MetaVariant = std::variant<std::string, size_t>;
-  using MetaMap = std::map<const Node *, std::vector<MetaVariant>>;
   MetaMap build_meta_map() const;
 
   // clears all the nodes and diagnostics, but does not affect the underlying
