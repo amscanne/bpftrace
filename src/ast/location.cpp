@@ -35,24 +35,24 @@ std::ostream &operator<<(std::ostream &out, const SourceLocation &loc)
   return out;
 }
 
-SourceLocation operator+(const SourceLocation &orig, const SourceLocation &loc)
+SourceLocation operator+(const SourceLocation &orig, const SourceLocation &other)
 {
   auto result = SourceLocation(orig.source_);
-  result.begin.line = std::min(orig.begin.line, loc.begin.line);
-  result.end.line = std::max(orig.end.line, loc.end.line);
+  result.begin.line = std::min(orig.begin.line, other.begin.line);
+  result.end.line = std::max(orig.end.line, other.end.line);
 
-  if (orig.begin.line < loc.begin.line) {
+  if (orig.begin.line < other.begin.line) {
     result.begin.column = orig.begin.column;
-  } else if (orig.begin.line == loc.begin.line) {
-    result.begin.column = std::min(orig.begin.column, loc.begin.column);
+  } else if (orig.begin.line == other.begin.line) {
+    result.begin.column = std::min(orig.begin.column, other.begin.column);
   } else {
-    result.begin.column = loc.begin.column;
+    result.begin.column = other.begin.column;
   }
 
-  if (orig.end.line < loc.end.line) {
-    result.end.column = loc.end.column;
-  } else if (orig.end.line == loc.end.line) {
-    result.end.column = std::max(orig.end.column, loc.end.column);
+  if (orig.end.line < other.end.line) {
+    result.end.column = other.end.column;
+  } else if (orig.end.line == other.end.line) {
+    result.end.column = std::max(orig.end.column, other.end.column);
   } else {
     result.end.column = orig.end.column;
   }
@@ -125,17 +125,31 @@ Location operator+(const Location &orig, const Location &expansion)
 std::strong_ordering operator<=>(const SourceLocation &lhs,
                                  const SourceLocation &rhs)
 {
-  // Compare the location of the first character.
   if (auto cmp = lhs.begin.line <=> rhs.begin.line; cmp != 0) {
     return cmp;
   }
-  return lhs.begin.column <=> rhs.begin.column;
+  if (auto cmp = lhs.begin.column <=> rhs.begin.column; cmp != 0) {
+    return cmp;
+  }
+
+  // If begin positions are equal, compare by span length. Whichever spans
+  // longer is considered to be the first node.
+  auto lhs_span_lines = lhs.end.line - lhs.begin.line;
+  auto rhs_span_lines = rhs.end.line - rhs.begin.line;
+  if (auto cmp = rhs_span_lines <=> lhs_span_lines; cmp != 0) {
+    return cmp;
+  }
+
+  auto lhs_span_cols = lhs.end.column - lhs.begin.column;
+  auto rhs_span_cols = rhs.end.column - rhs.begin.column;
+  return rhs_span_cols <=> lhs_span_cols;
 }
 
 bool operator==(const SourceLocation &lhs, const SourceLocation &rhs)
 {
   return lhs.begin.line == rhs.begin.line &&
-         lhs.begin.column == rhs.begin.column;
+         lhs.begin.column == rhs.begin.column && lhs.end.line == rhs.end.line &&
+         lhs.end.column == rhs.end.column;
 }
 
 } // namespace bpftrace::ast
