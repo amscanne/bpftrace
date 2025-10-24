@@ -30,7 +30,7 @@ public:
       : ast_(ast),
         bpftrace_(bpftrace),
         listing_(listing),
-        has_child_(has_child) {};
+        has_child_(has_child){};
 
   using Visitor<AttachPointChecker>::visit;
   void visit(AttachPoint &ap);

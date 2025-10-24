@@ -816,7 +816,7 @@ TYPED_TEST(ASTTest, Cloning)
   ASSERT_FALSE(nodes.empty());
 
   for (size_t i = 0; i < nodes.size(); ++i) {
-    auto *cloned = clone(this->ctx, nodes[i], nullptr);
+    auto *cloned = clone(this->ctx, Location(), nodes[i]);
     for (size_t j = 0; j < nodes.size(); ++j) {
       if (j == i) {
         EXPECT_EQ(deref(cloned), deref(nodes[j]));

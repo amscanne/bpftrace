@@ -194,6 +194,10 @@ oct_esc  [0-7]{1,3}
                             yy_push_state(AFTER_COLON, yyscanner);
                             return Parser::make_COLON(driver.loc);
                           }
+  /* N.B. The newline following semi-colons and braces does not count as explicit vspace. */
+  [;]\n                   { return Parser::make_SEMI(driver.loc); }
+  [{]\n                   { return Parser::make_LBRACE(driver.loc); }
+  [}]\n                   { return Parser::make_RBRACE(driver.loc); }
   ";"                     { return Parser::make_SEMI(driver.loc); }
   "{"                     { return Parser::make_LBRACE(driver.loc); }
   "}"                     { return Parser::make_RBRACE(driver.loc); }

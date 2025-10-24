@@ -10,7 +10,7 @@ namespace bpftrace::ast {
 
 class SimplifyTypes : public Visitor<SimplifyTypes, std::optional<Expression>> {
 public:
-  SimplifyTypes(ASTContext &ast) : ast_(ast) {};
+  SimplifyTypes(ASTContext &ast) : ast_(ast){};
 
   using Visitor<SimplifyTypes, std::optional<Expression>>::visit;
 

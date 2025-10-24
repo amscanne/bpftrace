@@ -36,7 +36,15 @@ std::string ASTSource::read(const SourceLocation &loc)
 
 std::vector<MetaMap::Variant> MetaMap::pop(const Node &node)
 {
-  auto it = map_.find(node.loc->current);
+  // See build_meta_map. We zonk the end line and column for that index.
+  // This allows us to match nodes against the location of the metadata,
+  // rather than requiring a very strict association with the node.
+  SourceLocation loc = node.loc->current;
+  loc.end.line = 0;
+  loc.end.column = 0;
+
+  // Once matched, the metadata is removed.
+  auto it = map_.find(loc);
   if (it == map_.end()) {
     return {};
   }
@@ -75,9 +83,13 @@ ASTContext::State::State() : diagnostics_(std::make_unique<Diagnostics>())
 MetaMap ASTContext::build_meta_map() const
 {
   // Build a location index for all nodes.
-  std::set<SourceLocation> loc_map;
+  std::map<SourceLocation, const Node *> loc_map;
   for (const auto &node : state_->nodes_) {
-    loc_map.insert(node->loc->current);
+    loc_map[node->loc->current] = node.get();
+
+    std::cerr << "ALL LOCS: " << typeid(*(node.get())).name() << " @ "
+              << node->loc->current.begin.line << ":"
+              << node->loc->current.begin.column << std::endl;
   }
 
   // Now, for each piece of metadata, find the closest node.
@@ -88,7 +100,17 @@ MetaMap ASTContext::build_meta_map() const
       // This is a trailing comment? Weird. We lose this.
       continue;
     }
-    auto &vec = result.map_[*it];
+
+    std::cerr << "MAP: " << meta_loc.begin.line << ":" << meta_loc.begin.column
+              << " => " << typeid(*(it->second)).name() << " @ "
+              << it->second->loc->current.begin.line << ":"
+              << it->second->loc->current.begin.column << std::endl;
+
+    // The result map uses zonked end columns; see above.
+    auto loc = it->first;
+    loc.end.line = 0;
+    loc.end.column = 0;
+    auto &vec = result.map_[loc];
     switch (meta_type) {
       case VerticalSpace:
         vec.emplace_back(

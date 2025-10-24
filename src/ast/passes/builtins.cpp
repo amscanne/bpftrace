@@ -15,7 +15,7 @@ namespace {
 class Builtins : public Visitor<Builtins, std::optional<Expression>> {
 public:
   explicit Builtins(ASTContext &ast, BPFtrace &bpftrace)
-      : ast_(ast), bpftrace_(bpftrace) {};
+      : ast_(ast), bpftrace_(bpftrace){};
 
   using Visitor<Builtins, std::optional<Expression>>::visit;
   std::optional<Expression> visit(Builtin &builtin);

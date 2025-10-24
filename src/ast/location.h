@@ -29,7 +29,7 @@ public:
   SourceLocation(const SourceLocation &) = default;
   SourceLocation &operator=(const SourceLocation &other) = default;
   SourceLocation(std::shared_ptr<ASTSource> source)
-      : source_(std::move(source)) {};
+      : source_(std::move(source)){};
 
   // Canonical filename.
   std::string filename() const;
@@ -68,9 +68,15 @@ public:
   // Moves the cursor forward `count` columns.
   void advance_columns(int count)
   {
-    // Advance the from the end of the last token.
-    begin.column = end.column;
-    end.column += count;
+    if (count > 0) {
+      // Advance the from the end of the last token.
+      begin.column = end.column;
+      end.column += count;
+    } else {
+      // Move the beginning and end backwards.
+      begin.column -= count;
+      end.column -= count;
+    }
   }
 
   // Resets the column.
@@ -109,12 +115,12 @@ using Location = std::shared_ptr<LocationChain>;
 class LocationChain {
 public:
   struct Context {
-    Context(Location &&loc) : loc(std::move(loc)) {};
+    Context(Location &&loc) : loc(std::move(loc)){};
     std::stringstream msg;
     const Location loc;
   };
 
-  LocationChain(const SourceLocation &loc) : current(loc) {};
+  LocationChain(const SourceLocation &loc) : current(loc){};
 
   // See above.
   std::string filename() const

@@ -313,9 +313,11 @@ void Printer::visit(IfExpr &if_expr)
   }
 }
 
-void Printer::visit_multiline(IfExpr &if_expr)
+void Printer::visit_multiline(IfExpr &if_expr, bool should_print_meta)
 {
-  print_meta(if_expr, 0);
+  if (should_print_meta) {
+    print_meta(if_expr, 0);
+  }
   out_ << "if ";
   visit(if_expr.cond);
   out_ << " ";
@@ -619,10 +621,10 @@ void Printer::visit(Probe &probe)
     visit_bare(if_expr->cond);
     out_ << "/ ";
     auto *block_expr = if_expr->left.as<BlockExpr>();
-    visit_multiline(*block_expr);
+    visit_multiline(*block_expr, false);
   } else {
     out_ << " ";
-    visit_multiline(*probe.block);
+    visit_multiline(*probe.block, false);
   }
 }
 
@@ -677,9 +679,11 @@ void Printer::visit(BlockExpr &block)
   }
 }
 
-void Printer::visit_multiline(BlockExpr &block)
+void Printer::visit_multiline(BlockExpr &block, bool should_print_meta)
 {
-  print_meta(block);
+  if (should_print_meta) {
+    print_meta(block);
+  }
   auto *none = block.expr.as<None>();
   out_ << "{";
   depth_++;
@@ -711,35 +715,53 @@ void Printer::visit(Program &program)
     out_ << *program.header << std::endl;
   }
 
-  if (program.config != nullptr && !program.config->stmts.empty()) {
-    print_meta(*program.config, 0);
-    visit(program.config);
-  }
+  bool first = true;
+  auto min_vspace = [&]() -> size_t {
+    if (first) {
+      first = false;
+      return 0;
+    }
+    return 0;
+  };
 
+  if (program.config != nullptr && !program.config->stmts.empty()) {
+    print_meta(*program.config, min_vspace());
+    visit(*program.config);
+  }
   foreach(out_, program.c_statements, "\n", [&](auto *v) {
-    print_meta(*v, 1);
+    print_meta(*v, min_vspace());
     visit(*v);
   });
   foreach(out_, program.imports, "\n", [&](auto *v) {
-    print_meta(*v, 1);
+    print_meta(*v, min_vspace());
     visit(*v);
   });
-  foreach(out_, program.map_decls, "\n", [&](auto *v) {
-    print_meta(*v, 1);
-    visit(*v);
-  });
-  foreach(out_, program.macros, "\n", [&](auto *v) {
-    print_meta(*v, 1);
-    visit(*v);
-  });
-  foreach(out_, program.functions, "\n", [&](auto *v) {
-    print_meta(*v, 1);
-    visit(*v);
-  });
-  foreach(out_, program.probes, "\n", [&](auto *v) {
-    print_meta(*v, 1);
-    visit(*v);
-  });
+
+  // We preserve the order of all the top-level statements.
+  std::map<SourceLocation, RootStatement> top_level;
+
+  for (auto *map_decl : program.map_decls) {
+    top_level.emplace(map_decl->loc->current, RootStatement(map_decl));
+  }
+  for (auto *macro : program.macros) {
+    top_level.emplace(macro->loc->current, RootStatement(macro));
+  }
+  for (auto *function : program.functions) {
+    top_level.emplace(function->loc->current, RootStatement(function));
+  }
+  for (auto *probe : program.probes) {
+    top_level.emplace(probe->loc->current, RootStatement(probe));
+  }
+
+  for (auto &[_, node] : top_level) {
+    print_meta(node.node(), min_vspace());
+    visit(node);
+  }
+
+  for (auto &[loc, variant] : meta_.remaining()) {
+    std::cerr << "|" << loc.begin.line << ":" << loc.begin.column << "-"
+              << loc.end.line << ":" << loc.end.column << "=>" << variant.size() << "|" << std::endl;
+  }
 
   // Files always end with a newline.
   out_ << std::endl;
@@ -827,6 +849,11 @@ void Printer::print_meta(const Node &node,
 {
   bool inline_style = !min_vspace.has_value();
   auto metadata = meta_.pop(node);
+  const auto *ptr = &node;
+  auto loc = node.loc->current;
+  std::cerr << "|" << loc.begin.line << ":" << loc.begin.column << "-"
+            << loc.end.line << ":" << loc.end.column << "=>" << metadata.size()
+            << "@" << typeid(*ptr).name() << "|";
   if (!inline_style) {
     size_t total_vspace = 0;
     if (min_vspace) {
@@ -848,7 +875,7 @@ void Printer::print_meta(const Node &node,
         }
       } else {
         print_indent();
-        auto &s = std::get<std::string>(part);
+        const auto &s = std::get<std::string>(part);
         if (s.empty()) {
           out_ << "//" << std::endl;
         } else {

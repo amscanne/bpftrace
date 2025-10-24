@@ -20,7 +20,7 @@ namespace {
 
 class MapDefaultKey : public Visitor<MapDefaultKey> {
 public:
-  explicit MapDefaultKey(ASTContext &ast) : ast_(ast) {};
+  explicit MapDefaultKey(ASTContext &ast) : ast_(ast){};
 
   using Visitor<MapDefaultKey>::visit;
   void visit(Call &call);
@@ -52,7 +52,7 @@ public:
 
 class MapAssignmentCall : public Visitor<MapAssignmentCall> {
 public:
-  explicit MapAssignmentCall(ASTContext &ast) : ast_(ast) {};
+  explicit MapAssignmentCall(ASTContext &ast) : ast_(ast){};
 
   using Visitor<MapAssignmentCall>::visit;
   void visit(Statement &stmt);
@@ -70,7 +70,7 @@ public:
 class MapScalarCheck : public Visitor<MapScalarCheck> {
 public:
   explicit MapScalarCheck(ASTContext &ast, MapMetadata &metadata)
-      : ast_(ast), metadata_(metadata) {};
+      : ast_(ast), metadata_(metadata){};
 
   using Visitor<MapScalarCheck>::visit;
   void visit(Expression &expr);

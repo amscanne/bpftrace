@@ -9,7 +9,7 @@ namespace bpftrace::ast {
 class NamedParamPass : public Visitor<NamedParamPass> {
 public:
   NamedParamPass(ASTContext &ast, BPFtrace &bpftrace)
-      : ast_(ast), bpftrace_(bpftrace) {};
+      : ast_(ast), bpftrace_(bpftrace){};
 
   using Visitor<NamedParamPass>::visit;
   void visit(Expression &expr);

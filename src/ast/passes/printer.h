@@ -76,8 +76,8 @@ public:
   // expressions will still always be visited directly by the parent visitor.
   void visit_bare(Expression &expr);
   void visit_bare(Tuple &tuple);
-  void visit_multiline(IfExpr &if_expr);
-  void visit_multiline(BlockExpr &block);
+  void visit_multiline(IfExpr &if_expr, bool should_print_meta = true);
+  void visit_multiline(BlockExpr &block, bool should_print_meta = true);
 
 private:
   std::ostream &out_;
