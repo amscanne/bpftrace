@@ -20,12 +20,9 @@ std::string SourceLocation::source_location() const
   if (source_) {
     ss << source_->filename << ":";
   }
-  if (begin.line != end.line) {
-    ss << begin.line << "-" << end.line;
-    return ss.str();
-  }
-  ss << begin.line << ":";
-  ss << begin.column << "-" << end.column;
+  ss << begin.line << ":" << begin.column;
+  ss << "-";
+  ss << end.line << ":" << end.column;
   return ss.str();
 }
 
@@ -35,7 +32,8 @@ std::ostream &operator<<(std::ostream &out, const SourceLocation &loc)
   return out;
 }
 
-SourceLocation operator+(const SourceLocation &orig, const SourceLocation &other)
+SourceLocation operator+(const SourceLocation &orig,
+                         const SourceLocation &other)
 {
   auto result = SourceLocation(orig.source_);
   result.begin.line = std::min(orig.begin.line, other.begin.line);
@@ -122,34 +120,46 @@ Location operator+(const Location &orig, const Location &expansion)
   return nlink;
 }
 
+std::strong_ordering operator<=>(const SourceLocation::Position &lhs,
+                                 const SourceLocation::Position &rhs)
+{
+  if (auto cmp = lhs.line <=> rhs.line; cmp != 0) {
+    return cmp;
+  }
+  return lhs.column <=> rhs.column;
+}
+
 std::strong_ordering operator<=>(const SourceLocation &lhs,
                                  const SourceLocation &rhs)
 {
-  if (auto cmp = lhs.begin.line <=> rhs.begin.line; cmp != 0) {
-    return cmp;
-  }
-  if (auto cmp = lhs.begin.column <=> rhs.begin.column; cmp != 0) {
+  if (auto cmp = lhs.begin <=> rhs.begin; cmp != 0) {
     return cmp;
   }
 
-  // If begin positions are equal, compare by span length. Whichever spans
-  // longer is considered to be the first node.
+  // If begin positions are equal, compare by span length. The shortest spans
+  // are considered to be the first nodes here. This allows us to use
+  // lower_bound matching to find the first reasonable matching node for
+  // metadata.
   auto lhs_span_lines = lhs.end.line - lhs.begin.line;
   auto rhs_span_lines = rhs.end.line - rhs.begin.line;
-  if (auto cmp = rhs_span_lines <=> lhs_span_lines; cmp != 0) {
+  if (auto cmp = lhs_span_lines <=> rhs_span_lines; cmp != 0) {
     return cmp;
   }
 
   auto lhs_span_cols = lhs.end.column - lhs.begin.column;
   auto rhs_span_cols = rhs.end.column - rhs.begin.column;
-  return rhs_span_cols <=> lhs_span_cols;
+  return lhs_span_cols <=> rhs_span_cols;
+}
+
+bool operator==(const SourceLocation::Position &lhs,
+                const SourceLocation::Position &rhs)
+{
+  return lhs.line == rhs.line && lhs.column == rhs.column;
 }
 
 bool operator==(const SourceLocation &lhs, const SourceLocation &rhs)
 {
-  return lhs.begin.line == rhs.begin.line &&
-         lhs.begin.column == rhs.begin.column && lhs.end.line == rhs.end.line &&
-         lhs.end.column == rhs.end.column;
+  return lhs.begin == rhs.begin && lhs.end == rhs.end;
 }
 
 } // namespace bpftrace::ast

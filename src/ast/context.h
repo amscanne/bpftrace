@@ -45,7 +45,9 @@ private:
 
 // MetaMap is an index of comments, etc.
 //
-// It lookups and removes comments associated with each node.
+// It lookups and removes comments associated with each node. It can be
+// used to reconstruct the original source file, modulo any the intentional
+// transformations (and basic comment syntax, etc.).
 class MetaMap {
 public:
   MetaMap() = default;
@@ -54,19 +56,25 @@ public:
   MetaMap(MetaMap &&other) = default;
   MetaMap &operator=(MetaMap &&other) = default;
 
-  // Variant covers comments and vertical space.
-  //
-  // Pop will remove the information from the map. This is expected
-  // to be processed by the first matching node during formatting.
+  // The Variant describes either comments (strings) or vspace (size_t).
   using Variant = std::variant<std::string, size_t>;
-  std::vector<Variant> pop(const Node &node);
-  std::map<SourceLocation, std::vector<Variant>> remaining()
-  {
-    return std::move(map_);
-  }
+
+  // Associated will find comments that should be associated with this
+  // node, and remove them from the map. Typically these are comments
+  // that are immediately preceding the provided node.
+  std::vector<Variant> associated(const Node &node);
+
+  // This is a more complex operation; any remaining comments within the
+  // scope of the node are returned. Typically this means comments that
+  // might be trailing without a specific anchoring statement or expression.
+  std::vector<Variant> within(const Node &node);
+
+  // This is a variant of within which does not remain the metadata,
+  // it merely checks whether some is contained in the boundaries.
+  bool has_within(const Node &node) const;
 
 private:
-  std::map<SourceLocation, std::vector<Variant>> map_;
+  std::map<SourceLocation::Position, std::vector<Variant>> map_;
   friend class ASTContext;
 };
 
@@ -135,12 +143,14 @@ public:
 
   void add_comment(SourceLocation loc)
   {
-    state_->metadata_[loc] = Metadata::Comment;
+    std::cerr << "ADD COMMENT " << loc << std::endl;
+    state_->metadata_.emplace_back(std::move(loc), 0);
   }
 
-  void add_vspace(SourceLocation loc)
+  void add_vspace(SourceLocation loc, size_t elems)
   {
-    state_->metadata_[loc] = Metadata::VerticalSpace;
+    std::cerr << "ADD VSPACE " << loc << std::endl;
+    state_->metadata_.emplace_back(std::move(loc), elems);
   }
 
   // This function builds a comment map for the parsed AST. For every created
@@ -157,12 +167,6 @@ public:
   Program *root = nullptr;
 
 private:
-  // Metadata tracks comments and vertical spacing.
-  enum Metadata {
-    Comment,
-    VerticalSpace,
-  };
-
   // State owns the underlying nodes; they are permitted to take a reference to
   // this object since their lifetimes are bound.
   class State {
@@ -170,7 +174,7 @@ private:
     State();
     std::vector<std::unique_ptr<Node>> nodes_;
     std::unique_ptr<Diagnostics> diagnostics_;
-    std::map<SourceLocation, Metadata> metadata_;
+    std::vector<std::pair<SourceLocation, size_t>> metadata_;
   };
 
   std::unique_ptr<State> state_;

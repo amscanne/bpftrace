@@ -74,18 +74,23 @@ public:
 
   // These are used to override the behavior in specific scenarios. Nested
   // expressions will still always be visited directly by the parent visitor.
-  void visit_bare(Expression &expr);
+  void visit_bare(Expression &expr,
+                  std::optional<size_t> min_vspace = std::nullopt);
   void visit_bare(Tuple &tuple);
-  void visit_multiline(IfExpr &if_expr, bool should_print_meta = true);
-  void visit_multiline(BlockExpr &block, bool should_print_meta = true);
+  void visit_multiline(IfExpr &if_expr);
+  void visit_multiline(BlockExpr &block);
 
 private:
-  std::ostream &out_;
+  std::stringstream out_;
+  std::ostream &real_out_;
   int depth_ = 0;
   Mode mode_;
   MetaMap meta_;
 
   void print_meta(const Node &node,
+                  std::optional<size_t> min_vspace = std::nullopt,
+                  std::optional<size_t> max_vspace = std::nullopt);
+  void print_meta(const std::vector<MetaMap::Variant> &metadata,
                   std::optional<size_t> min_vspace = std::nullopt,
                   std::optional<size_t> max_vspace = std::nullopt);
   void print_type(const SizedType &ty);

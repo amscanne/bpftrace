@@ -1,6 +1,7 @@
 #include <cctype>
 #include <iomanip>
 #include <sstream>
+#include <variant>
 
 #include "ast/ast.h"
 #include "ast/passes/printer.h"
@@ -35,8 +36,20 @@ static void foreach(std::ostream &out,
   }
 }
 
+static bool is_primitive(const Expression &expr)
+{
+  return expr.is<Integer>() || expr.is<NegativeInteger>() ||
+         expr.is<String>() || expr.is<Boolean>() ||
+         expr.is<PositionalParameter>() ||
+         expr.is<PositionalParameterCount>() || expr.is<None>() ||
+         expr.is<Identifier>() || expr.is<Builtin>() || expr.is<Sizeof>() ||
+         expr.is<Offsetof>() || expr.is<Typeinfo>() || expr.is<Variable>() ||
+         expr.is<ArrayAccess>() || expr.is<TupleAccess>() ||
+         expr.is<MapAccess>() || expr.is<Call>() || expr.is<Map>();
+}
+
 Printer::Printer(const ASTContext &ast, std::ostream &out, Mode mode)
-    : out_(out),
+    : real_out_(out),
       mode_(mode),
       meta_(mode == Mode::Normal ? ast.build_meta_map() : MetaMap())
 {
@@ -132,7 +145,7 @@ void Printer::visit(Call &call)
 {
   out_ << call.func;
   out_ << "(";
-  foreach(out_, call.vargs, ", ", [&](auto &v) { visit(v); });
+  foreach(out_, call.vargs, ", ", [&](auto &v) { visit_bare(v); });
   out_ << ")";
 }
 
@@ -176,7 +189,13 @@ void Printer::visit(Typeof &typeof)
 void Printer::visit(Typeinfo &typeinfo)
 {
   out_ << "typeinfo(";
-  visit(typeinfo.typeof);
+  if (std::holds_alternative<Expression>(typeinfo.typeof->record)) {
+    // Omit the `typeof` for `typeinfo`.
+    visit(typeinfo.typeof->record);
+  } else {
+    // Use the default representation.
+    visit(typeinfo.typeof);
+  }
   out_ << ")";
 }
 
@@ -269,86 +288,77 @@ void Printer::visit(Unop &unop)
   }
 }
 
-static bool needs_multiline(IfExpr &if_expr)
-{
-  auto *left_block = if_expr.left.as<BlockExpr>();
-  if (left_block && !left_block->stmts.empty()) {
-    return true;
-  }
-  auto *right_block = if_expr.right.as<BlockExpr>();
-  if (right_block && !right_block->stmts.empty()) {
-    return true;
-  }
-  auto *right_if = if_expr.right.as<IfExpr>();
-  return right_if && needs_multiline(*right_if);
-}
-
 void Printer::visit(IfExpr &if_expr)
 {
-  if (needs_multiline(if_expr)) {
+  bool needs_multiline = !is_primitive(if_expr.left) ||
+                         !is_primitive(if_expr.right) ||
+                         meta_.has_within(if_expr);
+  if (needs_multiline) {
     visit_multiline(if_expr);
     return;
   }
   out_ << "if ";
-  visit(if_expr.cond);
+  if (if_expr.cond.is<Comptime>()) {
+    // Special case: comptime is bare for if expressions.
+    visit_bare(if_expr.cond);
+  } else {
+    visit(if_expr.cond);
+  }
+  out_ << " { ";
+  visit_bare(if_expr.left);
+  out_ << " }";
+  if (if_expr.right.is<None>()) {
+    return;
+  }
+  out_ << " else { ";
+  visit_bare(if_expr.right);
+  out_ << " }";
+}
+
+void Printer::visit_multiline(IfExpr &if_expr)
+{
+  out_ << "if ";
+  if (if_expr.cond.is<Comptime>()) {
+    // See above; special case.
+    visit_bare(if_expr.cond);
+  } else {
+    visit(if_expr.cond);
+  }
   out_ << " ";
   if (auto *left_block = if_expr.left.as<BlockExpr>()) {
-    visit(*left_block);
+    visit_multiline(*left_block);
   } else {
-    out_ << "{ ";
-    visit(if_expr.left);
-    out_ << " }";
+    out_ << "{";
+    out_ << std::endl;
+    depth_++;
+    print_meta(if_expr.left.node(), 0);
+    print_indent();
+    visit_bare(if_expr.left); // Metadata pulled up.
+    out_ << std::endl;
+    depth_--;
+    print_indent();
+    out_ << "}";
   }
   if (if_expr.right.is<None>()) {
     return;
   }
   out_ << " else ";
   if (auto *right_block = if_expr.right.as<BlockExpr>()) {
-    print_meta(*right_block);
-    visit(*right_block);
-  } else {
-    out_ << "{ ";
-    visit(if_expr.right);
-    out_ << " }";
-  }
-}
-
-void Printer::visit_multiline(IfExpr &if_expr, bool should_print_meta)
-{
-  if (should_print_meta) {
-    print_meta(if_expr, 0);
-  }
-  out_ << "if ";
-  visit(if_expr.cond);
-  out_ << " ";
-  if (auto *left_block = if_expr.left.as<BlockExpr>()) {
-    visit_multiline(*left_block);
-  } else {
-    out_ << "{";
-    depth_++;
-    print_indent();
-    visit_bare(if_expr.left);
-    depth_--;
-    print_indent();
-    out_ << "}";
-  }
-  if (auto *none = if_expr.right.as<None>()) {
-    print_meta(*none);
-    return;
-  }
-  out_ << " else ";
-  if (auto *right_block = if_expr.right.as<BlockExpr>()) {
+    print_meta(*right_block); // Metadata pulled inline.
     visit_multiline(*right_block);
   } else if (auto *right_if = if_expr.right.as<IfExpr>()) {
     // This doesn't need to be wrapped in anything, since we can handle
     // parsing the `else if` directly without any brackets.
+    print_meta(*right_if); // See above.
     visit_multiline(*right_if);
   } else {
     out_ << "{";
+    out_ << std::endl;
     depth_++;
+    print_meta(if_expr.right.node(), 0);
     print_indent();
     visit_bare(if_expr.right);
-    out_ << std::endl; // This has no node.
+    out_ << std::endl;
     depth_--;
     print_indent();
     out_ << "}";
@@ -388,16 +398,8 @@ void Printer::visit(Cast &cast)
   out_ << "(";
   visit(cast.typeof);
   out_ << ")";
-  // Avoid ambiguity: if the expression is a unop, then it needs to be
-  // put into parenthesis or it may be ambiguously parsed as a binop.
-  if (cast.expr.is<Unop>()) {
-    out_ << "(";
-    visit_bare(cast.expr);
-    out_ << ")";
-  } else {
-    // Binops and others will be automatically parenthesized.
-    visit(cast.expr);
-  }
+  // Binops and others will be automatically parenthesized.
+  visit(cast.expr);
 }
 
 void Printer::visit(Tuple &tuple)
@@ -562,8 +564,8 @@ void Printer::visit(Config &config)
 
   out_ << "config = {";
   ++depth_;
-  foreach(out_, config.stmts, "", [&](auto *v) {
-    print_meta(*v, 1, 1);
+  foreach(out_, config.stmts, "\n", [&](auto *v) {
+    print_meta(*v, 0);
     visit(*v);
   });
   out_ << std::endl;
@@ -606,9 +608,10 @@ void Printer::visit(AttachPoint &ap)
 void Printer::visit(Probe &probe)
 {
   // Emit all attachpoints with their respective comments. These are both
-  // top-level statements and require a separator.
-  foreach(out_, probe.attach_points, ",", [&](auto *v) {
-    print_meta(*v, 1, 1);
+  // top-level statements and require a separator. If the user has them
+  // specified inline, they will be preserved in that way.
+  foreach(out_, probe.attach_points, ", ", [&](auto *v) {
+    print_meta(*v, 0);
     visit(*v);
   });
 
@@ -621,10 +624,10 @@ void Printer::visit(Probe &probe)
     visit_bare(if_expr->cond);
     out_ << "/ ";
     auto *block_expr = if_expr->left.as<BlockExpr>();
-    visit_multiline(*block_expr, false);
+    visit_multiline(*block_expr);
   } else {
     out_ << " ";
-    visit_multiline(*probe.block, false);
+    visit_multiline(*probe.block);
   }
 }
 
@@ -644,7 +647,7 @@ void Printer::visit(Subprog &subprog)
   out_ << ") : ";
   visit(subprog.return_type);
   out_ << " ";
-  visit_multiline(*subprog.block);
+  visit(*subprog.block);
 }
 
 void Printer::visit(Import &imp)
@@ -655,19 +658,16 @@ void Printer::visit(Import &imp)
 void Printer::visit(BlockExpr &block)
 {
   // We collapse a block only if it has no statements and the
-  // expression is not itself an If or a block expression, which
-  // need to be split out into their own lines for clarity.
-  if (block.stmts.empty() && block.expr.is<IfExpr>()) {
-    auto &if_expr = *block.expr.as<IfExpr>();
-    print_meta(if_expr);
-    visit(if_expr);
-  } else if (block.stmts.empty() && block.expr.is<BlockExpr>()) {
+  // expression is not itself a block expression.
+  if (block.stmts.empty() && block.expr.is<BlockExpr>()) {
     auto &block_expr = *block.expr.as<BlockExpr>();
-    print_meta(block_expr);
     visit(block_expr);
-  } else if (block.stmts.empty()) {
-    if (auto *none = block.expr.as<None>()) {
-      print_meta(*none);
+    return;
+  }
+
+  bool has_within = meta_.has_within(block);
+  if (block.stmts.empty() && !has_within) {
+    if (block.expr.is<None>()) {
       out_ << "{}";
     } else {
       out_ << "{ ";
@@ -679,25 +679,37 @@ void Printer::visit(BlockExpr &block)
   }
 }
 
-void Printer::visit_multiline(BlockExpr &block, bool should_print_meta)
+void Printer::visit_multiline(BlockExpr &block)
 {
-  if (should_print_meta) {
-    print_meta(block);
-  }
-  auto *none = block.expr.as<None>();
+  // Start the block.
+  print_meta(block, 0);
   out_ << "{";
+  out_ << std::endl;
   depth_++;
-  foreach(out_, block.stmts, "", [&](auto &v) {
-    print_meta(v.node(), 1);
+
+  // Print our all statements.
+  foreach(out_, block.stmts, "\n", [&](auto &v) {
+    print_meta(v.node(), 0);
     visit(v);
   });
-  if (!none) {
-    print_indent();
-    visit(block.expr); // Will always print inline metadata.
-    out_ << std::endl; // Will be associated with the next node.
-  } else {
-    print_meta(*none, 1);
+  if (!block.stmts.empty()) {
+    out_ << std::endl;
   }
+
+  // Include an expression if needed.
+  auto *none = block.expr.as<None>();
+  if (!none) {
+    print_meta(block.expr.node(), 0);
+    print_indent();
+    visit_bare(block.expr); // Metadata pulled up above.
+    out_ << std::endl;
+  }
+
+  // Print any stranded metadata within the block.
+  auto metadata = meta_.within(block);
+  print_meta(metadata, 0);
+
+  // Finish the block off.
   depth_--;
   print_indent();
   out_ << "}";
@@ -709,35 +721,38 @@ void Printer::visit(Comptime &comptime)
   visit(comptime.expr);
 }
 
+static std::string rtrim(const std::string &s)
+{
+  size_t end = s.size();
+  while (end > 0 && std::isspace(s[end - 1])) {
+    end--;
+  }
+  return s.substr(0, end);
+}
+
 void Printer::visit(Program &program)
 {
+  out_.str(""); // Reset our stream.
+
   if (program.header && program.header->size() > 0) {
     out_ << *program.header << std::endl;
   }
 
-  bool first = true;
-  auto min_vspace = [&]() -> size_t {
-    if (first) {
-      first = false;
-      return 0;
-    }
-    return 0;
-  };
-
   if (program.config != nullptr && !program.config->stmts.empty()) {
-    print_meta(*program.config, min_vspace());
+    print_meta(*program.config, 0);
     visit(*program.config);
   }
   foreach(out_, program.c_statements, "\n", [&](auto *v) {
-    print_meta(*v, min_vspace());
+    print_meta(*v, 0);
     visit(*v);
   });
   foreach(out_, program.imports, "\n", [&](auto *v) {
-    print_meta(*v, min_vspace());
+    print_meta(*v, 0);
     visit(*v);
   });
 
-  // We preserve the order of all the top-level statements.
+  // We preserve the order of all the top-level statements. By using
+  // this map, we will iterate through them in order.
   std::map<SourceLocation, RootStatement> top_level;
 
   for (auto *map_decl : program.map_decls) {
@@ -753,29 +768,19 @@ void Printer::visit(Program &program)
     top_level.emplace(probe->loc->current, RootStatement(probe));
   }
 
-  for (auto &[_, node] : top_level) {
-    print_meta(node.node(), min_vspace());
-    visit(node);
+  for (auto &[_, entry] : top_level) {
+    print_meta(entry.node(), 0);
+    visit(entry);
   }
 
-  for (auto &[loc, variant] : meta_.remaining()) {
-    std::cerr << "|" << loc.begin.line << ":" << loc.begin.column << "-"
-              << loc.end.line << ":" << loc.end.column << "=>" << variant.size() << "|" << std::endl;
-  }
+  // It's possible that there are trailing comments, not associated with any
+  // macros, probes or functions. Include these at the end, where they were.
+  auto metadata = meta_.within(program);
+  print_meta(metadata, 1);
 
-  // Files always end with a newline.
-  out_ << std::endl;
-}
-
-static bool is_block(Expression &expr, bool block_ok)
-{
-  if (auto *if_expr = expr.as<IfExpr>()) {
-    return is_block(if_expr->left, true) &&
-           (if_expr->right.is<None>() || is_block(if_expr->right, true));
-  } else if (block_ok && expr.is<BlockExpr>()) {
-    return true;
-  } else {
-    return false;
+  std::string line;
+  while (std::getline(out_, line)) {
+    real_out_ << rtrim(line) << std::endl;
   }
 }
 
@@ -789,12 +794,14 @@ void Printer::visit(Macro &macro)
 
 void Printer::visit(Statement &stmt)
 {
+  print_meta(stmt.node(), 0);
   print_indent();
   visit(stmt.value);
-  // Emit a semi-colon if it is not a block statement.
+  // Emit a semi-colon if it is not a block statement. We always need
+  // ifs to lack the semi-colon, even if they are parsed as an expression.
   if (!stmt.is<For>() && !stmt.is<While>() && !stmt.is<Unroll>()) {
-    auto *expr = stmt.as<ExprStatement>();
-    if (expr == nullptr || !is_block(expr->expr, false)) {
+    auto *expr_stmt = stmt.as<ExprStatement>();
+    if (!expr_stmt || !expr_stmt->expr.is<IfExpr>()) {
       out_ << ";";
     }
   }
@@ -807,22 +814,20 @@ void Printer::visit(ExprStatement &stmt)
 
 void Printer::visit(Expression &expr)
 {
-  bool needs_parens = expr.is<Binop>() ||
-                      (expr.is<Unop>() && mode_ == Mode::Debug) ||
-                      (expr.is<Cast>() && mode_ == Mode::Debug);
-  if (needs_parens) {
+  bool bare_okay = mode_ != Mode::Debug && is_primitive(expr);
+  if (!bare_okay) {
     out_ << "(";
   }
   visit_bare(expr);
-  if (needs_parens) {
+  if (!bare_okay) {
     out_ << ")";
   }
   print_type(expr.type());
 }
 
-void Printer::visit_bare(Expression &expr)
+void Printer::visit_bare(Expression &expr, std::optional<size_t> min_vspace)
 {
-  print_meta(expr.node());
+  print_meta(expr.node(), min_vspace);
   visit(expr.value);
 }
 
@@ -847,13 +852,14 @@ void Printer::print_meta(const Node &node,
                          std::optional<size_t> min_vspace,
                          std::optional<size_t> max_vspace)
 {
+  print_meta(meta_.associated(node), min_vspace, max_vspace);
+}
+
+void Printer::print_meta(const std::vector<MetaMap::Variant> &metadata,
+                         std::optional<size_t> min_vspace,
+                         std::optional<size_t> max_vspace)
+{
   bool inline_style = !min_vspace.has_value();
-  auto metadata = meta_.pop(node);
-  const auto *ptr = &node;
-  auto loc = node.loc->current;
-  std::cerr << "|" << loc.begin.line << ":" << loc.begin.column << "-"
-            << loc.end.line << ":" << loc.end.column << "=>" << metadata.size()
-            << "@" << typeid(*ptr).name() << "|";
   if (!inline_style) {
     size_t total_vspace = 0;
     if (min_vspace) {
@@ -901,7 +907,7 @@ void Printer::print_meta(const Node &node,
         out_ << std::get<std::string>(part);
       }
       if (!first) {
-        out_ << "*/ ";
+        out_ << " */ ";
       }
     }
   }

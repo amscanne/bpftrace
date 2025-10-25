@@ -52,6 +52,7 @@
 #include "util/int_parser.h"
 #include "util/kernel.h"
 #include "util/strings.h"
+#include "util/temp.h"
 #include "version.h"
 
 using namespace bpftrace;
@@ -865,26 +866,38 @@ int main(int argc, char* argv[])
     ast::PassManager pm;
     pm.put(ast);
     pm.put(bpftrace);
-    pm.add(CreateParsePass(false));
+    pm.add(CreateParsePass(bt_debug.contains(DebugStage::Parse)));
     auto ok = pm.run();
     if (!ok) {
       std::cerr << ok.takeError() << "\n";
       return 2;
     }
+    if (!ast.diagnostics().ok()) {
+      // We didn't successfully parse the file, so can't format it.
+      ast.diagnostics().emit(std::cerr);
+      return 1;
+    }
     if (!args.output_file.empty()) {
-      std::ofstream out(args.output_file);
+      // To make this operation safe, we open a temporary file next to the
+      // intented output file, and atomically rename when completed.
+      auto file = util::TempFile::create(args.output_file + ".XXXXXX");
+      if (!file) {
+        LOG(ERROR) << "unable to create temporary file: " << file.takeError();
+        return 1;
+      }
+      std::ofstream out(file->path());
       if (out.fail()) {
-        LOG(ERROR) << "failed to open file '" << args.output_file
+        LOG(ERROR) << "failed to open file '" << file->path()
                    << "': " << std::strerror(errno);
-        exit(1);
+        return 1;
       }
       ast::Printer printer(ast, out);
       printer.visit(ast.root);
+      std::filesystem::rename(file->path(), args.output_file);
     } else {
       ast::Printer printer(ast, std::cout);
       printer.visit(ast.root);
     }
-    ast.diagnostics().emit(std::cerr);
     return 0; // All done.
   }
 

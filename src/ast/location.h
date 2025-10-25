@@ -68,15 +68,21 @@ public:
   // Moves the cursor forward `count` columns.
   void advance_columns(int count)
   {
-    if (count > 0) {
-      // Advance the from the end of the last token.
-      begin.column = end.column;
-      end.column += count;
-    } else {
-      // Move the beginning and end backwards.
-      begin.column -= count;
-      end.column -= count;
-    }
+    begin.column = end.column;
+    end.column += count;
+  }
+
+  // Move the cursor backwards.
+  void rewind_columns()
+  {
+    end.column -= 1;
+    begin.column -= 1;
+  }
+
+  // Trims the last character from this location.
+  void trim()
+  {
+    end.column -= 1;
   }
 
   // Resets the column.
@@ -94,13 +100,20 @@ private:
 
   friend class ASTContext;
   friend SourceLocation operator+(const SourceLocation &orig,
-                                  const SourceLocation &loc);
+                                  const SourceLocation &other);
 };
 
+SourceLocation operator+(const SourceLocation &orig,
+                         const SourceLocation &other);
+
 std::ostream &operator<<(std::ostream &out, const SourceLocation &loc);
-SourceLocation operator+(const SourceLocation &orig, const SourceLocation &loc);
+
+std::strong_ordering operator<=>(const SourceLocation::Position &lhs,
+                                 const SourceLocation::Position &rhs);
 std::strong_ordering operator<=>(const SourceLocation &lhs,
                                  const SourceLocation &rhs);
+bool operator==(const SourceLocation::Position &lhs,
+                const SourceLocation::Position &rhs);
 bool operator==(const SourceLocation &lhs, const SourceLocation &rhs);
 
 class LocationChain;

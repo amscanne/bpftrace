@@ -44,7 +44,6 @@ map      @{ident}|@
 var      ${ident}
 hspace   [ \t]
 vspace   \n
-space    {hspace}|{vspace}
 path     :(\\.|[_\-\./a-zA-Z0-9#$+\*])+
 /* Most of the builtins are prefixed with __builtin_ as they are exposed to users via macros e.g. macro cpu() { __builtin_cpu } */
 builtin  arg[0-9]+|args|ctx|kstack|nsecs|pid|sarg[0-9]|tid|ustack|__builtin_cgroup|__builtin_comm|__builtin_cpid|__builtin_cpu|__builtin_curtask|__builtin_elapsed|__builtin_func|__builtin_gid|__builtin_jiffies|__builtin_ncpus|__builtin_probe|__builtin_rand|__builtin_retval|__builtin_uid|__builtin_usermode|__builtin_username
@@ -68,6 +67,7 @@ oct_esc  [0-7]{1,3}
 %x CCOMMENTNL
 %x CPPCOMMENT
 %x CPPCOMMENTNL
+%x AFTER_DIV
 %x AFTER_COLON
 %x STRUCT_AFTER_COLON
 
@@ -85,17 +85,19 @@ oct_esc  [0-7]{1,3}
                           yy_push_state(SCRIPT, yyscanner);
                           return Parser::make_HEADER(yytext, driver.loc);
                         }
-{vspace}+               { driver.loc.advance_lines(yyleng); }
-\r                      { driver.loc.reset_column(); }
+{vspace}+               {
+                          driver.loc.advance_lines(yyleng);
+                          driver.ctx.add_vspace(driver.loc, yyleng);
+                        }
 .                       {
-                          driver.loc.advance_columns(-1);
+                          driver.loc.rewind_columns();
                           unput(yytext[0]);
                           yy_push_state(SCRIPT, yyscanner);
                         }
 
 <CCOMMENT>{
   "*/"                  yy_pop_state(yyscanner);
-  \n                    { 
+  \n                    {
                           driver.loc.advance_lines(1);
                           yy_pop_state(yyscanner);
                           yy_push_state(CCOMMENTNL, yyscanner);
@@ -116,7 +118,7 @@ oct_esc  [0-7]{1,3}
                           driver.ctx.add_comment(driver.loc); // Blank comment.
                         }
   .                     {
-                           driver.loc.advance_columns(-1);
+                           driver.loc.rewind_columns();
                            unput(yytext[0]);
                            yy_pop_state(yyscanner);
                            yy_push_state(CCOMMENT, yyscanner);
@@ -153,8 +155,13 @@ oct_esc  [0-7]{1,3}
                           yy_pop_state(yyscanner);
                           yy_push_state(CPPCOMMENT, yyscanner);
                         }
+  \n                    {
+                          driver.loc.advance_lines(1);
+                          driver.ctx.add_vspace(driver.loc, 1);
+                          yy_pop_state(yyscanner);
+                        }
   .                     {
-                          driver.loc.advance_columns(-1);
+                          driver.loc.rewind_columns();
                           unput(yytext[0]);
                           yy_pop_state(yyscanner);
                         }
@@ -164,8 +171,8 @@ oct_esc  [0-7]{1,3}
 <SCRIPT>{
   {hspace}+               { }
   {vspace}+               {
-                            driver.ctx.add_vspace(driver.loc);
                             driver.loc.advance_lines(yyleng);
+                            driver.ctx.add_vspace(driver.loc, yyleng);
                           }
   \r                      { driver.loc.reset_column(); }
   "/** "                  { yy_push_state(CCOMMENT, yyscanner); }
@@ -195,9 +202,9 @@ oct_esc  [0-7]{1,3}
                             return Parser::make_COLON(driver.loc);
                           }
   /* N.B. The newline following semi-colons and braces does not count as explicit vspace. */
-  [;]\n                   { return Parser::make_SEMI(driver.loc); }
-  [{]\n                   { return Parser::make_LBRACE(driver.loc); }
-  [}]\n                   { return Parser::make_RBRACE(driver.loc); }
+  [;]\n                   { driver.loc.trim(); auto v = Parser::make_SEMI(driver.loc); driver.loc.advance_lines(1); return v; }
+  [{]\n                   { driver.loc.trim(); auto v = Parser::make_LBRACE(driver.loc); driver.loc.advance_lines(1); return v; }
+  [}]\n                   { driver.loc.trim(); auto v = Parser::make_RBRACE(driver.loc); driver.loc.advance_lines(1); return v; }
   ";"                     { return Parser::make_SEMI(driver.loc); }
   "{"                     { return Parser::make_LBRACE(driver.loc); }
   "}"                     { return Parser::make_RBRACE(driver.loc); }
@@ -205,7 +212,6 @@ oct_esc  [0-7]{1,3}
   "]"                     { return Parser::make_RBRACKET(driver.loc); }
   "("                     { return Parser::make_LPAREN(driver.loc); }
   ")"                     { return Parser::make_RPAREN(driver.loc); }
-  \//{space}*[\/\{]       { return Parser::make_ENDPRED(driver.loc); } /* If "/" is followed by "/" or "{", choose ENDPRED, otherwise DIV */
   ","                     { return Parser::make_COMMA(driver.loc); }
   "="                     { return Parser::make_ASSIGN(driver.loc); }
   "<<="                   { return Parser::make_LEFTASSIGN(driver.loc); }
@@ -233,7 +239,7 @@ oct_esc  [0-7]{1,3}
   "++"                    { return Parser::make_INCREMENT(driver.loc); }
   "--"                    { return Parser::make_DECREMENT(driver.loc); }
   "*"                     { return Parser::make_MUL(driver.loc); }
-  "/"                     { return Parser::make_DIV(driver.loc); }
+  "/"                     { driver.orig_loc = driver.loc; yy_push_state(AFTER_DIV, yyscanner); }
   "%"                     { return Parser::make_MOD(driver.loc); }
   "&"                     { return Parser::make_BAND(driver.loc); }
   "|"                     { return Parser::make_BOR(driver.loc); }
@@ -304,6 +310,23 @@ oct_esc  [0-7]{1,3}
   .                     driver.error(driver.loc, "invalid character"); yy_pop_state(yyscanner);
 }
 
+<AFTER_DIV>{
+  {hspace}+             { }
+  {vspace}+             { driver.loc.advance_lines(yyleng); }
+  "{"                   {
+                          driver.loc.rewind_columns();
+                          unput(yytext[0]);
+                          yy_pop_state(yyscanner);
+                          return Parser::make_ENDPRED(driver.orig_loc);
+                        }
+  .                     {
+                          driver.loc.rewind_columns();
+                          unput(yytext[0]);
+                          yy_pop_state(yyscanner);
+                          return Parser::make_DIV(driver.orig_loc);
+                        }
+}
+
 <AFTER_COLON>{
   {hspace}+             { }
   {vspace}+             { driver.loc.advance_lines(yyleng); }
@@ -315,8 +338,9 @@ oct_esc  [0-7]{1,3}
                           driver.struct_type = yytext;
                           return Parser::make_STRUCT(driver.loc);
                         }
-  .                     { driver.loc.advance_columns(-1); unput(yytext[0]); yy_pop_state(yyscanner); }
+  .                     { driver.loc.rewind_columns(); unput(yytext[0]); yy_pop_state(yyscanner); }
 }
+
 <STRUCT_AFTER_COLON>{
   {hspace}+             { }
   {vspace}+             { driver.loc.advance_lines(yyleng); }
@@ -327,6 +351,7 @@ oct_esc  [0-7]{1,3}
                           return Parser::make_IDENT(driver.struct_type + " " + util::trim(driver.buffer), driver.loc);
                         }
 }
+
 <STRUCT,BRACE>{
   "*"|")"|","           {
                           if (YY_START == STRUCT)
@@ -336,7 +361,7 @@ oct_esc  [0-7]{1,3}
                             // and then inserting a single space.
                             yy_pop_state(yyscanner);
                             for (int i = yyleng - 1; i >= 0; i--) {
-                              driver.loc.advance_columns(-1);
+                              driver.loc.rewind_columns();
                               unput(yytext[i]);
                             }
                             return Parser::make_IDENT(driver.struct_type + " " + util::trim(driver.buffer), driver.loc);

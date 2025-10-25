@@ -34,16 +34,10 @@ std::string ASTSource::read(const SourceLocation &loc)
   return ss.str();
 }
 
-std::vector<MetaMap::Variant> MetaMap::pop(const Node &node)
+std::vector<MetaMap::Variant> MetaMap::associated(const Node &node)
 {
-  // See build_meta_map. We zonk the end line and column for that index.
-  // This allows us to match nodes against the location of the metadata,
-  // rather than requiring a very strict association with the node.
-  SourceLocation loc = node.loc->current;
-  loc.end.line = 0;
-  loc.end.column = 0;
-
-  // Once matched, the metadata is removed.
+  // See build_meta_map. We search only based on the start position.
+  SourceLocation::Position loc = node.loc->current.begin;
   auto it = map_.find(loc);
   if (it == map_.end()) {
     return {};
@@ -51,6 +45,58 @@ std::vector<MetaMap::Variant> MetaMap::pop(const Node &node)
   auto result = std::move(it->second);
   map_.erase(it);
   return result;
+}
+
+std::vector<MetaMap::Variant> MetaMap::within(const Node &node)
+{
+  const auto &node_begin = node.loc->current.begin;
+  const auto &node_end = node.loc->current.end;
+
+  // We need to scan the full map and collection everything within
+  // this node. Should only be done for full blocks, etc.
+  std::vector<MetaMap::Variant> result;
+  std::vector<SourceLocation::Position> to_erase;
+  for (auto &[pos, entries] : map_) {
+    if (pos.line >= node_begin.line &&
+        (pos.line > node_begin.line || pos.column >= node_begin.column) &&
+        pos.line <= node_end.line &&
+        (pos.line < node_end.line || pos.column <= node_end.column)) {
+      for (auto &entry : entries) {
+        result.emplace_back(entry);
+      }
+      to_erase.emplace_back(pos);
+    }
+    if (pos.line > node_end.line) {
+      break; // Early break, nothing else will match.
+    }
+  }
+
+  // Remove all the entries we have cleared above.
+  for (const auto &pos : to_erase) {
+    map_.erase(map_.find(pos));
+  }
+
+  return result;
+}
+
+bool MetaMap::has_within(const Node &node) const
+{
+  const auto &node_begin = node.loc->current.begin;
+  const auto &node_end = node.loc->current.end;
+
+  for (const auto &[pos, entries] : map_) {
+    if (pos.line >= node_begin.line &&
+        (pos.line > node_begin.line || pos.column >= node_begin.column) &&
+        pos.line <= node_end.line &&
+        (pos.line < node_end.line || pos.column <= node_end.column)) {
+      return true;
+    }
+    if (pos.line > node_end.line) {
+      return false; // Past matching.
+    }
+  }
+
+  return false;
 }
 
 ASTContext::ASTContext(std::string &&filename, std::string &&contents)
@@ -86,39 +132,30 @@ MetaMap ASTContext::build_meta_map() const
   std::map<SourceLocation, const Node *> loc_map;
   for (const auto &node : state_->nodes_) {
     loc_map[node->loc->current] = node.get();
-
-    std::cerr << "ALL LOCS: " << typeid(*(node.get())).name() << " @ "
-              << node->loc->current.begin.line << ":"
-              << node->loc->current.begin.column << std::endl;
   }
 
   // Now, for each piece of metadata, find the closest node.
   MetaMap result;
-  for (auto &[meta_loc, meta_type] : state_->metadata_) {
-    auto it = loc_map.upper_bound(meta_loc);
+  for (auto &[meta_loc, spacing] : state_->metadata_) {
+    auto it = loc_map.lower_bound(meta_loc);
+    SourceLocation::Position dest;
     if (it == loc_map.end()) {
-      // This is a trailing comment? Weird. We lose this.
-      continue;
+      // This is a trailing comment? Okay, just dump it without
+      // anything associated.
+      dest = meta_loc.begin;
+    } else {
+      dest = it->first.begin;
     }
 
-    std::cerr << "MAP: " << meta_loc.begin.line << ":" << meta_loc.begin.column
-              << " => " << typeid(*(it->second)).name() << " @ "
-              << it->second->loc->current.begin.line << ":"
-              << it->second->loc->current.begin.column << std::endl;
-
-    // The result map uses zonked end columns; see above.
-    auto loc = it->first;
-    loc.end.line = 0;
-    loc.end.column = 0;
-    auto &vec = result.map_[loc];
-    switch (meta_type) {
-      case VerticalSpace:
-        vec.emplace_back(
-            static_cast<size_t>(meta_loc.end.column - meta_loc.begin.column));
-        break;
-      case Comment:
-        vec.emplace_back(source_->read(meta_loc));
-        break;
+    // Associated with the specific node location, and aggregate
+    // all of the comments and spacing information. We store only
+    // the beginning because it is possible that during printing
+    // this will be picked up by different kinds.
+    auto &vec = result.map_[dest];
+    if (spacing > 0) {
+      vec.emplace_back(static_cast<size_t>(spacing));
+    } else {
+      vec.emplace_back(source_->read(meta_loc));
     }
   }
 
