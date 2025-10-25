@@ -269,6 +269,10 @@ public:
   {
     return visitImpl(stmt.value);
   }
+  R visit(RootStatement &root)
+  {
+    return visitImpl(root.value);
+  }
   R visit([[maybe_unused]] const SizedType &type)
   {
     return default_value();
