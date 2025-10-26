@@ -169,6 +169,7 @@ static Result<> build(CompileContext &ctx,
   if (!data) {
     return data.takeError();
   }
+  result.nodes.emplace_back(std::cref(obj.node));
   result.modules.emplace_back(std::move(mod));
   result.objects.emplace_back(std::move(*data));
   return OK();
