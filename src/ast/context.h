@@ -50,6 +50,7 @@ private:
 // location.
 class MetadataIndex {
 public:
+  MetadataIndex() = default; // Allow, map will be empty.
   MetadataIndex(std::shared_ptr<ASTSource> source)
       : source_(std::move(source)) {};
 
