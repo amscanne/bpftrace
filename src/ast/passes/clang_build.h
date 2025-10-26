@@ -3,12 +3,14 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 
+#include "ast/ast.h"
 #include "ast/pass_manager.h"
 
 namespace bpftrace::ast {
 
 class BitcodeModules : public State<"bitcode"> {
 public:
+  std::vector<std::reference_wrapper<const Node>> nodes;
   std::vector<std::unique_ptr<llvm::Module>> modules;
   std::vector<std::string> objects;
 };
