@@ -6,7 +6,10 @@
 
 namespace bpftrace::ast {
 
-static void import_ast(ASTContext &ast, Node &node, const ASTContext &other)
+static void import_ast(ASTContext &ast,
+                       Node &node,
+                       const ASTContext &other,
+                       bool clone_macros)
 {
   // The ordering of all probes is reversed before and after appending,
   // in order to provide a partial ordering over imports. Consider the
@@ -29,11 +32,16 @@ static void import_ast(ASTContext &ast, Node &node, const ASTContext &other)
     for (const auto &fn : other.root->functions) {
       ast.root->functions.push_back(clone(ast, node.loc, fn));
     }
-    for (const auto &macro : other.root->macros) {
-      ast.root->macros.push_back(clone(ast, node.loc, macro));
-    }
     for (const auto &probe : other.root->probes) {
       ast.root->probes.push_back(clone(ast, node.loc, probe));
+    }
+    // Macros are different, they can either be retained in the original
+    // AST, or they can be loaded directly. This is controlled by the flag,
+    // and is essentially used to control which deprecated features we find.
+    if (clone_macros) {
+      for (const auto &macro : other.root->macros) {
+        ast.root->macros.push_back(clone(ast, node.loc, macro));
+      }
     }
   }
 
@@ -48,7 +56,7 @@ Pass CreateImportExternalScriptsPass()
                       [](ASTContext &ast, Imports &imports) {
                         for (const auto &[name, obj] : imports.scripts) {
                           if (!obj.internal) {
-                            import_ast(ast, obj.node, obj.ast);
+                            import_ast(ast, obj.node, obj.ast, true);
                           }
                         }
                       });
@@ -58,11 +66,18 @@ Pass CreateImportInternalScriptsPass()
 {
   return Pass::create("ImportInternalScripts",
                       [](ASTContext &ast, Imports &imports) {
+                        // Macros are resolved as they are imported, we don't
+                        // copy them into the main AST at this time. This means
+                        // at they are exempt from the standard unstable feature
+                        // checks, etc.
+                        MacroRegistry registry;
                         for (const auto &[name, obj] : imports.scripts) {
                           if (obj.internal) {
-                            import_ast(ast, obj.node, obj.ast);
+                            import_ast(ast, obj.node, obj.ast, false);
+                            registry.add(obj.ast);
                           }
                         }
+                        registry.expand(ast);
                       });
 }
 

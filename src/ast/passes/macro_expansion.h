@@ -26,12 +26,15 @@ private:
   std::vector<const Macro *> closest_;
 };
 
-class MacroRegistry : public State<"macro-registry"> {
+class MacroRegistry {
 public:
-  // Creates a new registry based on an AST.
-  //
-  // This may add errors to conflicting macros.
-  static MacroRegistry create(ASTContext &ast);
+  MacroRegistry() = default;
+
+  // Adds the given AST to the registry.
+  void add(const ASTContext &ast);
+
+  // Expands the given AST with all registered macros.
+  void expand(ASTContext &ast);
 
   // Lookup a macro based on a name and set of arguments.
   //
@@ -41,7 +44,7 @@ public:
 
 private:
   // This holds the definitions for all discovered macros.
-  std::map<std::string, std::vector<Macro *>> macros_;
+  std::map<std::string, std::vector<const Macro *>> macros_;
 };
 
 void expand_macro(ASTContext &ast, Expression &expr, const MacroRegistry &registry);

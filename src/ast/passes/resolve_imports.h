@@ -78,6 +78,11 @@ public:
   std::map<std::string, ScriptObject> scripts;
 
   // Public import call.
+  //
+  // Note that this will resolve the import, but will not e.g. expand macros,
+  // add probes, etc. In order to do this, you should add to the macro registry
+  // and call expand manually. At the time of writing, this is done by the
+  // `Import*ScriptsPass`, which resolved macros, add probes, etc.
   Result<OK> import_any(Node &node,
                         const std::string &name,
                         const std::vector<std::filesystem::path> &paths = {});

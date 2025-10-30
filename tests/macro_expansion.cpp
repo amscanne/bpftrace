@@ -24,7 +24,7 @@ void test(const std::string& input,
                 .put(ast)
                 .put(bpftrace)
                 .add(CreateParsePass())
-                .add(ast::CreateMacroExpansionPass())
+                .add(ast::CreateMacroRegistryPass())
                 .run();
 
   std::ostringstream out;

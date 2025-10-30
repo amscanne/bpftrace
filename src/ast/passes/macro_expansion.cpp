@@ -18,7 +18,7 @@ void MacroLookupError::log(llvm::raw_ostream &OS) const
   OS << "Unable to find macro " << name_;
 }
 
-static bool validate(Macro *macro)
+static bool validate(const Macro *macro)
 {
   std::unordered_set<std::string> seen_mvars;
   std::unordered_set<std::string> seen_mmaps;
@@ -43,10 +43,9 @@ static bool validate(Macro *macro)
   return true;
 }
 
-MacroRegistry MacroRegistry::create(ASTContext &ast)
+void MacroRegistry::add(const ASTContext &ast)
 {
-  MacroRegistry registry;
-  for (Macro *macro : ast.root->macros) {
+  for (const Macro *macro : ast.root->macros) {
     // Note that it is possible to define conflicting macros in this way. For
     // example, we could have:
     //
@@ -56,7 +55,7 @@ MacroRegistry MacroRegistry::create(ASTContext &ast)
     // However we explicitly allow this, as long as they are added in such a way
     // that they will match with the most precise macros first. The newest macro
     // definition must not match with any existing macro definition.
-    auto exists = registry.lookup(macro->name, macro->vargs);
+    auto exists = lookup(macro->name, macro->vargs);
     if (exists) {
       auto &err = macro->addError();
       err << "Redefinition of macro: " << macro->name;
@@ -67,9 +66,8 @@ MacroRegistry MacroRegistry::create(ASTContext &ast)
       continue;
     }
     // Add to the list matching this name.
-    registry.macros_[macro->name].emplace_back(macro);
+    macros_[macro->name].emplace_back(macro);
   }
-  return registry;
 }
 
 static size_t distance(const Macro *macro, const std::vector<Expression> &args)
@@ -434,7 +432,6 @@ Pass CreateMacroExpansionPass()
     expander.visit(ast.root);
     return macros;
   };
-
   return Pass::create("MacroExpansion", fn);
 }
 
