@@ -22,7 +22,7 @@ public:
   void visit(AssignMapStatement &assign)
   {
     Visitor<MapFinder>::visit(assign);
-    idents.insert(assign.map->ident);
+    idents.insert(assign.map_access->ident);
   }
 
   std::set<std::string> idents;
