@@ -40,6 +40,7 @@ add_library(runtime STATIC
   run_bpftrace.cpp
   usdt.cpp
   pcap_writer.cpp
+  tracepoint_format_parser.cpp
   types_format.cpp
   ksyms.cpp
   usyms.cpp

@@ -163,7 +163,8 @@ SizedType Dwarf::get_stype(Dwarf_Die &type_die, bool resolve_structs) const
     }
     case DW_TAG_enumeration_type:
       return CreateUInt(bit_size);
-    case DW_TAG_pointer_type: {
+    case DW_TAG_pointer_type:
+    case DW_TAG_reference_type: {
       if (dwarf_hasattr(&type, DW_AT_type)) {
         Dwarf_Die inner_type = type_of(type);
         return CreatePointer(get_stype(inner_type, false));
@@ -287,20 +288,17 @@ std::vector<std::string> Dwarf::get_function_params(
   return result;
 }
 
-std::shared_ptr<Struct> Dwarf::resolve_args(const std::string &function)
+std::vector<std::pair<std::string, SizedType>> Dwarf::resolve_args(
+    const std::string &function)
 {
-  auto result = std::make_shared<Struct>(0, false);
-  int i = 0;
+  auto result = std::vector<std::pair<std::string, SizedType>>;
   for (auto &param_die : function_param_dies(function)) {
     Dwarf_Die type_die = type_of(param_die);
     SizedType arg_type = get_stype(type_die);
-    arg_type.is_funcarg = true;
-    arg_type.funcarg_idx = i++;
     const std::string name = dwarf_hasattr(&param_die, DW_AT_name)
                                  ? dwarf_diename(&param_die)
                                  : "";
-    result->AddField(name, arg_type, result->size, std::nullopt, false);
-    result->size += arg_type.GetSize();
+    result.emplace_back(name, std::move(arg_type));
   }
   return result;
 }

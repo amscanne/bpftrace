@@ -3,10 +3,9 @@
 #include <fstream>
 #include <string>
 
-#include "ast/pass_manager.h"
-#include "bpftrace.h"
+#include "util/result.h"
 
-namespace bpftrace::ast {
+namespace bpftrace {
 
 class TracepointFormatFileError : public ErrorInfo<TracepointFormatFileError> {
 public:
@@ -30,11 +29,9 @@ private:
 class TracepointFormatParser {
 public:
   TracepointFormatParser(std::string category,
-                         std::string event,
-                         BPFtrace &bpftrace)
+                         std::string event)
       : category_(std::move(category)),
-        event_(std::move(event)),
-        bpftrace_(bpftrace) {};
+        event_(std::move(event)) {};
 
   Result<> parse_format_file();
   std::string get_tracepoint_struct();
@@ -43,14 +40,11 @@ protected:
   std::string get_tracepoint_struct(std::istream &format_file);
 
 private:
-  std::string parse_field(const std::string &line, int *last_offset);
+   std::string parse_field(const std::string &line, int *last_offset);
 
   const std::string category_;
   const std::string event_;
   std::ifstream format_file_;
-  BPFtrace &bpftrace_;
 };
 
-ast::Pass CreateParseTracepointFormatPass();
-
-} // namespace bpftrace::ast
+} // namespace bpftrace
