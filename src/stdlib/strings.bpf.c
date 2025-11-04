@@ -19,7 +19,8 @@ long __bpf_strnlen(const char *ptr, size_t max_size)
   }
   long sz = 0;
   for (size_t i = 0; i < max_size; ++i) {
-    if (ptr[i] == 0) {
+    char c = 0;
+    if (bpf_probe_read(&c, 1, &ptr[i]) != 0 || c == 0) {
       break;
     }
     ++sz;

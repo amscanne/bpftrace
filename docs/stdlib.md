@@ -398,23 +398,6 @@ On 32-bit systems, using this builtin might be slower
 This utilizes the BPF helper `get_jiffies_64`
 
 
-### join
-- `void join(char *arr[], [char * sep = ' '])`
-
-**async**
-
-`join` joins a char * `arr` with `sep` as separator into one string.
-This string will be printed to stdout directly, it cannot be used as string value.
-
-The concatenation of the array members is done in BPF and the printing happens in userspace.
-
-```
-tracepoint:syscalls:sys_enter_execve {
-  join(args.argv);
-}
-```
-
-
 ### kaddr
 - `uint64 kaddr(const string name)`
 

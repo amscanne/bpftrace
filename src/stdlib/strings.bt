@@ -62,7 +62,7 @@ macro strlen(exp) {
 }
 
 macro __strnlen(ptr, max_size) {
-  __bpf_strnlen(ptr, (int64)max_size)
+  __bpf_strnlen(ptr, (uint64)max_size)
 }
 
 // Returns the "capacity" of a string-like object.
@@ -161,3 +161,51 @@ macro syscall_name(n) {
   __syscall_name((int32)n, &$v);
   $v
 }
+
+// :variant string join(char *arr[])
+// :variant string join(char *arr[], char *sep)
+//
+// Joins a char * `arr` with `sep` as separator into one string.
+//
+// ```
+// tracepoint:syscalls:sys_enter_execve {
+//    print(join(args.argv));
+// }
+// ```
+macro join($src, sep) {
+  let $v : string;
+  let $done = 0;
+  let $left = sizeof($v);
+  let $sep = sep;
+  let $seplen = strlen($sep);
+
+  for ($i : 0..1024) {
+    if ($src[$i] == 0) {
+      break; // End of array.
+    }
+    if ($i > 0) {
+      if ($left < $seplen) {
+        break; // Truncated.
+      }
+      __strcat(&$v+$done, &$sep, $seplen);
+      $done += $seplen;
+      $left -= $seplen;
+    }
+    let $l = strlen($src[$i]);
+    if ($left < $l) {
+      break; // Truncated.
+    }
+    __strcat(&$v+$done, $src[$i], $l);
+    $done += $l;
+    $left -= $l;
+  }
+  $v
+}
+macro join(expr, sep) {
+  let $src = expr;
+  join($src, sep);
+}
+macro join(expr) {
+  join(expr, " ")
+}
+
