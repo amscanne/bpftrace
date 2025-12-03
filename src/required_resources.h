@@ -174,6 +174,9 @@ public:
   std::unordered_map<ast::Call* , size_t> non_map_print_args_id_map;
   std::vector<std::tuple<std::string, long>> skboutput_args_;
   std::unordered_map<ast::Call* , size_t> skboutput_args_id_map;
+  std::vector<std::tuple<FormatString, std::vector<Field>>> attach_args;
+  std::unordered_map<ast::Call* , size_t> attach_args_id_map;
+
   // While max fmtstring args size is not used at runtime, the size
   // calculation requires taking into account struct alignment semantics,
   // and that is tricky enough that we want to minimize repetition of
@@ -247,6 +250,7 @@ private:
             strftime_args,
             cat_args,
             non_map_print_args,
+            attach_args,
             runtime_error_info,
             printf_args,
             probe_ids,

@@ -291,4 +291,31 @@ void AsyncHandlers::printf(const OpaqueValue &data)
   out->printf(fmt.format(*vals), source_info, severity);
 }
 
+void AsyncHandlers::attach(const OpaqueValue &data)
+{
+  auto id = data.bitcast<uint64_t>() -
+            static_cast<uint64_t>(AsyncAction::attach);
+  auto &fmt = std::get<0>(bpftrace.resources.cat_args[id]);
+  auto &args = std::get<1>(bpftrace.resources.cat_args[id]);
+  auto vals = prepare_args(
+      bpftrace, c_definitions, args, data.slice(sizeof(uint64_t)));
+  if (!vals) {
+    LOG(BUG) << "Error processing attach arguments: " << vals.takeError();
+  }
+  auto probe = fmt.format(*vals);
+}
+
+void AsyncHandlers::detach(const OpaqueValue &data)
+{
+  auto id = data.bitcast<uint64_t>() -
+            static_cast<uint64_t>(AsyncAction::detach);
+  auto &fmt = std::get<0>(bpftrace.resources.cat_args[id]);
+  auto &args = std::get<1>(bpftrace.resources.cat_args[id]);
+  auto vals = prepare_args(
+      bpftrace, c_definitions, args, data.slice(sizeof(uint64_t)));
+  if (!vals) {
+    LOG(BUG) << "Error processing detach arguments: " << vals.takeError();
+  }
+}
+
 } // namespace bpftrace::async_action

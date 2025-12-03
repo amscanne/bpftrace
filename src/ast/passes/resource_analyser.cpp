@@ -157,7 +157,8 @@ void ResourceAnalyser::visit(Call &call)
   Visitor<ResourceAnalyser>::visit(call);
 
   if (call.func == "printf" || call.func == "errorf" || call.func == "warnf" ||
-      call.func == "system" || call.func == "cat" || call.func == "debugf") {
+      call.func == "system" || call.func == "cat" || call.func == "debugf" ||
+      call.func == "attach" || call.func == "detach") {
     std::vector<SizedType> args;
 
     for (auto it = call.vargs.begin() + 1; it != call.vargs.end(); it++) {
@@ -214,9 +215,12 @@ void ResourceAnalyser::visit(Call &call)
     } else if (call.func == "system") {
       resources_.system_args_id_map[&call] = resources_.system_args.size();
       resources_.system_args.emplace_back(fmtstr, tuple->fields);
-    } else {
+    } else if (call.func == "cat") {
       resources_.cat_args_id_map[&call] = resources_.cat_args.size();
       resources_.cat_args.emplace_back(fmtstr, tuple->fields);
+    } else if (call.func == "attach" || call.func == "detach") {
+      resources_.attach_args_id_map[&call] = resources_.attach_args.size();
+      resources_.attach_args.emplace_back(fmtstr, tuple->fields);
     }
   } else if (call.func == "join") {
     auto delim = call.vargs.size() > 1 ? call.vargs.at(1).as<String>()->value

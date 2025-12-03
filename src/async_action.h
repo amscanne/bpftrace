@@ -1,6 +1,5 @@
 #pragma once
 
-#include "ast/async_event_types.h"
 #include "bpftrace.h"
 #include "output/output.h"
 
@@ -14,7 +13,11 @@ enum class AsyncAction {
   syscall_end = 19999,
   cat         = 20000, // cat reserves 20000-29999 for printf_ids
   cat_end     = 29999,
-  exit        = 30000,
+  attach      = 30000, // attach reserves 30000-39999 for attach_ids
+  attach_end  = 39999,
+  detach      = 40000, // detach reserves 40000-49999 for detach_ids
+  detach_end  = 49999,
+  exit        = 50000,
   print,
   clear,
   zero,
@@ -52,6 +55,8 @@ public:
   void syscall(const OpaqueValue &data);
   void cat(const OpaqueValue &data);
   void printf(const OpaqueValue &data);
+  void attach(const OpaqueValue &data);
+  void detach(const OpaqueValue &data);
 
   void change_output(output::Output &out)
   {

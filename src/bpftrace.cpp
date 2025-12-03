@@ -290,6 +290,14 @@ void event_printer(void *cb_cookie, void *raw_data, int size)
              printf_id <= async_action::AsyncAction::printf_end) {
     ctx->handlers.printf(data);
     return;
+  } else if (printf_id >= async_action::AsyncAction::attach &&
+             printf_id <= async_action::AsyncAction::attach_end) {
+    ctx->handlers.attach(data);
+    return;
+  } else if (printf_id >= async_action::AsyncAction::detach &&
+             printf_id <= async_action::AsyncAction::detach_end) {
+    ctx->handlers.detach(data);
+    return;
   } else {
     LOG(BUG) << "Unknown printf_id: " << static_cast<int64_t>(printf_id);
   }

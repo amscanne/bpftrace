@@ -547,6 +547,20 @@ static const std::map<std::string, call_spec> CALL_SPEC = {
         // some tracepoints like dev_queue_xmit will output ethernet header,
         // set offset to 14 bytes can exclude this header
         arg_type_spec{ .type=Type::integer } } } },
+  { "attach",
+    { .min_args=2,
+      .max_args=128,
+      .arg_types={
+        arg_type_spec{ .type=Type::string, .literal=true },
+        arg_type_spec{ .type=Type::string, .literal=true },
+       } } },
+  { "detach",
+    { .min_args=2,
+      .max_args=128,
+      .arg_types={
+        arg_type_spec{ .type=Type::string, .literal=true },
+        arg_type_spec{ .type=Type::string, .literal=true },
+       } } },
   { "stats",
     { .min_args=3,
       .max_args=3,
@@ -651,7 +665,8 @@ static const std::map<std::string, call_spec> CALL_SPEC = {
       .arg_types={
         arg_type_spec{ .type=Type::string, .literal=true },
       } } },
-};
+}
+;
 // clang-format on
 
 // These are types which aren't valid for scratch variables
@@ -1733,6 +1748,9 @@ void SemanticAnalyser::visit(Call &call)
       return;
     }
     call.return_type = CreateUInt64();
+  } else if (call.func == "attach" || call.func == "detach") {
+    // All arguments are passed to attach and detach directly.
+    call.return_type = CreateNone();
   } else if (call.func == "fail") {
     // This is basically a static_assert failure. It will halt the compilation.
     // We expect to hit this path only when using the `typeof` folds.

@@ -1958,6 +1958,19 @@ ScopedExpr CodegenLLVM::visit(Call &call)
     Value *ret = b_.CreateSkbOutput(
         scoped_skb.value(), len, data, getStructSize(hdr_t));
     return ScopedExpr(ret);
+  } else if (call.func == "attach" || call.func == "detach") {
+    auto found_id = bpftrace_.resources.attach_args_id_map.find(&call);
+    if (found_id == bpftrace_.resources.attach_args_id_map.end()) {
+      LOG(BUG) << "No id found for attach call";
+    }
+    createFormatStringCall(
+        call,
+        found_id->second,
+        bpftrace_.resources.attach_args[found_id->second].second,
+        "printf",
+        call.func == "attach" ? async_action::AsyncAction::attach
+                              : async_action::AsyncAction::detach);
+    return ScopedExpr();
   } else if (call.func == "nsecs") {
     return ScopedExpr(b_.CreateGetNs(call.return_type.ts_mode, call.loc));
   } else if (call.func == "pid") {
