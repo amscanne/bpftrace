@@ -1,0 +1,27 @@
+# Buildkite Release Pipeline
+# Builds and uploads release artifacts when a tag is created
+
+agents:
+  queue: "default"
+
+steps:
+  - label: ":rocket: Build Release Artifacts"
+    key: "build-release"
+    commands:
+      - "git submodule update --init --recursive"
+      - "nix develop --command bash -c 'OUT=./assets ./scripts/create-assets.sh'"
+      - |
+        if [ -n "${BUILDKITE_TAG:-}" ]; then
+          gh release upload "$BUILDKITE_TAG" ./assets/*
+        else
+          echo "Not a tag build, skipping upload"
+          ls -lh ./assets/
+        fi
+    plugins:
+      - artifacts#v1.9.4:
+          upload:
+            - "assets/*"
+    agents:
+      queue: "default"
+    # Only run on tags
+    branches: "refs/tags/*"

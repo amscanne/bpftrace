@@ -1,0 +1,37 @@
+# Main Pipeline Orchestrator
+# This pipeline coordinates all sub-pipelines based on the event type
+
+steps:
+  # Upload quality checks pipeline for all events
+  - label: ":pipeline: Upload Quality Pipeline"
+    command: buildkite-agent pipeline upload .buildkite/pipeline.quality.yml
+
+  # Upload CI pipeline for pushes and PRs
+  - label: ":pipeline: Upload CI Pipeline"
+    command: buildkite-agent pipeline upload .buildkite/pipeline.ci.yml
+    branches: "master release/* !refs/tags/*"
+
+  # Also upload CI on PRs (all branches except tags)
+  - label: ":pipeline: Upload CI Pipeline (PR)"
+    command: buildkite-agent pipeline upload .buildkite/pipeline.ci.yml
+    if: build.pull_request.id != null
+
+  # Upload distros pipeline for master and release branches
+  - label: ":pipeline: Upload Distros Pipeline"
+    command: buildkite-agent pipeline upload .buildkite/pipeline.distros.yml
+    branches: "master release/*"
+
+  # Upload binary builds for master and release branches
+  - label: ":pipeline: Upload Binary Pipeline"
+    command: buildkite-agent pipeline upload .buildkite/pipeline.binary.yml
+    branches: "master release/*"
+
+  # Upload CodeQL pipeline for master, release, and scheduled builds
+  - label: ":pipeline: Upload CodeQL Pipeline"
+    command: buildkite-agent pipeline upload .buildkite/pipeline.codeql.yml
+    branches: "master release/*"
+
+  # Upload release pipeline only for tags
+  - label: ":pipeline: Upload Release Pipeline"
+    command: buildkite-agent pipeline upload .buildkite/pipeline.release.yml
+    branches: "refs/tags/*"

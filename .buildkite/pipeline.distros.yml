@@ -1,0 +1,31 @@
+# Distro Builds Pipeline
+# This pipeline tests building on various Linux distributions
+
+agents:
+  queue: "default"
+
+steps:
+  - label: ":docker: {{matrix.distro}}"
+    key: "distro-{{matrix.key}}"
+    command: |
+      docker build -f {{matrix.dockerfile}} .
+    matrix:
+      setup:
+        distro:
+          - "Alpine"
+          - "Debian"
+          - "Fedora"
+          - "Ubuntu"
+        key:
+          - "alpine"
+          - "debian"
+          - "fedora"
+          - "ubuntu"
+        dockerfile:
+          - "docker/Dockerfile.alpine"
+          - "docker/Dockerfile.debian"
+          - "docker/Dockerfile.fedora"
+          - "docker/Dockerfile.ubuntu"
+    agents:
+      queue: "default"
+    soft_fail: true

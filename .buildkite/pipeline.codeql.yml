@@ -1,0 +1,76 @@
+# Buildkite Pipeline for CodeQL Analysis
+# Migrated from GitHub Actions CodeQL workflow
+# This pipeline runs CodeQL security scanning
+
+agents:
+  queue: "default"
+
+steps:
+  - label: ":shield: CodeQL Analysis (C++)"
+    key: "codeql-cpp"
+    command: |
+      set -eux
+
+      # Install CodeQL CLI (you'll need to set this up in your Buildkite environment)
+      # or use a pre-built Docker image with CodeQL
+
+      # Checkout with submodules
+      git submodule update --init --recursive
+
+      # Configure the build
+      mkdir -p build-codeql
+      cd build-codeql
+      nix develop --command cmake ..
+
+      # Initialize CodeQL database
+      codeql database create codeql-db \
+        --language=cpp \
+        --command="nix develop --command make -j\$(nproc)" \
+        --source-root=..
+
+      # Run CodeQL analysis
+      codeql database analyze codeql-db \
+        --format=sarif-latest \
+        --output=results-cpp.sarif \
+        --download \
+        codeql/cpp-queries:codeql-suites/cpp-security-and-quality.qls
+
+      # Upload results (configure based on your security scanning setup)
+      echo "CodeQL scan completed"
+    plugins:
+      - docker#v5.11.0:
+          image: "nixos/nix:latest"
+          propagate-environment: true
+          mount-checkout: true
+    agents:
+      queue: "default"
+    branches: "master release/*"
+
+  - label: ":shield: CodeQL Analysis (Python)"
+    key: "codeql-python"
+    command: |
+      set -eux
+
+      git submodule update --init --recursive
+
+      # Initialize CodeQL database for Python
+      codeql database create codeql-db-python \
+        --language=python \
+        --source-root=.
+
+      # Run CodeQL analysis
+      codeql database analyze codeql-db-python \
+        --format=sarif-latest \
+        --output=results-python.sarif \
+        --download \
+        codeql/python-queries:codeql-suites/python-security-and-quality.qls
+
+      echo "CodeQL Python scan completed"
+    plugins:
+      - docker#v5.11.0:
+          image: "nixos/nix:latest"
+          propagate-environment: true
+          mount-checkout: true
+    agents:
+      queue: "default"
+    branches: "master release/*"

@@ -1,0 +1,173 @@
+# Main CI Pipeline - Build and Test
+# This pipeline handles the core build and test matrix for bpftrace
+
+agents:
+  queue: "default"
+
+env:
+  RUNTIME_TEST_COLOR: "yes"
+  GTEST_COLOR: "yes"
+
+steps:
+  - label: ":llvm: {{matrix.name}}"
+    key: "build-test-{{matrix.key}}"
+    env:
+      CMAKE_BUILD_TYPE: "{{matrix.build_type}}"
+      NIX_TARGET: "{{matrix.nix_target}}"
+      TOOLS_TEST_DISABLE: "{{matrix.tools_test_disable}}"
+      CC: "{{matrix.cc}}"
+      CXX: "{{matrix.cxx}}"
+      RUN_TESTS: "{{matrix.run_tests}}"
+      RUN_AOT_TESTS: "{{matrix.run_aot_tests}}"
+      AOT_ALLOWLIST_FILE: "{{matrix.aot_allowlist}}"
+      NIX_TARGET_KERNEL: "{{matrix.nix_kernel}}"
+    commands:
+      # Load kernel modules needed for testing
+      - "sudo modprobe nf_tables || true"
+      - "sudo modprobe xfs || true"
+      # Run the CI script
+      - "./.github/include/ci.py"
+    matrix:
+      setup:
+        name:
+          - "LLVM 17 Debug"
+          - "LLVM 18 Debug"
+          - "LLVM 19 Debug"
+          - "LLVM 20 Debug"
+          - "LLVM 21 Release"
+          - "LLVM 21 Debug"
+          - "LLVM 21 Clang Debug"
+          - "Fuzzing"
+          - "Latest kernel (6.14)"
+          - "AOT Tests"
+        key:
+          - "llvm17"
+          - "llvm18"
+          - "llvm19"
+          - "llvm20"
+          - "llvm21-release"
+          - "llvm21-debug"
+          - "llvm21-clang"
+          - "fuzzing"
+          - "kernel-6-14"
+          - "aot"
+        build_type:
+          - "Debug"
+          - "Debug"
+          - "Debug"
+          - "Debug"
+          - "Release"
+          - "Debug"
+          - "Debug"
+          - "Debug"
+          - "Debug"
+          - "Debug"
+        nix_target:
+          - ".#bpftrace-llvm17"
+          - ".#bpftrace-llvm18"
+          - ".#bpftrace-llvm19"
+          - ".#bpftrace-llvm20"
+          - ".#bpftrace-llvm21"
+          - ".#bpftrace-llvm21"
+          - ".#bpftrace-llvm21"
+          - ".#bpftrace-fuzz"
+          - ".#bpftrace-llvm21"
+          - ".#bpftrace-llvm21"
+        tools_test_disable:
+          - "runqlen.bt"
+          - "runqlen.bt"
+          - "runqlen.bt"
+          - "runqlen.bt"
+          - "runqlen.bt"
+          - "runqlen.bt"
+          - "runqlen.bt"
+          - ""
+          - "runqlen.bt"
+          - ""
+        cc:
+          - ""
+          - ""
+          - ""
+          - ""
+          - ""
+          - ""
+          - "clang"
+          - "afl-clang-fast"
+          - ""
+          - ""
+        cxx:
+          - ""
+          - ""
+          - ""
+          - ""
+          - ""
+          - ""
+          - "clang++"
+          - "afl-clang-fast++"
+          - ""
+          - ""
+        run_tests:
+          - "1"
+          - "1"
+          - "1"
+          - "1"
+          - "1"
+          - "1"
+          - "1"
+          - "1"
+          - "1"
+          - "0"
+        run_aot_tests:
+          - "0"
+          - "0"
+          - "0"
+          - "0"
+          - "0"
+          - "0"
+          - "0"
+          - "0"
+          - "0"
+          - "1"
+        aot_allowlist:
+          - ""
+          - ""
+          - ""
+          - ""
+          - ""
+          - ""
+          - ""
+          - ""
+          - ""
+          - ".github/include/aot_allow.txt"
+        nix_kernel:
+          - ""
+          - ""
+          - ""
+          - ""
+          - ""
+          - ""
+          - ""
+          - ""
+          - ".#kernel-6_14"
+          - ""
+    agents:
+      queue: "default"
+    # Agents must have:
+    # - Nix installed
+    # - sudo access for modprobe
+    # - /dev and /sys/kernel/debug access for BPF tests
+    soft_fail: true
+
+  # Notification step (only runs on master failures)
+  - wait: ~
+    continue_on_failure: true
+
+  - label: ":irc: IRC Notification"
+    key: "irc-notify"
+    command: |
+      # This would need to be replaced with your IRC notification mechanism
+      echo "Master build failed at commit $BUILDKITE_COMMIT"
+    agents:
+      queue: "default"
+    branches: "master"
+    if: build.state == "failed"

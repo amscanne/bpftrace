@@ -1,0 +1,36 @@
+# Static and Binary Builds Pipeline
+# This pipeline creates static builds and AppImage binaries
+
+agents:
+  queue: "default"
+
+steps:
+  - label: ":package: Static Build"
+    key: "static"
+    command: "./.github/include/static.sh"
+    agents:
+      queue: "default"
+
+  - label: ":package: AppImage {{matrix.arch}}"
+    key: "appimage-{{matrix.key}}"
+    commands:
+      - "nix build .?submodules=1#appimage"
+      - "cp ./result bpftrace-{{matrix.arch}}"
+    matrix:
+      setup:
+        arch:
+          - "x86_64"
+          - "ARM64"
+        key:
+          - "x86"
+          - "arm"
+        agent_arch:
+          - "x86_64"
+          - "arm64"
+    plugins:
+      - artifacts#v1.9.4:
+          upload:
+            - "bpftrace-{{matrix.arch}}"
+    agents:
+      queue: "default"
+      arch: "{{matrix.agent_arch}}"

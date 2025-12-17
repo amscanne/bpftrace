@@ -1,0 +1,41 @@
+# Code Quality Pipeline - Format, Linting, and Documentation
+# This pipeline handles code quality checks
+
+agents:
+  queue: "default"
+
+steps:
+  - label: ":clang: clang-format"
+    key: "clang-format"
+    commands:
+      - "git fetch origin master"
+      - "nix develop --command git clang-format --diff origin/master --extensions cpp,h"
+    agents:
+      queue: "default"
+
+  - label: ":broom: bpftrace-tidy"
+    key: "bpftrace-tidy"
+    command: "nix develop --command ./scripts/bpftrace_tidy.sh"
+    agents:
+      queue: "default"
+
+  - label: ":broom: clang-tidy"
+    key: "clang-tidy"
+    command: "nix develop --command ./scripts/clang_tidy.sh"
+    agents:
+      queue: "default"
+
+  - label: ":books: stdlib docs"
+    key: "stdlib-docs"
+    commands:
+      - "./scripts/generate_stdlib_docs.py"
+      - |
+        if git diff --exit-code docs/stdlib.md; then
+          echo "✅ docs/stdlib.md is up to date"
+        else
+          echo "❌ docs/stdlib.md is out of date. Please run './scripts/generate_stdlib_docs.py src/stdlib/base.bt' and commit the changes."
+          git diff docs/stdlib.md
+          exit 1
+        fi
+    agents:
+      queue: "default"
