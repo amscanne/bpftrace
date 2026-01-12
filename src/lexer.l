@@ -208,6 +208,65 @@ oct_esc  [0-7]{1,3}
                             yy_push_state(AFTER_COLON, yyscanner);
                             return Parser::make_COLON(driver.loc);
                           }
+
+  /* N.B. The C preprocessor directives also span the line. */
+  "#define "{hspace}*{ident}({hspace}+[^\n]*)?\n {
+                            driver.loc.trim();
+                            std::string line(yytext);
+                            // Remove "#define " prefix and trailing newline.
+                            size_t define_end = line.find_first_not_of(" \t", 7);  // Skip "#define"
+                            line = line.substr(define_end);
+                            if (!line.empty() && line.back() == '\n')
+                              line.pop_back();
+
+                            // Find first whitespace to separate name from expr.
+                            size_t space_pos = line.find_first_of(" \t");
+                            std::string name, expr;
+                            if (space_pos != std::string::npos) {
+                              name = line.substr(0, space_pos);
+                              expr = line.substr(space_pos);
+                              // Trim leading whitespace from expr.
+                              size_t expr_start = expr.find_first_not_of(" \t");
+                              if (expr_start != std::string::npos)
+                                expr = expr.substr(expr_start);
+                              else
+                                expr.clear();
+                            } else {
+                              name = line;
+                              expr = "";
+                            }
+                            auto v = Parser::make_CDEFINE(std::make_pair(name, expr), driver.loc);
+                            driver.loc.advance_lines(1);
+                            return v;
+                          }
+  "#include "{hspace}*\"[^\"]+\"\n {
+                            driver.loc.trim();
+                            std::string line(yytext);
+                            // Find the quoted path.
+                            size_t quote1 = line.find('"');
+                            size_t quote2 = line.find('"', quote1 + 1);
+                            std::string path = line.substr(quote1 + 1, quote2 - quote1 - 1);
+                            auto v = Parser::make_CINCLUDE(path, driver.loc);
+                            driver.loc.advance_lines(1);
+                            return v;
+                          }
+  "#include "{hspace}*[<][^>]+[>]\n {
+                            driver.loc.trim();
+                            std::string line(yytext);
+                            // Find the angle-bracketed path.
+                            size_t angle1 = line.find('<');
+                            size_t angle2 = line.find('>', angle1 + 1);
+                            std::string path = line.substr(angle1 + 1, angle2 - angle1 - 1);
+                            auto v = Parser::make_CINCLUDE(path, driver.loc);
+                            driver.loc.advance_lines(1);
+                            return v;
+                          }
+  "#"[^\n]*\n             {
+                            auto v = Parser::make_CDIRECTIVE(yytext, driver.loc);
+                            driver.loc.advance_lines(1);
+                            return v;
+                          }
+
   /* N.B. The newline following semi-colons and braces does not count as explicit vspace. */
   [;]\n                   { driver.loc.trim(); auto v = Parser::make_SEMI(driver.loc); driver.loc.advance_lines(1); return v; }
   [{]\n                   { driver.loc.trim(); auto v = Parser::make_LBRACE(driver.loc); driver.loc.advance_lines(1); return v; }
@@ -258,8 +317,6 @@ oct_esc  [0-7]{1,3}
   "_"                     { return Parser::make_UNDERSCORE(driver.loc); }
   "$"[0-9]+               { return Parser::make_PARAM(yytext, driver.loc); }
   "$"#                    { return Parser::make_PARAMCOUNT(driver.loc); }
-  /* N.B. The C preprocessor directives also span the line. */
-  [#][^!][^\n]*\n         { driver.loc.trim(); auto v = Parser::make_CPREPROC(yytext, driver.loc); driver.loc.advance_lines(1); return v; }
   "if"                    { return Parser::make_IF(yytext, driver.loc); }
   "else"                  { return Parser::make_ELSE(yytext, driver.loc); }
   "?"                     { return Parser::make_QUES(driver.loc); }

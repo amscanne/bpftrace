@@ -108,6 +108,10 @@ void yyerror(bpftrace::Driver &driver, const char *s);
   LOW "low-precedence"
 ;
 
+%token <std::pair<std::string, std::string>> CDEFINE "preprocessor define"
+%token <std::string> CINCLUDE "preprocessor include"
+%token <std::string> CDIRECTIVE "generic preprocessor directive"
+
 %token <std::string> BUILTIN "builtin"
 %token <std::string> INT_TYPE "integer type"
 %token <std::string> BUILTIN_TYPE "builtin type"
@@ -116,7 +120,6 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %token <std::string> SIZED_TYPE "sized type"
 %token <std::string> IDENT "identifier"
 %token <std::string> PATH "path"
-%token <std::string> CPREPROC "preprocessor directive"
 %token <std::string> STRUCT_DEFN "struct definition"
 %token <std::string> ENUM "enum"
 %token <std::string> STRING "string"
@@ -253,11 +256,21 @@ c_struct:       STRUCT STRUCT_DEFN { $$ = $2; }
                 ;
 
 c_definitions:
-                c_definitions CPREPROC
+                c_definitions CDEFINE
                 {
                     $$ = std::move($1);
-                    auto s = util::rtrim($2);
-                    $$.push_back(driver.ctx.make_node<ast::CStatement>(driver.loc, s));
+                    auto [name, expr] = $2;
+                    $$.push_back(driver.ctx.make_node<ast::CDefine>(driver.loc, std::move(name), std::move(expr)));
+                }
+        |       c_definitions CDIRECTIVE
+                {
+                    $$ = std::move($1);
+                    $$.push_back(driver.ctx.make_node<ast::CDirective>(driver.loc, std::move($2)));
+                }
+        |       c_definitions CINCLUDE
+                {
+                    $$ = std::move($1);
+                    $$.push_back(driver.ctx.make_node<ast::CInclude>(driver.loc, std::move($2)));
                 }
         |       c_definitions c_struct  {
                     $$ = std::move($1);
@@ -265,7 +278,7 @@ c_definitions:
                     if (!s.empty() && s.back() != ';') {
                       s += ";";
                     }
-                    $$.push_back(driver.ctx.make_node<ast::CStatement>(driver.loc, s));
+                    $$.push_back(driver.ctx.make_node<ast::CStruct>(driver.loc, s));
                 }
         |       %empty { $$ = ast::CStatementList(); }
                 ;

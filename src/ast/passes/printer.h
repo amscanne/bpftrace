@@ -111,6 +111,10 @@ public:
   Buffer visit(Statement &stmt);
   Buffer visit(RootStatement &root);
   Buffer visit(CStatement &cstmt);
+  Buffer visit(CInclude &cinclude);
+  Buffer visit(CDefine &cdefine);
+  Buffer visit(CDirective &cdirective);
+  Buffer visit(CStruct &cstruct);
   Buffer visit(const SizedType &type);
 
 private:

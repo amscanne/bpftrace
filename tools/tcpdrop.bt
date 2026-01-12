@@ -38,7 +38,7 @@
 // With BTF providing types, socket headers are not needed.
 // We only need to supply the preprocessor defines in this script.
 // AF_INET/AF_INET6 are part of the stable arch-independent Linux ABI
-#define AF_INET   2
+#define AF_INET 2
 #define AF_INET6 10
 #endif
 

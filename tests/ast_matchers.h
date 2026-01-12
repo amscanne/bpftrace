@@ -167,7 +167,8 @@ private:
                          MatchResultListener* listener) const override
     {
       if constexpr (std::is_same_v<U, ast::Expression> ||
-                    std::is_same_v<U, ast::Statement>) {
+                    std::is_same_v<U, ast::Statement> ||
+                    std::is_same_v<U, ast::CStatement>) {
         if (!node.template is<NodeType>()) {
           const auto& n = node.node();
           std::string actual_type_name = std::visit(
@@ -1188,15 +1189,62 @@ inline IfExprMatcher If(
 class CStatementMatcher
     : public NodeMatcher<CStatementMatcher, ast::CStatement> {
 public:
-  CStatementMatcher& WithData(const std::string& data)
+};
+
+class CIncludeMatcher : public NodeMatcher<CIncludeMatcher, ast::CInclude> {
+public:
+  CIncludeMatcher& WithPath(const std::string& path)
   {
-    return Where(CheckField(&ast::CStatement::data, data, "data"));
+    return Where(CheckField(&ast::CInclude::path, path, "path"));
   }
 };
 
-inline CStatementMatcher CStatement(const std::string& data)
+inline CIncludeMatcher CInclude(const std::string& path)
 {
-  return CStatementMatcher().WithData(data);
+  return CIncludeMatcher().WithPath(path);
+}
+
+class CDefineMatcher : public NodeMatcher<CDefineMatcher, ast::CDefine> {
+public:
+  CDefineMatcher& WithName(const std::string& name)
+  {
+    return Where(CheckField(&ast::CDefine::name, name, "name"));
+  }
+  CDefineMatcher& WithExpr(const std::string& expr)
+  {
+    return Where(CheckField(&ast::CDefine::expr, expr, "expr"));
+  }
+};
+
+inline CDefineMatcher CDefine(const std::string& name, const std::string& expr)
+{
+  return CDefineMatcher().WithName(name).WithExpr(expr);
+}
+
+class CStructMatcher : public NodeMatcher<CStructMatcher, ast::CStruct> {
+public:
+  CStructMatcher& WithData(const std::string& data)
+  {
+    return Where(CheckField(&ast::CStruct::data, data, "data"));
+  }
+};
+
+inline CStructMatcher CStruct(const std::string& data)
+{
+  return CStructMatcher().WithData(data);
+}
+
+class CDirectiveMatcher : public NodeMatcher<CDirectiveMatcher, ast::CDirective> {
+public:
+  CDirectiveMatcher& WithData(const std::string& data)
+  {
+    return Where(CheckField(&ast::CDirective::data, data, "data"));
+  }
+};
+
+inline CDirectiveMatcher CDirective(const std::string& data)
+{
+  return CDirectiveMatcher().WithData(data);
 }
 
 class AssignConfigVarStatementMatcher

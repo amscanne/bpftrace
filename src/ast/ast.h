@@ -261,7 +261,6 @@ class RootImport;
 
 class RootStatement : public VariantNode<Config,
                                          RootImport,
-                                         CStatement,
                                          Probe,
                                          Subprog,
                                          Macro,
@@ -2081,27 +2080,108 @@ public:
 };
 using MacroList = std::vector<Macro *>;
 
-class CStatement : public Node {
+class CInclude;
+class CDefine;
+class CStruct;
+class CDirective;
+
+class CStatement : public VariantNode<CInclude, CDefine, CStruct, CDirective> {
 public:
-  CStatement(ASTContext &ctx, Location &&loc, std::string data)
-      : Node(ctx, std::move(loc)), data(std::move(data)) {};
-  explicit CStatement(ASTContext &ctx,
+  using VariantNode::VariantNode;
+  CStatement() : CStatement(static_cast<CInclude *>(nullptr)) {};
+};
+using CStatementList = std::vector<CStatement>;
+
+// CStatements can be printed in a standardized way, and will
+// appear as the original, valid C source code.
+std::ostream& operator<<(std::ostream &, const CStatement &);
+
+class CInclude : public Node {
+public:
+  CInclude(ASTContext &ctx, Location &&loc, std::string path)
+      : Node(ctx, std::move(loc)), path(std::move(path)) {};
+  explicit CInclude(ASTContext &ctx,
                       const Location &loc,
-                      const CStatement &other)
+                      const CInclude &other)
+      : Node(ctx, loc + other.loc), path(other.path) {};
+
+  bool operator==(const CInclude &other) const
+  {
+    return path == other.path;
+  }
+  std::strong_ordering operator<=>(const CInclude &other) const
+  {
+    return path <=> other.path;
+  }
+
+  std::string path;
+};
+
+class CDefine : public Node {
+public:
+  CDefine(ASTContext &ctx, Location &&loc, std::string name, std::string expr)
+      : Node(ctx, std::move(loc)), name(std::move(name)), expr(std::move(expr)) {};
+  explicit CDefine(ASTContext &ctx,
+                      const Location &loc,
+                      const CDefine &other)
+      : Node(ctx, loc + other.loc), name(other.name), expr(other.expr) {};
+
+  bool operator==(const CDefine &other) const
+  {
+    return name == other.name && expr == other.expr;
+  }
+  std::strong_ordering operator<=>(const CDefine &other) const
+  {
+    if (auto cmp = name <=> other.name; cmp != 0)
+      return cmp;
+    return expr <=> other.expr;
+  }
+
+  std::string name;
+  std::string expr;
+};
+
+class CStruct : public Node {
+public:
+  CStruct(ASTContext &ctx, Location &&loc, std::string data)
+      : Node(ctx, std::move(loc)), data(std::move(data)) {};
+  explicit CStruct(ASTContext &ctx,
+                      const Location &loc,
+                      const CStruct &other)
       : Node(ctx, loc + other.loc), data(other.data) {};
 
-  bool operator==(const CStatement &other) const
+  bool operator==(const CStruct &other) const
   {
     return data == other.data;
   }
-  std::strong_ordering operator<=>(const CStatement &other) const
+  std::strong_ordering operator<=>(const CStruct &other) const
   {
     return data <=> other.data;
   }
 
   std::string data;
 };
-using CStatementList = std::vector<CStatement *>;
+
+class CDirective : public Node {
+public:
+  CDirective(ASTContext &ctx, Location &&loc, std::string data)
+      : Node(ctx, std::move(loc)), data(std::move(data)) {};
+  explicit CDirective(ASTContext &ctx,
+                      const Location &loc,
+                      const CDirective &other)
+      : Node(ctx, loc + other.loc), data(other.data) {};
+
+  bool operator==(const CDirective &other) const
+  {
+    return data == other.data;
+  }
+  std::strong_ordering operator<=>(const CDirective &other) const
+  {
+    return data <=> other.data;
+  }
+
+  std::string data;
+};
 
 class Program : public Node {
 public:

@@ -4,12 +4,8 @@
 // Argument kfunc must be string literal.
 macro kfunc_exist(kfunc)
 {
-  if comptime ((is_literal(kfunc)) && (is_str(kfunc))) {
-    __builtin_kfunc_exist(kfunc)
-  } else {
-    fail("kfunc_exist() accepts a string literal only");
-    false
-  }
+  if comptime (is_literal(kfunc) && is_str(kfunc)) { __builtin_kfunc_exist(kfunc) } else { fail("kfunc_exist() accepts a string literal only");
+                                                                                           false }
 }
 
 // :variant boolean kfunc_allowed(const string kfunc)
@@ -18,10 +14,6 @@ macro kfunc_exist(kfunc)
 // Argument kfunc must be string literal.
 macro kfunc_allowed(kfunc)
 {
-  if comptime ((is_literal(kfunc)) && (is_str(kfunc))) {
-    __builtin_kfunc_allowed(kfunc)
-  } else {
-    fail("kfunc_allowed() accepts a string literal only");
-    false
-  }
+  if comptime (is_literal(kfunc) && is_str(kfunc)) { __builtin_kfunc_allowed(kfunc) } else { fail("kfunc_allowed() accepts a string literal only");
+                                                                                             false }
 }

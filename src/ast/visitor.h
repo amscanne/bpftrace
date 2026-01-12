@@ -281,7 +281,23 @@ public:
   {
     return visitImpl(root.value);
   }
-  R visit([[maybe_unused]] CStatement &cstmt)
+  R visit(CStatement &cstmt)
+  {
+    return visitImpl(cstmt.value);
+  }
+  R visit([[maybe_unused]] CInclude &cinclude)
+  {
+    return default_value();
+  }
+  R visit([[maybe_unused]] CDefine &cdefine)
+  {
+    return default_value();
+  }
+  R visit([[maybe_unused]] CDirective &cdirective)
+  {
+    return default_value();
+  }
+  R visit([[maybe_unused]] CStruct &cstruct)
   {
     return default_value();
   }

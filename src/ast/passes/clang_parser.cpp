@@ -606,7 +606,7 @@ bool ClangParser::parse(ast::Program *program,
   std::stringstream ss;
   ss << "#include </bpftrace/include/__btf_generated_header.h>\n";
   for (const auto &stmt : program->c_statements) {
-    ss << stmt->data << "\n";
+    ss << stmt << "\n";
   }
 
   input = ss.str();

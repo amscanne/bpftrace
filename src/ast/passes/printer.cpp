@@ -243,7 +243,37 @@ static bool is_primitive(const Expression& expr)
 
 Buffer Formatter::visit(CStatement& cstmt)
 {
-  return Buffer().text(cstmt.data);
+  auto comments = metadata.before(cstmt.loc()->current.begin);
+  return Buffer()
+      .metadata(std::move(comments), 0)
+      .append(format(cstmt.value, metadata, max_width));
+}
+
+Buffer Formatter::visit(CInclude& cinclude)
+{
+  if (!cinclude.path.starts_with("."))
+    return Buffer().text("#include <").text(cinclude.path).text(">");
+  else
+    return Buffer().text("#include \"").text(cinclude.path).text("\"");
+}
+
+Buffer Formatter::visit(CDefine& cdefine)
+{
+  auto buffer = Buffer().text("#define ").text(cdefine.name);
+  if (!cdefine.expr.empty()) {
+    buffer = buffer.text(" ").text(cdefine.expr);
+  }
+  return buffer;
+}
+
+Buffer Formatter::visit(CDirective& cdirective)
+{
+  return Buffer().text(cdirective.data);
+}
+
+Buffer Formatter::visit(CStruct& cstruct)
+{
+  return Buffer().text(cstruct.data);
 }
 
 Buffer Formatter::visit(Integer& integer)
@@ -1216,9 +1246,6 @@ Buffer Formatter::visit(Program& program)
   for (auto* import : program.imports) {
     top_level.emplace(import->loc->current, import);
   }
-  for (auto* cstmt : program.c_statements) {
-    top_level.emplace(cstmt->loc->current, cstmt);
-  }
   for (auto* map_decl : program.map_decls) {
     top_level.emplace(map_decl->loc->current, map_decl);
   }
@@ -1230,6 +1257,11 @@ Buffer Formatter::visit(Program& program)
   }
   for (auto* macro : program.macros) {
     top_level.emplace(macro->loc->current, macro);
+  }
+
+  // Print c_statements first, they always precede others.
+  for (auto& cstmt : program.c_statements) {
+    buffer = buffer.append(format(cstmt, metadata, max_width)).line_break();
   }
 
   for (auto& [_, entry] : top_level) {

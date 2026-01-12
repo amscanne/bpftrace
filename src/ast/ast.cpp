@@ -414,4 +414,25 @@ SizedType ident_to_sized_type(const std::string &ident)
   return ident_to_record(ident);
 }
 
+std::ostream &operator<<(std::ostream &out, const CStatement &stmt)
+{
+  if (auto *cinclude = stmt.as<CInclude>()) {
+    // Determine if we should use quotes or angle brackets.
+    if (!cinclude->path.starts_with("."))
+      out << "#include <" << cinclude->path << ">";
+    else
+      out << "#include \"" << cinclude->path << "\"";
+  } else if (auto *cdefine = stmt.as<CDefine>()) {
+    out << "#define " << cdefine->name;
+    if (!cdefine->expr.empty()) {
+      out << " " << cdefine->expr;
+    }
+  } else if (auto *cstruct = stmt.as<CDirective>()) {
+    out << cstruct->data;
+  } else if (auto *cstruct = stmt.as<CStruct>()) {
+    out << cstruct->data;
+  }
+  return out;
+}
+
 } // namespace bpftrace::ast
