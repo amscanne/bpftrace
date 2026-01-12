@@ -176,8 +176,8 @@ void FieldAnalyser::visit(MapAccess &acc)
 
 void FieldAnalyser::visit(Sizeof &szof)
 {
-  if (std::holds_alternative<SizedType>(szof.record)) {
-    resolve_type(std::get<SizedType>(szof.record));
+  if (std::holds_alternative<TypeSpec>(szof.record)) {
+    // TypeSpec is resolved during semantic analysis, nothing to do here
   } else {
     visit(szof.record);
   }
@@ -185,8 +185,8 @@ void FieldAnalyser::visit(Sizeof &szof)
 
 void FieldAnalyser::visit(Offsetof &offof)
 {
-  if (std::holds_alternative<SizedType>(offof.record)) {
-    resolve_type(std::get<SizedType>(offof.record));
+  if (std::holds_alternative<TypeSpec>(offof.record)) {
+    // TypeSpec is resolved during semantic analysis, nothing to do here
   } else {
     visit(offof.record);
   }
@@ -194,8 +194,8 @@ void FieldAnalyser::visit(Offsetof &offof)
 
 void FieldAnalyser::visit(Typeof &typeof)
 {
-  if (std::holds_alternative<SizedType>(typeof.record)) {
-    resolve_type(std::get<SizedType>(typeof.record));
+  if (std::holds_alternative<TypeSpec>(typeof.record)) {
+    // TypeSpec is resolved during semantic analysis, nothing to do here
   } else {
     visit(typeof.record);
   }

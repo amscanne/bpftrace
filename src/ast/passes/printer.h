@@ -114,7 +114,23 @@ public:
   Buffer visit(CInclude &cinclude);
   Buffer visit(CDefine &cdefine);
   Buffer visit(CDirective &cdirective);
-  Buffer visit(CStruct &cstruct);
+  Buffer visit(CType &ctype);
+  Buffer visit(FieldDecl &field);
+  Buffer visit(NamedType &named_type);
+  Buffer visit(StructType &struct_type);
+  Buffer visit(UnionType &union_type);
+  Buffer visit(EnumType &enum_type);
+  Buffer visit(PointerType &pointer_type);
+  Buffer visit(ArrayType &array_type);
+  Buffer visit(ConstType &const_type);
+  Buffer visit(VolatileType &volatile_type);
+  Buffer visit(RestrictType &restrict_type);
+  Buffer visit(TypeTagType &type_tag_type);
+  Buffer visit(TypeSpec &spec);
+  Buffer visit(StructDecl &struct_decl);
+  Buffer visit(UnionDecl &union_decl);
+  Buffer visit(EnumDecl &enum_decl);
+  Buffer visit(TypeDecl &decl);
   Buffer visit(const SizedType &type);
 
 private:

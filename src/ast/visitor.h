@@ -151,6 +151,11 @@ public:
     visitImpl(cast.typeof);
     return visitImpl(cast.expr);
   }
+  R visit(CastOrBinop &cast_or_binop)
+  {
+    visitImpl(cast_or_binop.paren_expr);
+    return visitImpl(cast_or_binop.rhs);
+  }
   R visit(Tuple &tuple)
   {
     return visitImpl(tuple.elems);
@@ -297,7 +302,71 @@ public:
   {
     return default_value();
   }
-  R visit([[maybe_unused]] CStruct &cstruct)
+  R visit([[maybe_unused]] CType &ctype)
+  {
+    return default_value();
+  }
+  R visit(TypeSpec &spec)
+  {
+    return visitImpl(spec.value);
+  }
+  R visit(TypeDecl &decl)
+  {
+    return visitImpl(decl.value);
+  }
+  R visit([[maybe_unused]] FieldDecl &field)
+  {
+    return default_value();
+  }
+  R visit([[maybe_unused]] NamedType &named_type)
+  {
+    return default_value();
+  }
+  R visit([[maybe_unused]] StructType &struct_type)
+  {
+    return default_value();
+  }
+  R visit([[maybe_unused]] UnionType &union_type)
+  {
+    return default_value();
+  }
+  R visit([[maybe_unused]] EnumType &enum_type)
+  {
+    return default_value();
+  }
+  R visit([[maybe_unused]] PointerType &pointer_type)
+  {
+    return default_value();
+  }
+  R visit([[maybe_unused]] ArrayType &array_type)
+  {
+    return default_value();
+  }
+  R visit([[maybe_unused]] ConstType &const_type)
+  {
+    return default_value();
+  }
+  R visit([[maybe_unused]] VolatileType &volatile_type)
+  {
+    return default_value();
+  }
+  R visit([[maybe_unused]] RestrictType &restrict_type)
+  {
+    return default_value();
+  }
+  R visit([[maybe_unused]] TypeTagType &type_tag_type)
+  {
+    return default_value();
+  }
+  R visit([[maybe_unused]] StructDecl &struct_decl)
+  {
+    return default_value();
+  }
+  R visit([[maybe_unused]] UnionDecl &union_decl)
+  {
+    return default_value();
+  }
+  R visit([[maybe_unused]] EnumDecl &enum_decl)
   {
     return default_value();
   }

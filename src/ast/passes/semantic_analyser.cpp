@@ -1891,12 +1891,11 @@ std::optional<size_t> SemanticAnalyser::check(Sizeof &szof)
   is_type_name_ = false;
   meta_depth_--;
 
-  if (std::holds_alternative<SizedType>(szof.record)) {
-    auto &ty = std::get<SizedType>(szof.record);
-    resolve_struct_type(ty, szof);
-    if (!ty.IsNoneTy()) {
-      return ty.GetSize();
-    }
+  if (std::holds_alternative<TypeSpec>(szof.record)) {
+    // TypeSpec case - convert to SizedType and resolve
+    // TODO: Implement TypeSpec to SizedType conversion
+    szof.addError() << "sizeof with TypeSpec not yet fully implemented";
+    return std::nullopt;
   } else {
     const auto &ty = std::get<Expression>(szof.record).type();
     if (!ty.IsNoneTy()) {
@@ -1948,10 +1947,11 @@ std::optional<size_t> SemanticAnalyser::check(Offsetof &offof)
   };
 
   std::optional<size_t> offset;
-  if (std::holds_alternative<SizedType>(offof.record)) {
-    auto &ty = std::get<SizedType>(offof.record);
-    resolve_struct_type(ty, offof);
-    offset = check_type(ty);
+  if (std::holds_alternative<TypeSpec>(offof.record)) {
+    // TypeSpec case - convert to SizedType and resolve
+    // TODO: Implement TypeSpec to SizedType conversion
+    offof.addError() << "offsetof with TypeSpec not yet fully implemented";
+    return std::nullopt;
   } else {
     const auto &ty = std::get<Expression>(offof.record).type();
     offset = check_type(ty);
@@ -1979,8 +1979,9 @@ void SemanticAnalyser::visit(Typeof &typeof)
   is_type_name_ = false;
   meta_depth_--;
 
-  if (std::holds_alternative<SizedType>(typeof.record)) {
-    resolve_struct_type(std::get<SizedType>(typeof.record), typeof);
+  if (std::holds_alternative<TypeSpec>(typeof.record)) {
+    // TypeSpec case - will be resolved elsewhere
+    // TODO: Implement proper TypeSpec to SizedType conversion
   }
 }
 

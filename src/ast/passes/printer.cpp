@@ -271,9 +271,190 @@ Buffer Formatter::visit(CDirective& cdirective)
   return Buffer().text(cdirective.data);
 }
 
-Buffer Formatter::visit(CStruct& cstruct)
+Buffer Formatter::visit(CType& ctype)
 {
-  return Buffer().text(cstruct.data);
+  return format(ctype.decl, metadata, max_width);
+}
+
+Buffer Formatter::visit(FieldDecl& field)
+{
+  auto type_buf = format(field.type, metadata, max_width);
+  auto buffer = Buffer().append(std::move(type_buf)).text(" ").text(field.name);
+  if (field.bitfield_width) {
+    buffer = buffer.text(" : ").text(std::to_string(*field.bitfield_width));
+  }
+  return buffer;
+}
+
+Buffer Formatter::visit(NamedType& named_type)
+{
+  return Buffer().text(named_type.name);
+}
+
+Buffer Formatter::visit(StructType& struct_type)
+{
+  if (std::holds_alternative<std::string>(struct_type.detail)) {
+    return Buffer().text("struct ").text(
+        std::get<std::string>(struct_type.detail));
+  }
+  // Anonymous struct, print all the fields.
+  auto& fields = std::get<std::vector<FieldDecl*>>(struct_type.detail);
+  if (fields.empty()) {
+    return Buffer().text("struct {}");
+  }
+  auto fields_buffer = format_list(
+      fields, ";\n", metadata, max_width - kIndentWidth);
+  return Buffer()
+      .text("struct {")
+      .line_break()
+      .append(std::move(fields_buffer), kIndentWidth)
+      .text(";")
+      .line_break()
+      .text("}");
+}
+
+Buffer Formatter::visit(UnionType& union_type)
+{
+  if (std::holds_alternative<std::string>(union_type.detail)) {
+    return Buffer().text("union ").text(
+        std::get<std::string>(union_type.detail));
+  }
+  // Anonymous union, print all the fields.
+  auto& fields = std::get<std::vector<FieldDecl*>>(union_type.detail);
+  if (fields.empty()) {
+    return Buffer().text("union {}");
+  }
+  auto fields_buffer = format_list(
+      fields, ";\n", metadata, max_width - kIndentWidth);
+  return Buffer()
+      .text("union {")
+      .line_break()
+      .append(std::move(fields_buffer), kIndentWidth)
+      .text(";")
+      .line_break()
+      .text("}");
+}
+
+Buffer Formatter::visit(EnumType& enum_type)
+{
+  return Buffer().text("enum ").text(enum_type.name);
+}
+
+Buffer Formatter::visit(PointerType& pointer_type)
+{
+  return Buffer()
+      .append(format(pointer_type.pointee, metadata, max_width - 1))
+      .text("*");
+}
+
+Buffer Formatter::visit(ArrayType& array_type)
+{
+  auto size_str = std::to_string(array_type.size);
+  return Buffer()
+      .append(format(array_type.element_type,
+                     metadata,
+                     max_width - size_str.size() - 2))
+      .text("[")
+      .text(size_str)
+      .text("]");
+}
+
+Buffer Formatter::visit(ConstType& const_type)
+{
+  return Buffer().text("const ").append(
+      format(const_type.element_type, metadata, max_width - 6));
+}
+
+Buffer Formatter::visit(VolatileType& volatile_type)
+{
+  return Buffer()
+      .text("volatile ")
+      .append(format(volatile_type.element_type, metadata, max_width - 9));
+}
+
+Buffer Formatter::visit(RestrictType& restrict_type)
+{
+  return Buffer()
+      .text("restrict ")
+      .append(format(restrict_type.element_type, metadata, max_width - 9));
+}
+
+Buffer Formatter::visit(TypeTagType& type_tag_type)
+{
+  return Buffer()
+      .append(format(type_tag_type.element_type, metadata, max_width))
+      .text(" __attribute__((btf_type_tag(\"")
+      .text(type_tag_type.tag)
+      .text("\")))");
+}
+
+Buffer Formatter::visit(TypeSpec& spec)
+{
+  return std::visit([&](auto& v) { return format(v, metadata, max_width); },
+                    spec.value);
+}
+
+Buffer Formatter::visit(StructDecl& struct_decl)
+{
+  if (struct_decl.fields.empty()) {
+    return Buffer().text("struct ").text(struct_decl.name).text(" {}");
+  }
+  auto fields_buffer = format_list(
+      struct_decl.fields, ";\n", metadata, max_width - kIndentWidth);
+  return Buffer()
+      .text("struct ")
+      .text(struct_decl.name)
+      .text(" {")
+      .line_break()
+      .append(std::move(fields_buffer), kIndentWidth)
+      .text(";")
+      .line_break()
+      .text("}");
+}
+
+Buffer Formatter::visit(UnionDecl& union_decl)
+{
+  if (union_decl.fields.empty()) {
+    return Buffer().text("union ").text(union_decl.name).text(" {}");
+  }
+  auto fields_buffer = format_list(
+      union_decl.fields, ";\n", metadata, max_width - kIndentWidth);
+  return Buffer()
+      .text("union ")
+      .text(union_decl.name)
+      .text(" {")
+      .line_break()
+      .append(std::move(fields_buffer), kIndentWidth)
+      .text(";")
+      .line_break()
+      .text("}");
+}
+
+Buffer Formatter::visit(EnumDecl& enum_decl)
+{
+  if (enum_decl.values.empty()) {
+    return Buffer().text("enum ").text(enum_decl.name).text(" {}");
+  }
+  auto buffer = Buffer().text("enum ").text(enum_decl.name).text(" {");
+  bool first = true;
+  for (const auto& [name, value] : enum_decl.values) {
+    if (!first) {
+      buffer = buffer.text(",");
+    }
+    buffer = buffer.line_break()
+                 .text(std::string(kIndentWidth, ' '))
+                 .text(name)
+                 .text(" = ")
+                 .text(std::to_string(value));
+    first = false;
+  }
+  return buffer.line_break().text("}");
+}
+
+Buffer Formatter::visit(TypeDecl& decl)
+{
+  return std::visit([&](auto& v) { return format(v, metadata, max_width); },
+                    decl.value);
 }
 
 Buffer Formatter::visit(Integer& integer)
@@ -523,8 +704,7 @@ Buffer Formatter::visit(Typeof& typeof)
             .text(")"));
   } else {
     // Prefer the simpler form for direct types.
-    return format(
-        std::get<SizedType>(typeof.record), metadata, max_width, bare);
+    return format(std::get<TypeSpec>(typeof.record), metadata, max_width);
   }
 }
 

@@ -419,7 +419,7 @@ private:
   llvm::Function *log2_func_ = nullptr;
   MDNode *loop_metadata_ = nullptr;
 
-  size_t getStructSize(StructType *s)
+  size_t getStructSize(llvm::StructType *s)
   {
     return module_->getDataLayout().getTypeAllocSize(s);
   }
@@ -480,9 +480,8 @@ CodegenLLVM::CodegenLLVM(ASTContext &ast,
   const std::string license = ::bpftrace::Config::get_license_str(
       bpftrace_.config_->license);
   auto license_size = license.size() + 1;
-  auto *license_var = llvm::dyn_cast<GlobalVariable>(
-      module_->getOrInsertGlobal(LICENSE,
-                                 ArrayType::get(b_.getInt8Ty(), license_size)));
+  auto *license_var = llvm::dyn_cast<GlobalVariable>(module_->getOrInsertGlobal(
+      LICENSE, llvm::ArrayType::get(b_.getInt8Ty(), license_size)));
   license_var->setInitializer(
       ConstantDataArray::getString(module_->getContext(), license));
   license_var->setSection("license");
@@ -527,7 +526,7 @@ ScopedExpr CodegenLLVM::visit(String &string)
 {
   std::string s(string.value);
   auto *string_var = llvm::dyn_cast<GlobalVariable>(module_->getOrInsertGlobal(
-      s, ArrayType::get(b_.getInt8Ty(), string.string_type.GetSize())));
+      s, llvm::ArrayType::get(b_.getInt8Ty(), string.string_type.GetSize())));
   string_var->setInitializer(
       ConstantDataArray::getString(module_->getContext(), s));
   return ScopedExpr(string_var);
@@ -548,7 +547,7 @@ ScopedExpr CodegenLLVM::visit(Identifier &identifier)
 
 ScopedExpr CodegenLLVM::kstack(const SizedType &stype, const Location &loc)
 {
-  StructType *stack_struct_type = b_.GetStackStructType(stype.stack_type);
+  auto *stack_struct_type = b_.GetStackStructType(stype.stack_type);
 
   llvm::Function *parent = b_.GetInsertBlock()->getParent();
 
@@ -600,7 +599,7 @@ ScopedExpr CodegenLLVM::kstack(const SizedType &stype, const Location &loc)
 
 ScopedExpr CodegenLLVM::ustack(const SizedType &stype, const Location &loc)
 {
-  StructType *stack_struct_type = b_.GetStackStructType(stype.stack_type);
+  auto *stack_struct_type = b_.GetStackStructType(stype.stack_type);
 
   llvm::Function *parent = b_.GetInsertBlock()->getParent();
 
@@ -1112,7 +1111,7 @@ ScopedExpr CodegenLLVM::visit(Call &call)
     llvm::Function *parent = b_.GetInsertBlock()->getParent();
     llvm::Type *ts_struct_ty = b_.GetMapValueType(map.type());
     AllocaInst *ts_struct_ptr = b_.CreateAllocaBPF(
-        PointerType::get(llvm_ctx_, 0), "ts_struct_ptr");
+        llvm::PointerType::get(llvm_ctx_, 0), "ts_struct_ptr");
 
     // Step 1) Figure out which bucket we're using.
     auto map_info = bpftrace_.resources.maps_info.find(map.ident);
@@ -1163,9 +1162,10 @@ ScopedExpr CodegenLLVM::visit(Call &call)
     b_.SetInsertPoint(lookup_success_block);
 
     // Success: ts_struct_ptr just points to what's in the map.
-    b_.CreateStore(
-        b_.CreatePointerCast(lookup, PointerType::get(llvm_ctx_, 0), "cast"),
-        ts_struct_ptr);
+    b_.CreateStore(b_.CreatePointerCast(lookup,
+                                        llvm::PointerType::get(llvm_ctx_, 0),
+                                        "cast"),
+                   ts_struct_ptr);
 
     b_.CreateStore(b_.getInt8(1), key_exists);
 
@@ -1201,7 +1201,8 @@ ScopedExpr CodegenLLVM::visit(Call &call)
     //         updating it.
     b_.SetInsertPoint(maybe_clear_block);
 
-    Value *ptr = b_.CreateLoad(PointerType::get(llvm_ctx_, 0), ts_struct_ptr);
+    Value *ptr = b_.CreateLoad(llvm::PointerType::get(llvm_ctx_, 0),
+                               ts_struct_ptr);
 
     Value *value_ptr = b_.CreateGEP(ts_struct_ty,
                                     ptr,
@@ -1363,9 +1364,9 @@ ScopedExpr CodegenLLVM::visit(Call &call)
     auto elements = AsyncEvent::Buf().asLLVMType(b_, fixed_buffer_length);
     std::ostringstream dynamic_sized_struct_name;
     dynamic_sized_struct_name << "buffer_" << fixed_buffer_length << "_t";
-    StructType *buf_struct = b_.GetStructType(dynamic_sized_struct_name.str(),
-                                              elements,
-                                              true);
+    auto *buf_struct = b_.GetStructType(dynamic_sized_struct_name.str(),
+                                        elements,
+                                        true);
 
     Value *buf_len_offset = b_.CreateGEP(buf_struct,
                                          buf,
@@ -1477,9 +1478,10 @@ ScopedExpr CodegenLLVM::visit(Call &call)
     //     char[16] inet6;
     //   }
     // }
-    std::vector<llvm::Type *> elements = { b_.getInt64Ty(),
-                                           ArrayType::get(b_.getInt8Ty(), 16) };
-    StructType *inet_struct = b_.GetStructType("inet", elements, false);
+    std::vector<llvm::Type *> elements = {
+      b_.getInt64Ty(), llvm::ArrayType::get(b_.getInt8Ty(), 16)
+    };
+    auto *inet_struct = b_.GetStructType("inet", elements, false);
 
     AllocaInst *buf = b_.CreateAllocaBPF(inet_struct, "inet");
 
@@ -1531,7 +1533,7 @@ ScopedExpr CodegenLLVM::visit(Call &call)
       addr_size = 16;
     }
 
-    llvm::Type *array_t = ArrayType::get(b_.getInt8Ty(), addr_size);
+    llvm::Type *array_t = llvm::ArrayType::get(b_.getInt8Ty(), addr_size);
     AllocaInst *buf;
     if (af_type == AF_INET6) {
       buf = b_.CreateAllocaBPF(array_t, "addr6");
@@ -1691,7 +1693,7 @@ ScopedExpr CodegenLLVM::visit(Call &call)
     return ScopedExpr();
   } else if (call.func == "exit") {
     auto elements = AsyncEvent::Exit().asLLVMType(b_);
-    StructType *exit_struct = b_.GetStructType("exit_t", elements, true);
+    auto *exit_struct = b_.GetStructType("exit_t", elements, true);
     AllocaInst *buf = b_.CreateAllocaBPF(exit_struct, "exit");
     size_t struct_size = datalayout().getTypeAllocSize(exit_struct);
 
@@ -1722,9 +1724,9 @@ ScopedExpr CodegenLLVM::visit(Call &call)
     return ScopedExpr();
   } else if (call.func == "cgroup_path") {
     auto elements = AsyncEvent::CgroupPath().asLLVMType(b_);
-    StructType *cgroup_path_struct = b_.GetStructType(call.func + "_t",
-                                                      elements,
-                                                      true);
+    auto *cgroup_path_struct = b_.GetStructType(call.func + "_t",
+                                                elements,
+                                                true);
     AllocaInst *buf = b_.CreateAllocaBPF(cgroup_path_struct,
                                          call.func + "_args");
 
@@ -1749,9 +1751,7 @@ ScopedExpr CodegenLLVM::visit(Call &call)
     return ScopedExpr(buf, [this, buf]() { b_.CreateLifetimeEnd(buf); });
   } else if (call.func == "clear" || call.func == "zero") {
     auto elements = AsyncEvent::MapEvent().asLLVMType(b_);
-    StructType *event_struct = b_.GetStructType(call.func + "_t",
-                                                elements,
-                                                true);
+    auto *event_struct = b_.GetStructType(call.func + "_t", elements, true);
 
     auto &arg = call.vargs.at(0);
     auto &map = *arg.as<Map>();
@@ -1802,9 +1802,7 @@ ScopedExpr CodegenLLVM::visit(Call &call)
                          false));
   } else if (call.func == "time") {
     auto elements = AsyncEvent::Time().asLLVMType(b_);
-    StructType *time_struct = b_.GetStructType(call.func + "_t",
-                                               elements,
-                                               true);
+    auto *time_struct = b_.GetStructType(call.func + "_t", elements, true);
 
     AllocaInst *buf = b_.CreateAllocaBPF(time_struct, call.func + "_t");
 
@@ -1825,9 +1823,7 @@ ScopedExpr CodegenLLVM::visit(Call &call)
     return ScopedExpr(buf, [this, buf] { b_.CreateLifetimeEnd(buf); });
   } else if (call.func == "strftime") {
     auto elements = AsyncEvent::Strftime().asLLVMType(b_);
-    StructType *strftime_struct = b_.GetStructType(call.func + "_t",
-                                                   elements,
-                                                   true);
+    auto *strftime_struct = b_.GetStructType(call.func + "_t", elements, true);
 
     AllocaInst *buf = b_.CreateAllocaBPF(strftime_struct, call.func + "_args");
     auto found_id = bpftrace_.resources.strftime_args_id_map.find(&call);
@@ -1902,7 +1898,7 @@ ScopedExpr CodegenLLVM::visit(Call &call)
     return scoped_arg;
   } else if (call.func == "skboutput") {
     auto elements = AsyncEvent::SkbOutput().asLLVMType(b_);
-    StructType *hdr_t = b_.GetStructType("hdr_t", elements, false);
+    auto *hdr_t = b_.GetStructType("hdr_t", elements, false);
     AllocaInst *data = b_.CreateAllocaBPF(hdr_t, "hdr");
 
     // The extra 0 here ensures the type of addr_offset will be int64
@@ -3347,7 +3343,7 @@ ScopedExpr CodegenLLVM::getMultiMapKey(Map &map,
   auto *key = b_.CreateMapKeyAllocation(CreateArray(size, CreateInt8()),
                                         map.ident + "_key",
                                         loc);
-  auto *key_type = ArrayType::get(b_.getInt8Ty(), size);
+  auto *key_type = llvm::ArrayType::get(b_.getInt8Ty(), size);
 
   int offset = 0;
   bool aligned = true;
@@ -3756,12 +3752,14 @@ void CodegenLLVM::createFormatStringCall(Call &call,
   // types and offsets of each of the arguments, and share that between BPF
   // and user-space for printing.
   std::vector<llvm::Type *> ringbuf_elems = { b_.getInt64Ty() };
-  StructType *fmt_struct = nullptr;
+  auto *fmt_struct = static_cast<llvm::StructType *>(nullptr);
   if (!elements.empty()) {
-    fmt_struct = StructType::create(elements, call_name + "_args_t", false);
+    fmt_struct = llvm::StructType::create(elements,
+                                          call_name + "_args_t",
+                                          false);
     ringbuf_elems.push_back(fmt_struct);
   }
-  StructType *ringbuf_struct = StructType::create(ringbuf_elems,
+  auto *ringbuf_struct = llvm::StructType::create(ringbuf_elems,
                                                   call_name + "_t",
                                                   false);
 
@@ -3803,7 +3801,7 @@ void CodegenLLVM::createFormatStringCall(Call &call,
 void CodegenLLVM::createPrintMapCall(Call &call)
 {
   auto elements = AsyncEvent::Print().asLLVMType(b_);
-  StructType *print_struct = b_.GetStructType(call.func + "_t", elements, true);
+  auto *print_struct = b_.GetStructType(call.func + "_t", elements, true);
 
   auto &arg = call.vargs.at(0);
   auto &map = *arg.as<Map>();
@@ -3865,9 +3863,10 @@ void CodegenLLVM::createJoinCall(Call &call, int id)
   uint32_t content_size = bpftrace_.join_argnum_ * bpftrace_.join_argsize_;
 
   auto elements = AsyncEvent::Join().asLLVMType(b_, content_size);
-  StructType *join_struct = b_.GetStructType("join_t", elements, true);
+  auto *join_struct = b_.GetStructType("join_t", elements, true);
 
-  Value *join_data = b_.CreateBitCast(perfdata, PointerType::get(llvm_ctx_, 0));
+  Value *join_data = b_.CreateBitCast(perfdata,
+                                      llvm::PointerType::get(llvm_ctx_, 0));
 
   b_.CreateStore(
       b_.getInt64(static_cast<int>(async_action::AsyncAction::join)),
@@ -3923,9 +3922,7 @@ void CodegenLLVM::createPrintNonMapCall(Call &call)
   std::ostringstream struct_name;
   struct_name << call.func << "_" << arg.type().GetTy() << "_"
               << arg.type().GetSize() << "_t";
-  StructType *print_struct = b_.GetStructType(struct_name.str(),
-                                              elements,
-                                              true);
+  auto *print_struct = b_.GetStructType(struct_name.str(), elements, true);
   Value *buf = b_.CreateGetFmtStringArgsAllocation(print_struct,
                                                    struct_name.str(),
                                                    call.loc);
@@ -3985,7 +3982,9 @@ void CodegenLLVM::createMapDefinition(const std::string &name,
     elems.push_back(b_.getPtrTy());
     elems.push_back(b_.getPtrTy());
   }
-  auto *type = StructType::create(elems, "struct map_internal_repr_t", false);
+  auto *type = llvm::StructType::create(elems,
+                                        "struct map_internal_repr_t",
+                                        false);
 
   auto *var = llvm::dyn_cast<GlobalVariable>(
       module_->getOrInsertGlobal(var_name, type));
@@ -4299,7 +4298,7 @@ std::pair<llvm::Type *, llvm::Value *> CodegenLLVM::createForContext(
   llvm::Type *ctx_t = nullptr;
   Value *ctx = nullptr;
   if (!ctx_field_types.empty()) {
-    ctx_t = StructType::create(ctx_field_types, "ctx_t");
+    ctx_t = llvm::StructType::create(ctx_field_types, "ctx_t");
     ctx = b_.CreateAllocaBPF(ctx_t, "ctx");
     for (size_t i = 0; i < ctx_fields.size(); i++) {
       const auto &field = ctx_fields[i];
@@ -4560,9 +4559,9 @@ bool CodegenLLVM::canAggPerCpuMapElems(const bpf_map_type map_type,
 Value *CodegenLLVM::createFmtString(int print_id)
 {
   const auto &s = bpftrace_.resources.bpf_print_fmts.at(print_id).str();
-  auto *res = llvm::dyn_cast<GlobalVariable>(
-      module_->getOrInsertGlobal("__fmt_" + std::to_string(print_id),
-                                 ArrayType::get(b_.getInt8Ty(), s.size() + 1)));
+  auto *res = llvm::dyn_cast<GlobalVariable>(module_->getOrInsertGlobal(
+      "__fmt_" + std::to_string(print_id),
+      llvm::ArrayType::get(b_.getInt8Ty(), s.size() + 1)));
   res->setConstant(true);
   res->setInitializer(ConstantDataArray::getString(module_->getContext(), s));
   res->setAlignment(MaybeAlign(1));

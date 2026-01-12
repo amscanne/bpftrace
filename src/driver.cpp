@@ -45,6 +45,24 @@ std::optional<ast::Expression> Driver::parse_expr()
   return std::nullopt;
 }
 
+std::optional<ast::Expression> Driver::parse_decl()
+{
+  parse(Parser::make_START_DECL(loc));
+  if (std::holds_alternative<ast::TypeDecl>(result)) {
+    return std::get<ast::TypeDecl>(result);
+  }
+  return std::nullopt;
+}
+
+std::optional<ast::Expression> Driver::parse_type()
+{
+  parse(Parser::make_START_TYPE(loc));
+  if (std::holds_alternative<ast::TypeSpec>(result)) {
+    return std::get<ast::TypeSpec>(result);
+  }
+  return std::nullopt;
+}
+
 void Driver::error(const ast::SourceLocation &l, const std::string &m)
 {
   // This path is normally not allowed, however we don't yet have nodes

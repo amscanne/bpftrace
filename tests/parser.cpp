@@ -23,7 +23,7 @@ using bpftrace::test::Call;
 using bpftrace::test::Cast;
 using bpftrace::test::CDefine;
 using bpftrace::test::CInclude;
-using bpftrace::test::CStruct;
+using bpftrace::test::CType;
 using bpftrace::test::ExprStatement;
 using bpftrace::test::FieldAccess;
 using bpftrace::test::Integer;
@@ -1684,7 +1684,7 @@ TEST(Parser, cast_enum)
 {
   test("enum Foo { ONE = 1 } kprobe:sys_read { (enum Foo)1; }",
        Program()
-           .WithCStatements({ CStruct("enum Foo { ONE = 1 };") })
+           .WithCStatements({ CType("enum Foo { ONE = 1 };") })
            .WithProbe(
                Probe({ "kprobe:sys_read" },
                      { ExprStatement(
@@ -1711,7 +1711,7 @@ TEST(Parser, offsetof_type)
 {
   test("struct Foo { int x; } begin { offsetof(struct Foo, x); }",
        Program()
-           .WithCStatements({ CStruct("struct Foo { int x; };") })
+           .WithCStatements({ CType("struct Foo { int x; };") })
            .WithProbe(Probe({ "begin" },
                             { ExprStatement(Offsetof(
                                 SizedType(Type::record).WithName("struct Foo"),
@@ -1720,7 +1720,7 @@ TEST(Parser, offsetof_type)
        "begin { offsetof(struct Foo, bar.x); }",
        Program()
            .WithCStatements(
-               { CStruct("struct Foo { struct Bar { int x; } bar; };") })
+               { CType("struct Foo { struct Bar { int x; } bar; };") })
            .WithProbe(Probe({ "begin" },
                             { ExprStatement(Offsetof(
                                 SizedType(Type::record).WithName("struct Foo"),
@@ -1739,7 +1739,7 @@ TEST(Parser, offsetof_expression)
   test("struct Foo { int x; }; "
        "begin { $foo = (struct Foo *)0; offsetof(*$foo, x); }",
        Program()
-           .WithCStatements({ CStruct("struct Foo { int x; };") })
+           .WithCStatements({ CType("struct Foo { int x; };") })
            .WithProbe(Probe(
                { "begin" },
                { AssignVarStatement(Variable("$foo"),
@@ -1754,7 +1754,7 @@ TEST(Parser, offsetof_builtin_type)
   test("struct Foo { timestamp x; } begin { offsetof(struct Foo, timestamp); "
        "}",
        Program()
-           .WithCStatements({ CStruct("struct Foo { timestamp x; };") })
+           .WithCStatements({ CType("struct Foo { timestamp x; };") })
            .WithProbe(Probe({ "begin" },
                             { ExprStatement(Offsetof(
                                 SizedType(Type::record).WithName("struct Foo"),
@@ -1863,7 +1863,7 @@ TEST(Parser, cstruct)
 {
   test("struct Foo { int x, y; char *str; } kprobe:sys_read { 1; }",
        Program()
-           .WithCStatements({ CStruct("struct Foo { int x, y; char *str; };") })
+           .WithCStatements({ CType("struct Foo { int x, y; char *str; };") })
            .WithProbe(
                Probe({ "kprobe:sys_read" }, { ExprStatement(Integer(1)) })));
 }
@@ -1872,7 +1872,7 @@ TEST(Parser, cstruct_semicolon)
 {
   test("struct Foo { int x, y; char *str; }; kprobe:sys_read { 1; }",
        Program()
-           .WithCStatements({ CStruct("struct Foo { int x, y; char *str; };") })
+           .WithCStatements({ CType("struct Foo { int x, y; char *str; };") })
            .WithProbe(
                Probe({ "kprobe:sys_read" }, { ExprStatement(Integer(1)) })));
 }
@@ -1881,8 +1881,7 @@ TEST(Parser, cstruct_nested)
 {
   test("struct Foo { struct { int x; } bar; } kprobe:sys_read { 1; }",
        Program()
-           .WithCStatements(
-               { CStruct("struct Foo { struct { int x; } bar; };") })
+           .WithCStatements({ CType("struct Foo { struct { int x; } bar; };") })
            .WithProbe(
                Probe({ "kprobe:sys_read" }, { ExprStatement(Integer(1)) })));
 }
@@ -2791,7 +2790,7 @@ TEST(Parser, struct_save_nested)
   } bar;
 } i:ms:100 { $s = (struct Foo)1; })",
        Program()
-           .WithCStatements({ CStruct(R"(struct Foo {
+           .WithCStatements({ CType(R"(struct Foo {
   int x;
   struct Bar {
     int y;

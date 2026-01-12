@@ -48,9 +48,6 @@ path     :(\\.|[_\-\./a-zA-Z0-9#$+\*])+
 /* Most of the builtins are prefixed with __builtin_ as they are exposed to users via macros e.g. macro cpu() { __builtin_cpu } */
 builtin  arg[0-9]+|args|ctx|kstack|nsecs|pid|sarg[0-9]|tid|ustack|__builtin_cgroup|__builtin_comm|__builtin_cpid|__builtin_cpu|__builtin_curtask|__builtin_elapsed|__builtin_func|__builtin_gid|__builtin_jiffies|__builtin_ncpus|__builtin_probe|__builtin_rand|__builtin_retval|__builtin_uid|__builtin_usermode|__builtin_username
 
-int_type        bool|(u)?int(8|16|32|64)
-builtin_type    void|(u)?(min|max|sum|avg|stats)_t|count_t|probe_t|username_t|lhist_t|hist_t|usym_t|ksym_t|timestamp|macaddr_t|cgroup_path_t|kstack_t|ustack_t|tseries_t
-sized_type      inet|buffer|string
 subprog         fn
 macro           macro
 
@@ -60,16 +57,11 @@ oct_esc  [0-7]{1,3}
 
 %x SCRIPT
 %x STR
-%x STRUCT
-%x ENUM
-%x BRACE
 %x CCOMMENT
 %x CCOMMENTNL
 %x CPPCOMMENT
 %x CPPCOMMENTNL
 %x AFTER_DIV
-%x AFTER_COLON
-%x STRUCT_AFTER_COLON
 
 %%
 
@@ -202,12 +194,6 @@ oct_esc  [0-7]{1,3}
   {path}                  { return Parser::make_PATH(yytext, driver.loc); }
   {map}                   { return Parser::make_MAP(yytext, driver.loc); }
   {var}                   { return Parser::make_VAR(yytext, driver.loc); }
-  ":"                     {
-                            /* For handling "struct x" in "fn name(...): struct x {  }" as a type rather than
-                              a beginning of a struct definition; see AFTER_COLON rules below */
-                            yy_push_state(AFTER_COLON, yyscanner);
-                            return Parser::make_COLON(driver.loc);
-                          }
 
   /* N.B. The C preprocessor directives also span the line. */
   "#define "{hspace}*{ident}({hspace}+[^\n]*)?\n {
@@ -271,6 +257,7 @@ oct_esc  [0-7]{1,3}
   [;]\n                   { driver.loc.trim(); auto v = Parser::make_SEMI(driver.loc); driver.loc.advance_lines(1); return v; }
   [{]\n                   { driver.loc.trim(); auto v = Parser::make_LBRACE(driver.loc); driver.loc.advance_lines(1); return v; }
   [}]\n                   { driver.loc.trim(); auto v = Parser::make_RBRACE(driver.loc); driver.loc.advance_lines(1); return v; }
+  ":"                     { return Parser::make_COLON(driver.loc); }
   ";"                     { return Parser::make_SEMI(driver.loc); }
   "{"                     { return Parser::make_LBRACE(driver.loc); }
   "}"                     { return Parser::make_RBRACE(driver.loc); }
@@ -335,18 +322,15 @@ oct_esc  [0-7]{1,3}
   "import"                { return Parser::make_IMPORT(yytext, driver.loc); }
   "comptime"              { return Parser::make_COMPTIME(yytext, driver.loc); }
 
-  {int_type}              { return Parser::make_INT_TYPE(yytext, driver.loc); }
-  {builtin_type}          { return Parser::make_BUILTIN_TYPE(yytext, driver.loc); }
-  {sized_type}            { return Parser::make_SIZED_TYPE(yytext, driver.loc); }
-
 
   \"                      { yy_push_state(STR, yyscanner); driver.buffer.clear(); }
-  struct|union|enum       {
-                            yy_push_state(STRUCT, yyscanner);
-                            driver.buffer.clear();
-                            driver.struct_type = yytext;
-                            return Parser::make_STRUCT(driver.loc);
-                          }
+  "struct"                { return Parser::make_STRUCT(driver.loc); }
+  "union"                 { return Parser::make_UNION(driver.loc); }
+  "enum"                  { return Parser::make_ENUM(driver.loc); }
+  "const"                 { return Parser::make_CONST(driver.loc); }
+  "volatile"              { return Parser::make_VOLATILE(driver.loc); }
+  "restrict"              { return Parser::make_RESTRICT(driver.loc); }
+  "__attribute__"         { return Parser::make_ATTRIBUTE(driver.loc); }
   {ident}                 { return Parser::make_IDENT(yytext, driver.loc); }
   .                       { driver.error(driver.loc, std::string("invalid character '") +
                                               std::string(yytext) + std::string("'")); }
@@ -391,72 +375,6 @@ oct_esc  [0-7]{1,3}
                           yy_pop_state(yyscanner);
                           return Parser::make_DIV(driver.orig_loc);
                         }
-}
-
-<AFTER_COLON>{
-  {hspace}+             { }
-  {vspace}+             { driver.loc.advance_lines(yyleng); }
-  \r                    { driver.loc.reset_column(); }
-  struct|union|enum     {
-                          yy_pop_state(yyscanner);
-                          yy_push_state(STRUCT_AFTER_COLON, yyscanner);
-                          driver.buffer.clear();
-                          driver.struct_type = yytext;
-                          return Parser::make_STRUCT(driver.loc);
-                        }
-  .                     { driver.loc.rewind_columns(); unput(yytext[0]); yy_pop_state(yyscanner); }
-}
-
-<STRUCT_AFTER_COLON>{
-  {hspace}+             { }
-  {vspace}+             { driver.loc.advance_lines(yyleng); }
-  \r                    { driver.loc.reset_column(); }
-  {ident}               {
-                          driver.buffer = yytext;
-                          yy_pop_state(yyscanner);
-                          return Parser::make_IDENT(driver.struct_type + " " + util::trim(driver.buffer), driver.loc);
-                        }
-}
-
-<STRUCT,BRACE>{
-  "*"|")"|","           {
-                          if (YY_START == STRUCT)
-                          {
-                            // Finished parsing the typename of a cast or a call arg
-                            // Put the cast type into a canonical form by trimming
-                            // and then inserting a single space.
-                            yy_pop_state(yyscanner);
-                            for (int i = yyleng - 1; i >= 0; i--) {
-                              driver.loc.rewind_columns();
-                              unput(yytext[i]);
-                            }
-                            return Parser::make_IDENT(driver.struct_type + " " + util::trim(driver.buffer), driver.loc);
-                          }
-                          driver.buffer += yytext[0];
-                        }
-  "{"                   yy_push_state(BRACE, yyscanner); driver.buffer += '{';
-  [}][;]?[\n]?          {
-                          driver.buffer += yytext;
-                          if (yytext[yyleng-1] == '\n') {
-                            driver.loc.trim();
-                          }
-                          auto loc = driver.loc;
-                          if (yytext[yyleng-1] == '\n') {
-                            driver.loc.advance_lines(1);
-                          }
-                          yy_pop_state(yyscanner);
-                          if (YY_START == STRUCT)
-                          {
-                            // Finished parsing a struct definition
-                            // Trimming isn't needed here since the typenames
-                            // will go through Clang before we get them back
-                            // anyway.
-                            yy_pop_state(yyscanner);
-                            return Parser::make_STRUCT_DEFN(driver.struct_type + driver.buffer, loc);
-                          }
-                        }
-  .                     driver.buffer += yytext[0];
-  \n                    driver.buffer += '\n'; driver.loc.advance_lines(1);
 }
 %%
 

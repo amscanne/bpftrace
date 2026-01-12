@@ -16,6 +16,8 @@ class Statement;
 class Iterable;
 class RootStatement;
 class CStatement;
+class TypeSpec;
+class TypeDecl;
 
 template <typename T>
 struct Cloner;
@@ -34,7 +36,8 @@ struct Cloner<T> {
 template <typename T>
   requires(std::is_same_v<T, Expression> || std::is_same_v<T, Statement> ||
            std::is_same_v<T, Iterable> || std::is_same_v<T, RootStatement> ||
-           std::is_same_v<T, CStatement>)
+           std::is_same_v<T, CStatement> || std::is_same_v<T, TypeSpec> ||
+           std::is_same_v<T, TypeDecl>)
 struct Cloner<T> {
   T operator()(ASTContext &ctx, const Location &loc, const T &v)
   {

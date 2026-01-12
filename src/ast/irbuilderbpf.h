@@ -124,7 +124,7 @@ public:
   Value *CreateGetStrAllocation(const std::string &name,
                                 const Location &loc,
                                 uint64_t pad = 0);
-  Value *CreateGetFmtStringArgsAllocation(StructType *struct_type,
+  Value *CreateGetFmtStringArgsAllocation(llvm::StructType *struct_type,
                                           const std::string &name,
                                           const Location &loc);
   Value *CreateTupleAllocation(const SizedType &tuple_type,
@@ -182,8 +182,8 @@ public:
   void CreateHelperErrorCond(Value *return_value,
                              bpf_func_id func_id,
                              const Location &loc);
-  StructType *GetStackStructType(const StackType& stack_type);
-  StructType *GetStructType(const std::string &name,
+  llvm::StructType *GetStackStructType(const StackType& stack_type);
+  llvm::StructType *GetStructType(const std::string &name,
                             const std::vector<llvm::Type *> &elements,
                             bool packed = false);
   Value *CreateGetPid(const Location &loc, bool force_init);
@@ -282,7 +282,7 @@ private:
       const std::string &map_name,
       Value *key,
       Value *cpu,
-      PointerType *val_ptr_ty,
+      llvm::PointerType *val_ptr_ty,
       const std::string &name = "lookup_percpu_elem");
   Value *CreateReadMapValueAllocation(const SizedType &value_type,
                                       const std::string &name,
@@ -311,7 +311,7 @@ private:
                        CallInst *call,
                        const SizedType &type);
 
-  std::map<std::string, StructType *> structs_;
+  std::map<std::string, llvm::StructType *> structs_;
   llvm::Function *preserve_static_offset_ = nullptr;
 };
 

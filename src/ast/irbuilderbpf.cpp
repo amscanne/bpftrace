@@ -116,7 +116,7 @@ AllocaInst *IRBuilderBPF::CreateUSym(Value *val,
     getInt32Ty(), // pid
     getInt32Ty(), // probe id
   };
-  StructType *usym_t = GetStructType("usym_t", elements, false);
+  auto *usym_t = GetStructType("usym_t", elements, false);
   AllocaInst *buf = CreateAllocaBPF(usym_t, "usym");
 
   Value *pid = CreateGetPid(loc, false);
@@ -134,7 +134,7 @@ AllocaInst *IRBuilderBPF::CreateUSym(Value *val,
   return buf;
 }
 
-StructType *IRBuilderBPF::GetStackStructType(const StackType &stack_type)
+llvm::StructType *IRBuilderBPF::GetStackStructType(const StackType &stack_type)
 {
   std::vector<llvm::Type *> elements;
   // Kernel stacks should not be differentiated by pid, since the kernel
@@ -162,28 +162,27 @@ StructType *IRBuilderBPF::GetStackStructType(const StackType &stack_type)
     std::vector<llvm::Type *> union_elem = {
       getInt64Ty(),
     };
-    StructType *union_type = GetStructType("offset_ip_union",
-                                           union_elem,
-                                           false);
+    auto *union_type = GetStructType("offset_ip_union", union_elem, false);
 
     std::vector<llvm::Type *> build_id_elements = {
       getInt32Ty(), // status
-      ArrayType::get(getInt8Ty(),
-                     BPF_BUILD_ID_SIZE), // build_id[BPF_BUILD_ID_SIZE]
+      llvm::ArrayType::get(getInt8Ty(),
+                           BPF_BUILD_ID_SIZE), // build_id[BPF_BUILD_ID_SIZE]
       union_type,
     };
-    StructType *stack_build_id = GetStructType("stack_build_id",
-                                               build_id_elements,
-                                               false);
-    elements.emplace_back(ArrayType::get(stack_build_id, stack_type.limit));
+    auto *stack_build_id = GetStructType("stack_build_id",
+                                         build_id_elements,
+                                         false);
+    elements.emplace_back(
+        llvm::ArrayType::get(stack_build_id, stack_type.limit));
   } else {
-    elements.emplace_back(ArrayType::get(getInt64Ty(), stack_type.limit));
+    elements.emplace_back(llvm::ArrayType::get(getInt64Ty(), stack_type.limit));
   }
 
   return GetStructType(stack_type.name(), elements, false);
 }
 
-StructType *IRBuilderBPF::GetStructType(
+llvm::StructType *IRBuilderBPF::GetStructType(
     const std::string &name,
     const std::vector<llvm::Type *> &elements,
     bool packed)
@@ -192,11 +191,11 @@ StructType *IRBuilderBPF::GetStructType(
   if (search != structs_.end())
     return search->second;
 
-  StructType *s = nullptr;
+  auto *s = static_cast<llvm::StructType *>(nullptr);
   if (!elements.empty()) {
-    s = StructType::create(module_.getContext(), elements, name, packed);
+    s = llvm::StructType::create(module_.getContext(), elements, name, packed);
   } else {
-    s = StructType::create(module_.getContext(), name);
+    s = llvm::StructType::create(module_.getContext(), name);
   }
   structs_.insert({ name, s });
   return s;
@@ -284,7 +283,7 @@ AllocaInst *IRBuilderBPF::CreateAllocaBPFInit(const SizedType &stype,
 
 AllocaInst *IRBuilderBPF::CreateAllocaBPF(int bytes, const std::string &name)
 {
-  llvm::Type *ty = ArrayType::get(getInt8Ty(), bytes);
+  llvm::Type *ty = llvm::ArrayType::get(getInt8Ty(), bytes);
   return CreateAllocaBPF(ty, name);
 }
 
@@ -306,7 +305,8 @@ void IRBuilderBPF::CreateMemsetBPF(Value *ptr, Value *val, uint32_t size)
         getInt64Ty(),
         { ptr->getType(), getInt32Ty(), GetNull()->getType() },
         false);
-    PointerType *proberead_func_ptr_type = PointerType::get(getContext(), 0);
+    llvm::PointerType *proberead_func_ptr_type = llvm::PointerType::get(
+        getContext(), 0);
     Constant *proberead_func = ConstantExpr::getCast(Instruction::IntToPtr,
                                                      getInt64(probe_read_id),
                                                      proberead_func_ptr_type);
@@ -341,7 +341,8 @@ void IRBuilderBPF::CreateMemcpyBPF(Value *dst, Value *src, uint32_t size)
     auto probe_read_id = BPF_FUNC_probe_read_kernel;
     FunctionType *probe_read_func_type = FunctionType::get(
         getInt64Ty(), { dst->getType(), getInt32Ty(), src->getType() }, false);
-    PointerType *probe_read_func_ptr_type = PointerType::get(getContext(), 0);
+    llvm::PointerType *probe_read_func_ptr_type = llvm::PointerType::get(
+        getContext(), 0);
     Constant *probe_read_func = ConstantExpr::getCast(Instruction::IntToPtr,
                                                       getInt64(probe_read_id),
                                                       probe_read_func_ptr_type);
@@ -375,9 +376,10 @@ llvm::Type *IRBuilderBPF::GetType(const SizedType &stype)
 {
   llvm::Type *ty;
   if (stype.IsByteArray() || stype.IsRecordTy()) {
-    ty = ArrayType::get(getInt8Ty(), stype.GetSize());
+    ty = llvm::ArrayType::get(getInt8Ty(), stype.GetSize());
   } else if (stype.IsArrayTy()) {
-    ty = ArrayType::get(GetType(*stype.GetElementTy()), stype.GetNumElements());
+    ty = llvm::ArrayType::get(GetType(*stype.GetElementTy()),
+                              stype.GetNumElements());
   } else if (stype.IsTupleTy()) {
     std::vector<llvm::Type *> llvm_elems;
     std::string ty_name;
@@ -473,7 +475,7 @@ CallInst *IRBuilderBPF::CreateHelperCall(bpf_func_id func_id,
   bpftrace_.helper_use_loc_[func_id].emplace_back(RuntimeErrorId::HELPER_ERROR,
                                                   func_id,
                                                   loc);
-  PointerType *helper_ptr_type = PointerType::get(getContext(), 0);
+  llvm::PointerType *helper_ptr_type = llvm::PointerType::get(getContext(), 0);
   Constant *helper_func = ConstantExpr::getCast(Instruction::IntToPtr,
                                                 getInt64(func_id),
                                                 helper_ptr_type);
@@ -523,7 +525,8 @@ CallInst *IRBuilderBPF::createMapLookup(const std::string &map_name,
   assert(key->getType()->isPointerTy());
   FunctionType *lookup_func_type = FunctionType::get(
       getPtrTy(), { map_ptr->getType(), key->getType() }, false);
-  PointerType *lookup_func_ptr_type = PointerType::get(getContext(), 0);
+  llvm::PointerType *lookup_func_ptr_type = llvm::PointerType::get(getContext(),
+                                                                   0);
   Constant *lookup_func = ConstantExpr::getCast(Instruction::IntToPtr,
                                                 getInt64(
                                                     BPF_FUNC_map_lookup_elem),
@@ -543,7 +546,8 @@ CallInst *IRBuilderBPF::createPerCpuMapLookup(const std::string &map_name,
   assert(key->getType()->isPointerTy());
   FunctionType *lookup_func_type = FunctionType::get(
       getPtrTy(), { map_ptr->getType(), key->getType(), getInt32Ty() }, false);
-  PointerType *lookup_func_ptr_type = PointerType::get(getContext(), 0);
+  llvm::PointerType *lookup_func_ptr_type = llvm::PointerType::get(getContext(),
+                                                                   0);
   Constant *lookup_func = ConstantExpr::getCast(
       Instruction::IntToPtr,
       getInt64(BPF_FUNC_map_lookup_percpu_elem),
@@ -564,9 +568,10 @@ Value *IRBuilderBPF::CreateGetStrAllocation(const std::string &name,
                           [](AsyncIds &async_ids) { return async_ids.str(); });
 }
 
-Value *IRBuilderBPF::CreateGetFmtStringArgsAllocation(StructType *struct_type,
-                                                      const std::string &name,
-                                                      const Location &loc)
+Value *IRBuilderBPF::CreateGetFmtStringArgsAllocation(
+    llvm::StructType *struct_type,
+    const std::string &name,
+    const Location &loc)
 {
   return createAllocation(
       bpftrace::globalvars::FMT_STRINGS_BUFFER, struct_type, name, loc);
@@ -1100,7 +1105,8 @@ void IRBuilderBPF::CreateMapUpdateElem(const std::string &map_ident,
       getInt64Ty(),
       { map_ptr->getType(), key->getType(), val->getType(), getInt64Ty() },
       false);
-  PointerType *update_func_ptr_type = PointerType::get(getContext(), 0);
+  llvm::PointerType *update_func_ptr_type = llvm::PointerType::get(getContext(),
+                                                                   0);
   Constant *update_func = ConstantExpr::getCast(Instruction::IntToPtr,
                                                 getInt64(
                                                     BPF_FUNC_map_update_elem),
@@ -1139,7 +1145,8 @@ Value *IRBuilderBPF::CreateForRange(Value *iters,
       getInt64Ty(),
       { getInt32Ty(), callback->getType(), getPtrTy(), getInt64Ty() },
       false);
-  PointerType *bpf_loop_ptr_type = PointerType::get(getContext(), 0);
+  llvm::PointerType *bpf_loop_ptr_type = llvm::PointerType::get(getContext(),
+                                                                0);
 
   Constant *bpf_loop_func = ConstantExpr::getCast(Instruction::IntToPtr,
                                                   getInt64(BPF_FUNC_loop),
@@ -1178,7 +1185,8 @@ Value *IRBuilderBPF::CreateForEachMapElem(Map &map,
       getInt64Ty(),
       { map_ptr->getType(), callback->getType(), getPtrTy(), getInt64Ty() },
       false);
-  PointerType *for_each_map_ptr_type = PointerType::get(getContext(), 0);
+  llvm::PointerType *for_each_map_ptr_type = llvm::PointerType::get(
+      getContext(), 0);
 
   Constant *for_each_map_func = ConstantExpr::getCast(
       Instruction::IntToPtr,
@@ -1332,7 +1340,8 @@ void IRBuilderBPF::CreateProbeRead(Value *dst,
 
   FunctionType *proberead_func_type = FunctionType::get(
       getInt64Ty(), { dst->getType(), getInt32Ty(), src->getType() }, false);
-  PointerType *proberead_func_ptr_type = PointerType::get(getContext(), 0);
+  llvm::PointerType *proberead_func_ptr_type = llvm::PointerType::get(
+      getContext(), 0);
   Constant *proberead_func = ConstantExpr::getCast(Instruction::IntToPtr,
                                                    getInt64(read_fn),
                                                    proberead_func_ptr_type);
@@ -1373,7 +1382,8 @@ CallInst *IRBuilderBPF::CreateProbeReadStr(Value *dst,
   // int bpf_probe_read_str(void *dst, int size, const void *unsafe_ptr)
   FunctionType *probereadstr_func_type = FunctionType::get(
       getInt64Ty(), { dst->getType(), getInt32Ty(), src->getType() }, false);
-  PointerType *probereadstr_func_ptr_type = PointerType::get(getContext(), 0);
+  llvm::PointerType *probereadstr_func_ptr_type = llvm::PointerType::get(
+      getContext(), 0);
   Constant *probereadstr_callee = ConstantExpr::getCast(
       Instruction::IntToPtr, getInt64(read_fn), probereadstr_func_ptr_type);
   CallInst *call = createCall(probereadstr_func_type,
@@ -2012,7 +2022,7 @@ void IRBuilderBPF::CreateDebugOutput(std::string fmt_str,
                                                      fmt_str,
                                                      true);
   AllocaInst *fmt = CreateAllocaBPF(
-      ArrayType::get(getInt8Ty(), fmt_str.length() + 1), "fmt_str");
+      llvm::ArrayType::get(getInt8Ty(), fmt_str.length() + 1), "fmt_str");
   CreateMemsetBPF(fmt, getInt8(0), fmt_str.length() + 1);
   CreateStore(const_str, fmt);
   CreateTracePrintk(fmt, getInt32(fmt_str.length() + 1), values, loc);
@@ -2050,7 +2060,8 @@ void IRBuilderBPF::CreateSignal(Value *sig,
   FunctionType *signal_func_type = FunctionType::get(getInt64Ty(),
                                                      { getInt32Ty() },
                                                      false);
-  PointerType *signal_func_ptr_type = PointerType::get(getContext(), 0);
+  llvm::PointerType *signal_func_ptr_type = llvm::PointerType::get(getContext(),
+                                                                   0);
 
   auto helper_func_id = BPF_FUNC_send_signal;
   std::string name = "signal";
@@ -2091,7 +2102,8 @@ CallInst *IRBuilderBPF::CreateSkbOutput(Value *skb,
                                                            getInt64Ty() },
                                                          false);
 
-  PointerType *skb_output_func_ptr_type = PointerType::get(getContext(), 0);
+  llvm::PointerType *skb_output_func_ptr_type = llvm::PointerType::get(
+      getContext(), 0);
   Constant *skb_output_func = ConstantExpr::getCast(Instruction::IntToPtr,
                                                     getInt64(
                                                         BPF_FUNC_skb_output),
@@ -2255,9 +2267,7 @@ void IRBuilderBPF::CreateRuntimeError(RuntimeErrorId rte_id,
   bpftrace_.resources.runtime_error_info.try_emplace(
       error_id, RuntimeErrorInfo(rte_id, func_id, loc));
   auto elements = AsyncEvent::RuntimeError().asLLVMType(*this);
-  StructType *runtime_error_struct = GetStructType("runtime_error_t",
-                                                   elements,
-                                                   true);
+  auto *runtime_error_struct = GetStructType("runtime_error_t", elements, true);
   AllocaInst *buf = CreateAllocaBPF(runtime_error_struct, "runtime_error_t");
   CreateStore(
       GetIntSameSize(static_cast<int64_t>(
@@ -2336,7 +2346,8 @@ void IRBuilderBPF::CreateSeqPrintf(Value *ctx,
       getInt64Ty(),
       { getInt64Ty(), getPtrTy(), getInt32Ty(), getPtrTy(), getInt32Ty() },
       false);
-  PointerType *seq_printf_func_ptr_type = PointerType::get(getContext(), 0);
+  llvm::PointerType *seq_printf_func_ptr_type = llvm::PointerType::get(
+      getContext(), 0);
   Constant *seq_printf_func = ConstantExpr::getCast(Instruction::IntToPtr,
                                                     getInt64(
                                                         BPF_FUNC_seq_printf),
