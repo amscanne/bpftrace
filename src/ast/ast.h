@@ -15,8 +15,6 @@
 #include "diagnostic.h"
 #include "probe_types.h"
 #include "types.h"
-#include "usdt.h"
-#include "util/strings.h"
 
 namespace bpftrace::ast {
 
@@ -154,6 +152,275 @@ public:
   std::variant<Ts *...> value;
 };
 
+class NamedType;
+class StructType;
+class UnionType;
+class EnumType;
+class PointerType;
+class ArrayType;
+class ConstType;
+class VolatileType;
+class RestrictType;
+class TypeTagType;
+
+class TypeSpec : public VariantNode<NamedType,
+                                     StructType,
+                                     UnionType,
+                                     EnumType,
+                                     PointerType,
+                                     ArrayType,
+                                     ConstType,
+                                     VolatileType,
+                                     RestrictType,
+                                     TypeTagType> {
+public:
+  using VariantNode::VariantNode;
+  TypeSpec() : TypeSpec(static_cast<NamedType*>(nullptr)) {};
+};
+
+class NamedType : public Node {
+public:
+  explicit NamedType(ASTContext &ctx, Location &&loc, std::string name)
+      : Node(ctx, std::move(loc)), name(std::move(name)) {};
+  explicit NamedType(ASTContext &ctx, const Location &loc, const NamedType &other)
+      : Node(ctx, loc + other.loc), name(other.name) {};
+
+  bool operator==(const NamedType &other) const { return name == other.name; }
+  std::strong_ordering operator<=>(const NamedType &other) const { return name <=> other.name; }
+
+  std::string name;
+};
+
+class StructType : public Node {
+public:
+  explicit StructType(ASTContext &ctx, Location &&loc, std::string name)
+      : Node(ctx, std::move(loc)), name(std::move(name)) {};
+  explicit StructType(ASTContext &ctx, const Location &loc, const StructType &other)
+      : Node(ctx, loc + other.loc), name(other.name) {};
+
+  bool operator==(const StructType &other) const { return name == other.name; }
+  std::strong_ordering operator<=>(const StructType &other) const { return name <=> other.name; }
+
+  std::string name;
+};
+
+class UnionType : public Node {
+public:
+  explicit UnionType(ASTContext &ctx, Location &&loc, std::string name)
+      : Node(ctx, std::move(loc)), name(std::move(name)) {};
+  explicit UnionType(ASTContext &ctx, const Location &loc, const UnionType &other)
+      : Node(ctx, loc + other.loc), name(other.name) {};
+
+  bool operator==(const UnionType &other) const { return name == other.name; }
+  std::strong_ordering operator<=>(const UnionType &other) const { return name <=> other.name; }
+
+  std::string name;
+};
+
+class EnumType : public Node {
+public:
+  explicit EnumType(ASTContext &ctx, Location &&loc, std::string name)
+      : Node(ctx, std::move(loc)), name(std::move(name)) {};
+  explicit EnumType(ASTContext &ctx, const Location &loc, const EnumType &other)
+      : Node(ctx, loc + other.loc), name(other.name) {};
+
+  bool operator==(const EnumType &other) const { return name == other.name; }
+  std::strong_ordering operator<=>(const EnumType &other) const { return name <=> other.name; }
+
+  std::string name;
+};
+
+class ArrayType : public Node {
+public:
+  explicit ArrayType(ASTContext &ctx, Location &&loc, TypeSpec element_type, size_t size)
+      : Node(ctx, std::move(loc)),
+        element_type(std::move(element_type)),
+        size(size) {};
+  explicit ArrayType(ASTContext &ctx, const Location &loc, const ArrayType &other)
+      : Node(ctx, loc + other.loc),
+        element_type(clone(ctx, loc, other.element_type)),
+        size(other.size) {};
+
+  bool operator==(const ArrayType &other) const
+  {
+    return element_type == other.element_type && size == other.size;
+  }
+  std::strong_ordering operator<=>(const ArrayType &other) const
+  {
+    if (auto cmp = element_type <=> other.element_type; cmp != 0)
+      return cmp;
+    return size <=> other.size;
+  }
+
+  TypeSpec element_type;
+  size_t size = 0;
+};
+
+class PointerType : public Node {
+public:
+  explicit PointerType(ASTContext &ctx, Location &&loc, TypeSpec pointee)
+      : Node(ctx, std::move(loc)), pointee(std::move(pointee)) {};
+  explicit PointerType(ASTContext &ctx, const Location &loc, const PointerType &other)
+      : Node(ctx, loc + other.loc), pointee(clone(ctx, loc, other.pointee)) {};
+
+  bool operator==(const PointerType &other) const { return pointee == other.pointee; }
+  std::strong_ordering operator<=>(const PointerType &other) const { return pointee <=> other.pointee; }
+
+  TypeSpec pointee;
+};
+
+class ConstType : public Node {
+public:
+  explicit ConstType(ASTContext &ctx, Location &&loc, TypeSpec element_type)
+      : Node(ctx, std::move(loc)), element_type(std::move(element_type)) {};
+  explicit ConstType(ASTContext &ctx, const Location &loc, const ConstType &other)
+      : Node(ctx, loc + other.loc), element_type(clone(ctx, loc, other.element_type)) {};
+
+  bool operator==(const ConstType &other) const { return element_type == other.element_type; }
+  std::strong_ordering operator<=>(const ConstType &other) const { return element_type <=> other.element_type; }
+
+  TypeSpec element_type;
+};
+
+class VolatileType : public Node {
+public:
+  explicit VolatileType(ASTContext &ctx, Location &&loc, TypeSpec element_type)
+      : Node(ctx, std::move(loc)), element_type(std::move(element_type)) {};
+  explicit VolatileType(ASTContext &ctx, const Location &loc, const VolatileType &other)
+      : Node(ctx, loc + other.loc), element_type(clone(ctx, loc, other.element_type)) {};
+
+  bool operator==(const VolatileType &other) const { return element_type == other.element_type; }
+  std::strong_ordering operator<=>(const VolatileType &other) const { return element_type <=> other.element_type; }
+
+  TypeSpec element_type;
+};
+
+class RestrictType : public Node {
+public:
+  explicit RestrictType(ASTContext &ctx, Location &&loc, TypeSpec element_type)
+      : Node(ctx, std::move(loc)), element_type(std::move(element_type)) {};
+  explicit RestrictType(ASTContext &ctx, const Location &loc, const RestrictType &other)
+      : Node(ctx, loc + other.loc), element_type(clone(ctx, loc, other.element_type)) {};
+
+  bool operator==(const RestrictType &other) const { return element_type == other.element_type; }
+  std::strong_ordering operator<=>(const RestrictType &other) const { return element_type <=> other.element_type; }
+
+  TypeSpec element_type;
+};
+
+class TypeTagType : public Node {
+public:
+  explicit TypeTagType(ASTContext &ctx, Location &&loc, TypeSpec element_type, std::string tag)
+      : Node(ctx, std::move(loc)),
+        element_type(std::move(element_type)),
+        tag(std::move(tag)) {};
+  explicit TypeTagType(ASTContext &ctx, const Location &loc, const TypeTagType &other)
+      : Node(ctx, loc + other.loc),
+        element_type(clone(ctx, loc, other.element_type)),
+        tag(other.tag) {};
+
+  bool operator==(const TypeTagType &other) const
+  {
+    return element_type == other.element_type && tag == other.tag;
+  }
+  std::strong_ordering operator<=>(const TypeTagType &other) const
+  {
+    if (auto cmp = element_type <=> other.element_type; cmp != 0)
+      return cmp;
+    return tag <=> other.tag;
+  }
+
+  TypeSpec element_type;
+  std::string tag;
+};
+
+class StructDecl;
+class UnionDecl;
+class EnumDecl;
+
+class TypeDecl : public VariantNode<StructDecl,
+                                     UnionDecl,
+                                     EnumDecl> {
+public:
+  using VariantNode::VariantNode;
+  TypeDecl() : TypeDecl(static_cast<StructDecl*>(nullptr)) {};
+};
+
+class FieldDecl : public Node {
+public:
+  explicit FieldDecl(ASTContext &ctx, Location &&loc, std::string name, TypeSpec type, std::optional<size_t> bitfield_width = std::nullopt)
+      : Node(ctx, std::move(loc)), name(std::move(name)), type(std::move(type)), bitfield_width(std::move(bitfield_width)) {};
+  explicit FieldDecl(ASTContext &ctx, const Location &loc, const FieldDecl &other)
+      : Node(ctx, loc + other.loc), name(other.name), type(clone(ctx, loc, other.type)), bitfield_width(other.bitfield_width) {};
+
+  bool operator==(const FieldDecl &other) const { return name == other.name && type == other.type && bitfield_width == other.bitfield_width; }
+  std::strong_ordering operator<=>(const FieldDecl &other) const {
+    if (auto cmp = name <=> other.name; cmp != 0)
+      return cmp;
+    if (auto cmp = type <=> other.type; cmp != 0)
+      return cmp;
+    return bitfield_width <=> other.bitfield_width;
+  }
+
+  std::string name;
+  TypeSpec type;
+  std::optional<size_t> bitfield_width;
+};
+
+class StructDecl : public Node {
+public:
+  explicit StructDecl(ASTContext &ctx, Location &&loc, std::string name, std::vector<FieldDecl *> fields)
+      : Node(ctx, std::move(loc)), name(std::move(name)), fields(std::move(fields)) {};
+  explicit StructDecl(ASTContext &ctx, const Location &loc, const StructDecl &other)
+      : Node(ctx, loc + other.loc), name(other.name), fields(clone(ctx, loc, other.fields)) {};
+
+  bool operator==(const StructDecl &other) const { return name == other.name && fields == other.fields; }
+  std::strong_ordering operator<=>(const StructDecl &other) const {
+    if (auto cmp = name <=> other.name; cmp != 0)
+      return cmp;
+    return fields <=> other.fields;
+  }
+
+  std::string name;
+  std::vector<FieldDecl *> fields;
+};
+
+class UnionDecl : public Node {
+public:
+  explicit UnionDecl(ASTContext &ctx, Location &&loc, std::string name, std::vector<FieldDecl *> fields)
+      : Node(ctx, std::move(loc)), name(std::move(name)), fields(std::move(fields)) {};
+  explicit UnionDecl(ASTContext &ctx, const Location &loc, const UnionDecl &other)
+      : Node(ctx, loc + other.loc), name(other.name), fields(clone(ctx, loc, other.fields)) {};
+
+  bool operator==(const UnionDecl &other) const { return name == other.name && fields == other.fields; }
+  std::strong_ordering operator<=>(const UnionDecl &other) const {
+    if (auto cmp = name <=> other.name; cmp != 0)
+      return cmp;
+    return fields <=> other.fields;
+  }
+
+  std::string name;
+  std::vector<FieldDecl *> fields;
+};
+
+class EnumDecl : public Node {
+public:
+  explicit EnumDecl(ASTContext &ctx, Location &&loc, std::string name, std::map<std::string, int64_t> values)
+      : Node(ctx, std::move(loc)), name(std::move(name)), values(std::move(values)) {};
+  explicit EnumDecl(ASTContext &ctx, const Location &loc, const EnumDecl &other)
+      : Node(ctx, loc + other.loc), name(other.name), values(other.values) {};
+
+  bool operator==(const EnumDecl &other) const { return name == other.name && values == other.values; }
+  std::strong_ordering operator<=>(const EnumDecl &other) const {
+    if (auto cmp = name <=> other.name; cmp != 0)
+      return cmp;
+    return values <=> other.values;
+  }
+
+  std::string name;
+  std::map<std::string, int64_t> values;
+};
+
 class Integer;
 class NegativeInteger;
 class Boolean;
@@ -177,6 +444,7 @@ class ArrayAccess;
 class TupleAccess;
 class MapAccess;
 class Cast;
+class CastOrBinop;
 class Tuple;
 class IfExpr;
 class BlockExpr;
@@ -206,6 +474,7 @@ class Expression : public VariantNode<Integer,
                                       TupleAccess,
                                       MapAccess,
                                       Cast,
+                                      CastOrBinop,
                                       Tuple,
                                       IfExpr,
                                       BlockExpr,
@@ -633,8 +902,8 @@ public:
 
 class Sizeof : public Node {
 public:
-  explicit Sizeof(ASTContext &ctx, Location &&loc, SizedType type)
-      : Node(ctx, std::move(loc)), record(type) {};
+  explicit Sizeof(ASTContext &ctx, Location &&loc, TypeSpec typespec)
+      : Node(ctx, std::move(loc)), record(std::move(typespec)) {};
   explicit Sizeof(ASTContext &ctx, Location &&loc, Expression expr)
       : Node(ctx, std::move(loc)), record(expr) {};
   explicit Sizeof(ASTContext &ctx, const Location &loc, const Sizeof &other)
@@ -642,7 +911,6 @@ public:
 
   const SizedType &type() const
   {
-    // See exception for Integer type construction.
     static SizedType uint64 = CreateUInt64();
     return uint64;
   }
@@ -670,16 +938,16 @@ public:
         record);
   }
 
-  std::variant<Expression, SizedType> record;
+  std::variant<Expression, TypeSpec> record;
 };
 
 class Offsetof : public Node {
 public:
   explicit Offsetof(ASTContext &ctx,
                     Location &&loc,
-                    SizedType record,
+                    TypeSpec typespec,
                     std::vector<std::string> field)
-      : Node(ctx, std::move(loc)), record(record), field(std::move(field)) {};
+      : Node(ctx, std::move(loc)), record(std::move(typespec)), field(std::move(field)) {};
   explicit Offsetof(ASTContext &ctx,
                     Location &&loc,
                     Expression expr,
@@ -692,7 +960,6 @@ public:
 
   const SizedType &type() const
   {
-    // See exception for Integer type construction.
     static SizedType uint64 = CreateUInt64();
     return uint64;
   }
@@ -724,7 +991,7 @@ public:
     return field <=> other.field;
   }
 
-  std::variant<Expression, SizedType> record;
+  std::variant<Expression, TypeSpec> record;
   std::vector<std::string> field;
 };
 
@@ -764,8 +1031,8 @@ public:
 
 class Typeof : public Node {
 public:
-  explicit Typeof(ASTContext &ctx, Location &&loc, SizedType record)
-      : Node(ctx, std::move(loc)), record(record) {};
+  explicit Typeof(ASTContext &ctx, Location &&loc, TypeSpec typespec)
+      : Node(ctx, std::move(loc)), record(std::move(typespec)) {};
   explicit Typeof(ASTContext &ctx, Location &&loc, Expression expr)
       : Node(ctx, std::move(loc)), record(expr) {};
   explicit Typeof(ASTContext &ctx, const Location &loc, const Typeof &other)
@@ -774,13 +1041,11 @@ public:
 
   const SizedType &type() const
   {
-    if (std::holds_alternative<SizedType>(record)) {
-      return std::get<SizedType>(record);
+    if (std::holds_alternative<TypeSpec>(record)) {
+      static SizedType none = CreateNone();
+      return none;
     } else {
       const auto &expr = std::get<Expression>(record);
-      // If this is a scalar map, it will be automatically deusgared and
-      // turned into a map access. Otherwise, it is left as a raw map
-      // and this case is handled as a special path.
       if (auto *map = expr.as<Map>()) {
         return map->key_type;
       } else {
@@ -798,7 +1063,7 @@ public:
     return record <=> other.record;
   }
 
-  std::variant<Expression, SizedType> record;
+  std::variant<Expression, TypeSpec> record;
 };
 
 class Typeinfo : public Node {
@@ -1237,6 +1502,58 @@ public:
 
   Typeof *typeof;
   Expression expr;
+};
+
+class CastOrBinop : public Node {
+public:
+  explicit CastOrBinop(ASTContext &ctx,
+                       Location &&loc,
+                       Expression paren_expr,
+                       Operator ambiguous_op,
+                       Expression rhs)
+      : Node(ctx, std::move(loc)),
+        paren_expr(std::move(paren_expr)),
+        ambiguous_op(ambiguous_op),
+        rhs(std::move(rhs)) {};
+
+  explicit CastOrBinop(ASTContext &ctx,
+                       const Location &loc,
+                       const CastOrBinop &other)
+      : Node(ctx, loc + other.loc),
+        paren_expr(clone(ctx, loc, other.paren_expr)),
+        ambiguous_op(other.ambiguous_op),
+        rhs(clone(ctx, loc, other.rhs)) {};
+
+  const SizedType &type() const
+  {
+    static SizedType none = CreateNone();
+    return none;
+  }
+
+  bool operator==(const CastOrBinop &other) const
+  {
+    return paren_expr == other.paren_expr &&
+           ambiguous_op == other.ambiguous_op &&
+           rhs == other.rhs;
+  }
+
+  std::strong_ordering operator<=>(const CastOrBinop &other) const
+  {
+    if (auto cmp = paren_expr <=> other.paren_expr; cmp != 0)
+      return cmp;
+    if (auto cmp = ambiguous_op <=> other.ambiguous_op; cmp != 0)
+      return cmp;
+    return rhs <=> other.rhs;
+  }
+
+  // Expression in parentheses - could be a type or an expression
+  Expression paren_expr;
+
+  // Ambiguous operator: MUL, PLUS, MINUS, or BAND
+  Operator ambiguous_op;
+
+  // Right-hand side expression
+  Expression rhs;
 };
 
 class Tuple : public Node {

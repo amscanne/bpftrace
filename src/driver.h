@@ -21,6 +21,8 @@ public:
       : ctx(ctx), debug(debug), loc(ctx.source()) {};
   ast::Program *parse_program();
   std::optional<ast::Expression> parse_expr();
+  std::optional<ast::TypeDecl> parse_decl();
+  std::optional<ast::TypeSpec> parse_type();
 
   void error(const ast::SourceLocation &l, const std::string &m);
 

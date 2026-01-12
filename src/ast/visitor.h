@@ -151,6 +151,11 @@ public:
     visitImpl(cast.typeof);
     return visitImpl(cast.expr);
   }
+  R visit(CastOrBinop &cast_or_binop)
+  {
+    visitImpl(cast_or_binop.paren_expr);
+    return visitImpl(cast_or_binop.rhs);
+  }
   R visit(Tuple &tuple)
   {
     return visitImpl(tuple.elems);
