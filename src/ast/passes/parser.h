@@ -5,11 +5,11 @@
 #include "ast/passes/args_resolver.h"
 #include "ast/passes/attachpoint_passes.h"
 #include "ast/passes/builtins.h"
-#include "ast/passes/c_macro_expansion.h"
 #include "ast/passes/clang_parser.h"
 #include "ast/passes/config_analyser.h"
 #include "ast/passes/control_flow_analyser.h"
 #include "ast/passes/deprecated.h"
+#include "ast/passes/external_macros.h"
 #include "ast/passes/field_analyser.h"
 #include "ast/passes/fold_literals.h"
 #include "ast/passes/import_scripts.h"
@@ -29,14 +29,14 @@ namespace bpftrace::ast {
 // AllParsePasses returns a vector of passes representing all parser passes, in
 // the expected order. This should be used unless there's a reason not to.
 inline std::vector<Pass> AllParsePasses(
-    std::vector<std::string> &&extra_flags = {},
-    std::vector<std::string> &&import_paths = {},
+    const std::vector<std::string> &extra_flags = {},
+    const std::vector<std::string> &import_paths = {},
     bool debug = false)
 {
   std::vector<Pass> passes;
   passes.emplace_back(CreateParsePass(debug));
   passes.emplace_back(CreateConfigPass());
-  passes.emplace_back(CreateResolveRootImportsPass(std::move(import_paths)));
+  passes.emplace_back(CreateResolveRootImportsPass(import_paths));
   // N.B. We expand the AST with all externally imported scripts, then check
   // against unstable features, *then* import all internal scripts. This means
   // that internal scripts are except from the unstable feature warning.
@@ -54,10 +54,11 @@ inline std::vector<Pass> AllParsePasses(
   passes.emplace_back(CreateProbeAndApExpansionPass());
   passes.emplace_back(CreateArgsResolverPass());
   passes.emplace_back(CreateFieldAnalyserPass());
-  passes.emplace_back(CreateClangParsePass(std::move(extra_flags)));
+  passes.emplace_back(CreateClangParsePass(extra_flags));
   passes.emplace_back(CreateFoldLiteralsPass());
   passes.emplace_back(CreateBuiltinsPass());
-  passes.emplace_back(CreateCMacroExpansionPass());
+  passes.emplace_back(CreateDefineExternalMacrosPass(extra_flags));
+  passes.emplace_back(CreateExpandExternalMacrosPass());
   passes.emplace_back(CreateMapSugarPass());
   passes.emplace_back(CreateNamedParamsPass());
   passes.emplace_back(CreatePidFilterPass());

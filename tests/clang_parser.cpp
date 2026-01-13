@@ -610,19 +610,6 @@ TEST(clang_parser, builtin_headers)
   EXPECT_EQ(foo->GetField("z").offset, 16);
 }
 
-TEST(clang_parser, macro_preprocessor)
-{
-  BPFtrace bpftrace;
-
-  auto c_defs = parse("#define FOO size_t\n k:f { 0 }", bpftrace);
-  ASSERT_EQ(c_defs.macros.count("FOO"), 1U);
-  EXPECT_EQ(c_defs.macros["FOO"], "size_t");
-
-  c_defs = parse("#define _UNDERSCORE 314\n k:f { 0 }", bpftrace);
-  ASSERT_EQ(c_defs.macros.count("_UNDERSCORE"), 1U);
-  EXPECT_EQ(c_defs.macros["_UNDERSCORE"], "314");
-}
-
 TEST(clang_parser, parse_fail)
 {
   BPFtrace bpftrace;

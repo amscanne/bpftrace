@@ -7,9 +7,9 @@
 #include "ast/passes/args_resolver.h"
 #include "ast/passes/attachpoint_passes.h"
 #include "ast/passes/builtins.h"
-#include "ast/passes/c_macro_expansion.h"
 #include "ast/passes/clang_parser.h"
 #include "ast/passes/control_flow_analyser.h"
+#include "ast/passes/external_macros.h"
 #include "ast/passes/field_analyser.h"
 #include "ast/passes/fold_literals.h"
 #include "ast/passes/import_scripts.h"
@@ -174,7 +174,8 @@ public:
                   .add(ast::CreateClangParsePass())
                   .add(ast::CreateFoldLiteralsPass())
                   .add(ast::CreateBuiltinsPass())
-                  .add(ast::CreateCMacroExpansionPass())
+                  .add(ast::CreateDefineExternalMacrosPass())
+                  .add(ast::CreateExpandExternalMacrosPass())
                   .add(ast::CreateMapSugarPass())
                   .add(ast::CreateNamedParamsPass())
                   .add(ast::CreateSemanticPass())

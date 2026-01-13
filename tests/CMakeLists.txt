@@ -16,6 +16,7 @@ add_executable(bpftrace_test
   collect_nodes.cpp
   control_flow_analyser.cpp
   deprecated.cpp
+  external_macros.cpp
   field_analyser.cpp
   fold_literals.cpp
   function_registry.cpp

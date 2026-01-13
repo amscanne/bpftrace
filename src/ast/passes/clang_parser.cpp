@@ -420,15 +420,6 @@ int visitChildren(CXCursor cursor, visitFn fn)
 bool ClangParser::visit_children(CXCursor &cursor, BPFtrace &bpftrace)
 {
   int err = visitChildren(cursor, [&](CXCursor c, CXCursor parent) {
-    if (clang_getCursorKind(c) == CXCursor_MacroDefinition) {
-      std::string macro_name;
-      std::string macro_value;
-      if (translateMacro(c, macro_name, macro_value)) {
-        definitions.macros[macro_name] = macro_value;
-      }
-      return CXChildVisit_Recurse;
-    }
-
     // Each anon enum must have a unique ID otherwise two variants
     // with different names but same value will clobber each other
     // in enum_defs.
@@ -834,7 +825,7 @@ std::vector<std::string> ClangParser::system_include_paths()
   return result;
 }
 
-ast::Pass CreateClangParsePass(std::vector<std::string> &&extra_flags)
+ast::Pass CreateClangParsePass(const std::vector<std::string> &extra_flags)
 {
   return ast::Pass::create("ClangParser",
                            [extra_flags = std::move(extra_flags)](

@@ -351,7 +351,7 @@ void ResolveRootImports::visit(RootImport &imp)
   }
 }
 
-Pass CreateResolveRootImportsPass(std::vector<std::string> &&import_paths)
+Pass CreateResolveRootImportsPass(const std::vector<std::string> &import_paths)
 {
   return Pass::create("ResolveRootImports",
                       [import_paths](ASTContext &ast) -> Result<Imports> {

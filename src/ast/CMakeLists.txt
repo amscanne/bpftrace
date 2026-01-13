@@ -20,13 +20,13 @@ add_library(ast STATIC
   passes/ap_probe_expansion.cpp
   passes/attachpoint_passes.cpp
   passes/builtins.cpp
-  passes/c_macro_expansion.cpp
   passes/clang_parser.cpp
   passes/clang_build.cpp
   passes/named_param.cpp
   passes/config_analyser.cpp
   passes/control_flow_analyser.cpp
   passes/deprecated.cpp
+  passes/external_macros.cpp
   passes/field_analyser.cpp
   passes/fold_literals.cpp
   passes/import_scripts.cpp

@@ -2,6 +2,7 @@
 #include "ast/passes/ap_probe_expansion.h"
 #include "ast/passes/args_resolver.h"
 #include "ast/passes/attachpoint_passes.h"
+#include "ast/passes/external_macros.h"
 #include "ast/passes/field_analyser.h"
 #include "ast/passes/macro_expansion.h"
 #include "ast/passes/map_sugar.h"
@@ -23,8 +24,9 @@ void test(BPFtrace &bpftrace, const std::string &input, int expected_result = 0)
   std::stringstream msg;
   msg << "\nInput:\n" << input << "\n\nOutput:\n";
 
-  ast::CDefinitions no_c_defs; // Output from clang parser.
-  ast::TypeMetadata no_types;  // No external types defined.
+  ast::ExternalMacros no_macros; // No external macros.
+  ast::CDefinitions no_c_defs;   // Output from clang parser.
+  ast::TypeMetadata no_types;    // No external types defined.
 
   // N.B. No macro expansion.
   auto ok = ast::PassManager()
