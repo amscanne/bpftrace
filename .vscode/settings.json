@@ -1,5 +1,14 @@
 {
     "cmake.buildDirectory": "${workspaceFolder}/build-vscode",
+    "cmake.cmakePath": "${workspaceFolder}/cmake-nix-wrapper.sh",
+    "cmake.generator": "Ninja",
+    "cmake.configureEnvironment": {
+        "NIX_ENFORCE_PURITY": "0"
+    },
+    "cmake.buildToolArgs": [],
+    "cmake.environment": {
+        "CMAKE_MAKE_PROGRAM": "${workspaceFolder}/ninja-nix-wrapper.sh"
+    },
     "clangd.arguments": [
         "-background-index",
         "-compile-commands-dir=${workspaceFolder}/build-vscode"
