@@ -160,7 +160,7 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %type <ast::CStatementList> c_definitions
 %type <ast::Sizeof *> sizeof_expr
 %type <ast::Offsetof *> offsetof_expr
-%type <ast::TypeSpec *> type_spec base_type
+%type <ast::TypeSpec> type_spec nonexpr_type_spec expr_base_type nonexpr_base_type
 %type <ast::Typeof *> typeof_expr any_type
 %type <ast::FieldDecl *> field_decl
 %type <std::vector<ast::FieldDecl *>> field_decl_list
@@ -303,142 +303,107 @@ import_root_stmt:
                 IMPORT STRING ";" { $$ = driver.ctx.make_node<ast::RootImport>(@$, $2); }
                 ;
 
-// Unified type specification - accepts any identifier with struct/pointers/arrays
-// All type validation is deferred to semantic analysis
+nonexpr_base_type:
+                STRUCT ident                         { $$ = driver.ctx.make_node<ast::StructType>(@$, $2); }
+        |       STRUCT LBRACE field_decl_list RBRACE { $$ = driver.ctx.make_node<ast::StructType>(@$, $3);}
+        |       UNION ident                          { $$ = driver.ctx.make_node<ast::UnionType>(@$, $2); }
+        |       UNION LBRACE field_decl_list RBRACE  { $$ = driver.ctx.make_node<ast::UnionType>(@$, $3); }
+        |       ENUM ident                           { $$ = driver.ctx.make_node<ast::EnumType>(@$, $2); }
+        |       CONST expr_base_type                 { $$ = driver.ctx.make_node<ast::ConstType>(@$, $2); }
+        |       VOLATILE expr_base_type              { $$ = driver.ctx.make_node<ast::VolatileType>(@$, $2); }
+        |       RESTRICT expr_base_type              { $$ = driver.ctx.make_node<ast::RestrictType>(@$, $2); }
+        |       CONST nonexpr_type_spec              { $$ = driver.ctx.make_node<ast::ConstType>(@$, $2); }
+        |       VOLATILE nonexpr_type_spec           { $$ = driver.ctx.make_node<ast::VolatileType>(@$, $2); }
+        |       RESTRICT nonexpr_type_spec           { $$ = driver.ctx.make_node<ast::RestrictType>(@$, $2); }
+                ;
+
+expr_base_type:
+        |       IDENT                 { $$ = driver.ctx.make_node<ast::NamedType>(@1, $1); }
+        |       IDENT "[" integer "]" { $$ = driver.ctx.make_node<ast::ArrayType>(@1 + @4, $1, $3->value); }
+                ;
+
+nonexpr_type_spec:
+                nonexpr_base_type { $$ = $1; }
+        |       type_spec "*"     { $$ = driver.ctx.make_node<ast::PointerType>(@1 + @2, $1); }
+        |       type_spec "[" "]" { $$ = driver.ctx.make_node<ast::PointerType>(@1 + @3, $1); }
+        |       type_spec ATTRIBUTE LPAREN LPAREN IDENT LPAREN STRING RPAREN RPAREN RPAREN {
+                  if ($5 == "btf_type_tag") {
+                    $$ = driver.ctx.make_node<ast::TypeTagType>(@1 + @10, $1, $7);
+                  } else {
+                    $$ = $1; // Ignore other attributes.
+                  }
+                }
+                ;
+
 type_spec:
-        base_type
-    |   type_spec "*"
-        {
-          $$ = driver.ctx.make_node<ast::PointerType>(@1 + @2, $1);
-        }
-    |   type_spec "[" integer "]"
-        {
-          $$ = driver.ctx.make_node<ast::ArrayType>(@1 + @4, $1, $3->value);
-        }
-    |   type_spec "[" "]"
-        {
-          $$ = driver.ctx.make_node<ast::PointerType>(@1 + @3, $1);
-        }
-    |   type_spec ATTRIBUTE LPAREN LPAREN IDENT LPAREN STRING RPAREN RPAREN RPAREN
-        {
-          if ($5 == "btf_type_tag") {
-            $$ = driver.ctx.make_node<ast::TypeTagType>(@1 + @10, $1, $7);
-          } else {
-            $$ = $1; // Ignore other attributes.
-          }
-        }
-        ;
+                nonexpr_type_spec         { $$ = $1; }
+        |       expr_base_type            { $$ = $1; }
+                ;
 
-base_type:
-        IDENT
-        {
-          $$ = driver.ctx.make_node<ast::NamedType>(@1, $1);
-        }
-    |   STRUCT IDENT
-        {
-          $$ = driver.ctx.make_node<ast::StructType>(@1 + @2, $2);
-        }
-    |   UNION IDENT
-        {
-          $$ = driver.ctx.make_node<ast::UnionType>(@1 + @2, $2);
-        }
-    |   ENUM IDENT
-        {
-          $$ = driver.ctx.make_node<ast::EnumType>(@1 + @2, $2);
-        }
-    |   CONST base_type
-        {
-          $$ = driver.ctx.make_node<ast::ConstType>(@1 + @2, $2);
-        }
-    |   VOLATILE base_type
-        {
-          $$ = driver.ctx.make_node<ast::VolatileType>(@1 + @2, $2);
-        }
-    |   RESTRICT base_type
-        {
-          $$ = driver.ctx.make_node<ast::RestrictType>(@1 + @2, $2);
-        }
-        ;
-
-// Type declaration grammar
 field_decl:
-        type_spec IDENT
-        {
-          $$ = driver.ctx.make_node<ast::FieldDecl>(@1 + @2, $2, $1);
-        }
-    |   type_spec IDENT COLON integer
-        {
-          $$ = driver.ctx.make_node<ast::FieldDecl>(@1 + @4, $2, $1, $4->value);
-        }
-        ;
+                type_spec ident               { $$ = driver.ctx.make_node<ast::FieldDecl>(@1 + @2, $2, $1); }
+        |       type_spec ident COLON integer { $$ = driver.ctx.make_node<ast::FieldDecl>(@1 + @4, $2, $1, $4->value); }
+                ;
 
 field_decl_list:
-        field_decl_list field_decl SEMI
-        {
-          $$ = std::move($1);
-          $$.push_back($2);
-        }
-    |   %empty
-        {
-          $$ = std::vector<ast::FieldDecl *>{};
-        }
-        ;
+                field_decl_list field_decl SEMI {
+                  $$ = std::move($1);
+                  $$.push_back($2);
+                }
+        |       %empty {
+                 $$ = std::vector<ast::FieldDecl *>{};
+                }
+                ;
 
 struct_decl:
-        STRUCT IDENT LBRACE field_decl_list RBRACE
-        {
-          $$ = driver.ctx.make_node<ast::StructDecl>(@1 + @5, $2, std::move($4));
-        }
-        ;
+                STRUCT IDENT LBRACE field_decl_list RBRACE SEMI {
+                  $$ = driver.ctx.make_node<ast::StructDecl>(@1 + @5, $2, std::move($4));
+                }
+                ;
 
 union_decl:
-        UNION IDENT LBRACE field_decl_list RBRACE
-        {
-          $$ = driver.ctx.make_node<ast::UnionDecl>(@1 + @5, $2, std::move($4));
-        }
-        ;
+                UNION IDENT LBRACE field_decl_list RBRACE SEMI {
+                  $$ = driver.ctx.make_node<ast::UnionDecl>(@1 + @5, $2, std::move($4));
+                }
+                ;
 
 enum_decl:
-        ENUM IDENT LBRACE enum_value_list RBRACE
-        {
-          $$ = driver.ctx.make_node<ast::EnumDecl>(@1 + @5, $2, std::move($4));
-        }
-        ;
+                ENUM IDENT LBRACE enum_value_list RBRACE SEMI {
+                  $$ = driver.ctx.make_node<ast::EnumDecl>(@1 + @5, $2, std::move($4));
+                }
+                ;
 
 enum_value_list:
-        enum_value_list COMMA IDENT ASSIGN integer
-        {
-          $$ = std::move($1);
-          $$[$3] = $5->value;
-        }
-    |   IDENT ASSIGN integer
-        {
-          $$ = std::map<std::string, int64_t>{};
-          $$[$1] = $3->value;
-        }
-    |   enum_value_list COMMA IDENT
-        {
-          $$ = std::move($1);
-          // Auto-increment: find the max value and add 1
-          int64_t next_val = 0;
-          if (!$$.empty()) {
-            next_val = std::max_element($$.begin(), $$.end(),
-                                       [](const auto& a, const auto& b) { return a.second < b.second; })->second + 1;
-          }
-          $$[$3] = next_val;
-        }
-    |   IDENT
-        {
-          $$ = std::map<std::string, int64_t>{};
-          $$[$1] = 0;
-        }
-        ;
+                enum_value_list COMMA IDENT ASSIGN integer {
+                  $$ = std::move($1);
+                  $$[$3] = $5->value;
+                }
+        |       enum_value_list COMMA IDENT {
+                  // By default, the next identifier is one greater
+                  // than the the highest previous value.
+                  $$ = std::move($1);
+                  int64_t next_val = 0;
+                  if (!$$.empty()) {
+                    next_val = std::max_element($$.begin(), $$.end(),
+                                               [](const auto& a, const auto& b) { return a.second < b.second; })->second + 1;
+                  }
+                  $$[$3] = next_val;
+                }
+        |       ident ASSIGN integer {
+                  $$ = std::map<std::string, int64_t>{};
+                  $$[$1] = $3->value;
+                }
+        |       ident {
+                  $$ = std::map<std::string, int64_t>{};
+                  $$[$1] = 0;
+                }
+                ;
 
 type_decl:
-        struct_decl { $$ = $1; }
-    |   union_decl  { $$ = $1; }
-    |   enum_decl   { $$ = $1; }
-        ;
+                struct_decl { $$ = $1; }
+        |       union_decl  { $$ = $1; }
+        |       enum_decl   { $$ = $1; }
+                ;
 
 config:
                 CONFIG ASSIGN config_block     { $$ = driver.ctx.make_node<ast::Config>(@$, std::move($3)); }
@@ -448,8 +413,9 @@ config:
 /*
  * The last statement in a config_block does not require a trailing semicolon.
  */
-config_block:   "{" config_assign_stmt_list "}"                    { $$ = std::move($2); }
-            |   "{" config_assign_stmt_list config_assign_stmt "}" { $$ = std::move($2); $$.push_back($3); }
+config_block:
+                "{" config_assign_stmt_list "}"                    { $$ = std::move($2); }
+        |       "{" config_assign_stmt_list config_assign_stmt "}" { $$ = std::move($2); $$.push_back($3); }
                 ;
 
 config_assign_stmt_list:
@@ -843,29 +809,37 @@ none_block:
                   $1->expr.value = none;
                   $$ = $1;
                 }
+                ;
 
 unary_operator:
-        BNOT   { $$ = ast::Operator::BNOT; }
-    |   LNOT   { $$ = ast::Operator::LNOT; }
-        ;
+                BNOT   { $$ = ast::Operator::BNOT; }
+        |       LNOT   { $$ = ast::Operator::LNOT; }
+                ;
 
+// Technically, we should have BAND also as a member here. However,
+// we don't actually have BAND as a unary operator in this grammar,
+// we parse only var_addr and map_addr. In the future, this could be
+// made a proper unary operator (when values have locations), and we
+// remove the MapAddr/map_addr and VarAddr/var_addr rules, and then
+// we should add a case for `BAND` here.
 ambiguous_operator:
-        MUL    { $$ = ast::Operator::MUL; }
-    |   MINUS  { $$ = ast::Operator::MINUS; }
-    |   BAND   { $$ = ast::Operator::BAND; }
-        ;
+                MUL    { $$ = ast::Operator::MUL; }
+        |       MINUS  { $$ = ast::Operator::MINUS; }
+                ;
 
 unary_expr:
-        unary_operator unary_expr      { $$ = driver.ctx.make_node<ast::Unop>(@1, $2, $1); }
-    |   ambiguous_operator unary_expr  { $$ = driver.ctx.make_node<ast::Unop>(@1, $2, $1); }
-    |   LPAREN expr RPAREN ambiguous_operator unary_expr
-        {
-          $$ = driver.ctx.make_node<ast::CastOrBinop>(@1 + @4, $2, $4, $5);
-        }
-    |   primary_expr                   { $$ = $1; }
-    |   prefix_expr                    { $$ = $1; }
-    |   postfix_expr                   { $$ = $1; }
-        ;
+                unary_operator unary_expr                        { $$ = driver.ctx.make_node<ast::Unop>(@$, $2, $1); }
+        |       ambiguous_operator unary_expr                    { $$ = driver.ctx.make_node<ast::Unop>(@$, $2, $1); }
+        |       primary_expr                                     { $$ = $1; }
+        |       prefix_expr                                      { $$ = $1; }
+        |       postfix_expr                                     { $$ = $1; }
+        |       LPAREN nonexpr_type_spec RPAREN unary_expr       { $$ = driver.ctx.make_node<ast::Cast>(@$, $2, $4); }
+        |       LPAREN expr RPAREN ambiguous_operator unary_expr { $$ = driver.ctx.make_node<ast::CastOrBinop>(@$, $2, $4, $5); }
+        |       LPAREN expr RPAREN unary_operator unary_expr     { $$ = driver.ctx.make_node<ast::Binop>(@$, $2, $4, $5); }
+        |       LPAREN expr RPAREN primary_expr                  { $$ = driver.ctx.make_node<ast::Cast>(@$, $2, $4); }
+        |       LPAREN expr RPAREN prefix_expr                   { $$ = driver.ctx.make_node<ast::Cast>(@$, $2, $4); }
+        |       LPAREN expr RPAREN postfix_expr                  { $$ = driver.ctx.make_node<ast::Cast>(@$, $2, $4); }
+                ;
 
 expr:
                 non_if_expr { $$ = $1; }
@@ -898,24 +872,19 @@ non_if_expr:
                 ;
 
 sizeof_expr:
-        SIZEOF "(" expr ")"       { $$ = driver.ctx.make_node<ast::Sizeof>(@$, $3); }
+        SIZEOF "(" expr ")" { $$ = driver.ctx.make_node<ast::Sizeof>(@$, $3); }
                 ;
 
 offsetof_expr:
-                /* For example: offsetof(*curtask, comm) */
-        OFFSETOF "(" expr "," struct_field ")"      {
-                  $$ = driver.ctx.make_node<ast::Offsetof>(@$, $3, $5);
-                }
+        OFFSETOF "(" expr "," struct_field ")" { $$ = driver.ctx.make_node<ast::Offsetof>(@$, $3, $5); }
                 ;
 
 typeof_expr:
-        TYPEOF "(" expr ")"      {
-                  $$ = driver.ctx.make_node<ast::Typeof>(@$, $3);
-                }
+        TYPEOF "(" expr ")" { $$ = driver.ctx.make_node<ast::Typeof>(@$, $3); }
                 ;
 
 typeinfo_expr:
-        TYPEINFO "(" expr ")"      {
+        TYPEINFO "(" expr ")" {
                   auto typeof_node = driver.ctx.make_node<ast::Typeof>(@$, $3);
                   $$ = driver.ctx.make_node<ast::Typeinfo>(@$, typeof_node);
                 }
@@ -926,9 +895,7 @@ comptime_expr:
                 ;
 
 any_type:
-                type_spec   {
-                  $$ = driver.ctx.make_node<ast::Typeof>(@1, $1);
-                }
+                type_spec { $$ = driver.ctx.make_node<ast::Typeof>(@1, $1); }
         |       typeof_expr { $$ = $1; }
                 ;
 

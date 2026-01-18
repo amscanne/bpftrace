@@ -45,7 +45,7 @@ std::optional<ast::Expression> Driver::parse_expr()
   return std::nullopt;
 }
 
-std::optional<ast::Expression> Driver::parse_decl()
+std::optional<ast::TypeDecl> Driver::parse_decl()
 {
   parse(Parser::make_START_DECL(loc));
   if (std::holds_alternative<ast::TypeDecl>(result)) {
@@ -54,7 +54,7 @@ std::optional<ast::Expression> Driver::parse_decl()
   return std::nullopt;
 }
 
-std::optional<ast::Expression> Driver::parse_type()
+std::optional<ast::TypeSpec> Driver::parse_type()
 {
   parse(Parser::make_START_TYPE(loc));
   if (std::holds_alternative<ast::TypeSpec>(result)) {

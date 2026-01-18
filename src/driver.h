@@ -40,7 +40,7 @@ public:
   std::optional<Parser::symbol_type> token;
 
   // The final result is available here.
-  std::variant<ast::Program *, ast::Expression> result;
+  std::variant<ast::Program *, ast::Expression, ast::TypeDecl, ast::TypeSpec> result;
 
 private:
   void parse(Parser::symbol_type first_token);

@@ -1549,7 +1549,13 @@ public:
     return rhs <=> other.rhs;
   }
 
-  std::tuple<Expression, TypeSpec> lhs;
+  // There are a range of expressions that this may be, such as a naked
+  // identifier (`(foo)*bar`), or an array type (`(foo[10])bar`). We need
+  // to attempt to resolve as a valid type to know if this is a cast or
+  // a binary operation. There isn't enough state in the parser itself to
+  // make this determination, so it is deferred until later when there is
+  // sufficient type information to resolve one way or another.
+  Expression lhs;
   Operator op;
   Expression rhs;
 };

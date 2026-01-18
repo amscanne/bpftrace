@@ -153,7 +153,7 @@ public:
   }
   R visit(CastOrBinop &cast_or_binop)
   {
-    visitImpl(cast_or_binop.paren_expr);
+    visitImpl(cast_or_binop.lhs);
     return visitImpl(cast_or_binop.rhs);
   }
   R visit(Tuple &tuple)

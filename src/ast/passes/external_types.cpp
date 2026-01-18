@@ -1,18 +1,9 @@
-#include "clang/AST/ASTConsumer.h"
-#include "clang/AST/RecursiveASTVisitor.h"
-#include "clang/Frontend/FrontendAction.h"
-#include "clang/Tooling/CommonOptionsParser.h"
-#include <clang/Basic/Diagnostic.h>
-#include <clang/Frontend/CompilerInstance.h>
-#include <clang/Frontend/FrontendActions.h>
-#include <clang/Lex/PPCallbacks.h>
-#include <clang/Lex/Preprocessor.h>
-#include <clang/Tooling/Tooling.h>
 #include <sstream>
 
 #include "ast/ast.h"
 #include "ast/context.h"
 #include "ast/passes/external_types.h"
+#include "ast/passes/printer.h"
 #include "ast/visitor.h"
 #include "driver.h"
 
@@ -27,52 +18,9 @@ void TypesError::log(llvm::raw_ostream &OS) const
 
 namespace {
 
-// Custom DiagnosticConsumer that captures error messages.
-class ErrorCapturingConsumer : public clang::DiagnosticConsumer {
-public:
-  explicit ErrorCapturingConsumer(std::string &errors) : errors_(errors) {};
-
-  void HandleDiagnostic(clang::DiagnosticsEngine::Level level,
-                        const clang::Diagnostic &info) override
-  {
-    if (level >= clang::DiagnosticsEngine::Error) {
-      llvm::SmallString<256> message;
-      info.FormatDiagnostic(message);
-      if (!errors_.empty()) {
-        errors_ += "\n";
-      }
-      errors_ += message.str();
-    }
-  }
-
-private:
-  std::string &errors_;
-};
-
-// 1. Define the Visitor
-class StructVisitor : public clang::RecursiveASTVisitor<StructVisitor> {
-public:
-  bool VisitRecordDecl(clang::RecordDecl *D)
-  {
-    // Only process actual struct definitions (not forward declarations)
-    if (D->isStruct() && D->isThisDeclarationADefinition()) {
-      llvm::outs() << "Found Struct: " << D->getNameAsString() << "\n";
-
-      // Iterate over fields (members) of the struct
-      for (const clang::FieldDecl *Field : D->fields()) {
-        llvm::outs() << "  Field: " << Field->getType().getAsString() << " "
-                     << Field->getNameAsString() << "\n";
-      }
-    }
-    return true; // Continue traversal
-  }
-};
-
 class CastResolver : public Visitor<CastResolver, std::optional<SizedType>> {
 public:
-  CastResolver(ASTContext &ast) : ast_(ast)
-  {
-  }
+  CastResolver(ASTContext &ast) : ast_(ast) {};
 
   using Visitor<CastResolver, std::optional<SizedType>>::visit;
 
@@ -190,8 +138,39 @@ public:
   }
   std::optional<SizedType> visit(Expression &expr)
   {
-    if (auto *cast = expr.as<CastOrBinop>()) {
-      // Use the legacy rules for the grammar to resolve the type.
+    if (auto *cast_or_binop = expr.as<CastOrBinop>()) {
+      // Attempt to resolve the printer expression as a type. If it
+      // resolves correctly, then this is a *cast*.
+      //
+      // First, we need to convert the expression to a naked string.
+      std::stringstream ss;
+      MetadataIndex metadata;
+      ss << Formatter(FormatMode::Minimal, metadata, 120)
+                .visit(cast_or_binop->lhs);
+      // Next, we attempt to parse this as a type.
+      ASTContext single_type("type", ss.str());
+      Driver driver(single_type);
+      auto type_spec = driver.parse_type();
+      if (type_spec) {
+        // The spec itself is valid, but we also require the underlying
+        // type to be valid. For example, "foo" is a valid spec on its own,
+        // but will often be wrong; we also require a valid type resolution.
+        auto sized_type = visit(*type_spec);
+        if (sized_type) {
+          auto *unop = ast_.make_node<Unop>(cast_or_binop->loc,
+                                            cast_or_binop->op,
+                                            cast_or_binop->rhs);
+          expr.value = ast_.make_node<Cast>(cast_or_binop->loc,
+                                            *type_spec,
+                                            unop);
+          return std::nullopt; // Converted to a cast.
+        }
+      }
+      // Convert to a binary expression.
+      expr.value = ast_.make_node<Binop>(cast_or_binop->loc,
+                                         cast_or_binop->op,
+                                         cast_or_binop->lhs,
+                                         cast_or_binop->rhs);
     }
   }
 
@@ -205,7 +184,7 @@ ast::Pass CreateDefineExternalTypesPass()
 {
   return ast::Pass::create("ExternalTypes",
                            [](ASTContext &ast) -> Result<ExternalTypes> {
-                             CastResolver().visit(ast.root);
+                             CastResolver(ast).visit(ast.root);
                            });
 }
 
