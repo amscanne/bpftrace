@@ -121,6 +121,7 @@ public:
   Buffer visit(UnionType &union_type);
   Buffer visit(EnumType &enum_type);
   Buffer visit(PointerType &pointer_type);
+  Buffer visit(FunctionType &function_type);
   Buffer visit(ArrayType &array_type);
   Buffer visit(ConstType &const_type);
   Buffer visit(VolatileType &volatile_type);

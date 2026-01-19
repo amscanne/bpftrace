@@ -347,6 +347,19 @@ Buffer Formatter::visit(PointerType& pointer_type)
       .text("*");
 }
 
+Buffer Formatter::visit(FunctionType& function_type)
+{
+  Buffer buf = Buffer().append(format(function_type.return_type, metadata, max_width));
+  buf.text("(");
+  for (size_t i = 0; i < function_type.params.size(); i++) {
+    if (i > 0)
+      buf.text(", ");
+    buf.append(format(function_type.params[i], metadata, max_width));
+  }
+  buf.text(")");
+  return buf;
+}
+
 Buffer Formatter::visit(ArrayType& array_type)
 {
   auto size_str = std::to_string(array_type.size);

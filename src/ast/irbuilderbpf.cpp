@@ -211,7 +211,7 @@ IRBuilderBPF::IRBuilderBPF(LLVMContext &context,
       async_ids_(async_ids)
 {
   // Declare external LLVM function
-  FunctionType *pseudo_func_type = FunctionType::get(
+  llvm::FunctionType *pseudo_func_type = llvm::FunctionType::get(
       getInt64Ty(), { getInt64Ty(), getInt64Ty() }, false);
   llvm::Function::Create(pseudo_func_type,
                          GlobalValue::ExternalLinkage,
@@ -301,7 +301,7 @@ void IRBuilderBPF::CreateMemsetBPF(Value *ptr, Value *val, uint32_t size)
     // The call here will always fail and we want it that way. So avoid
     // reporting errors to the user.
     auto probe_read_id = BPF_FUNC_probe_read_kernel;
-    FunctionType *proberead_func_type = FunctionType::get(
+    llvm::FunctionType *proberead_func_type = llvm::FunctionType::get(
         getInt64Ty(),
         { ptr->getType(), getInt32Ty(), GetNull()->getType() },
         false);
@@ -339,7 +339,7 @@ void IRBuilderBPF::CreateMemcpyBPF(Value *dst, Value *src, uint32_t size)
     // Errors are not ever expected, as memcpy should only be used when
     // you're sure src and dst are both in BPF memory.
     auto probe_read_id = BPF_FUNC_probe_read_kernel;
-    FunctionType *probe_read_func_type = FunctionType::get(
+    llvm::FunctionType *probe_read_func_type = llvm::FunctionType::get(
         getInt64Ty(), { dst->getType(), getInt32Ty(), src->getType() }, false);
     llvm::PointerType *probe_read_func_ptr_type = llvm::PointerType::get(
         getContext(), 0);
@@ -466,7 +466,7 @@ llvm::Type *IRBuilderBPF::GetMapValueType(const SizedType &stype)
 ///   space, otherwise these may be optimised out, e.g. pushing to the ring
 ///   buffer, signalling a process
 CallInst *IRBuilderBPF::CreateHelperCall(bpf_func_id func_id,
-                                         FunctionType *helper_type,
+                                         llvm::FunctionType *helper_type,
                                          ArrayRef<Value *> args,
                                          bool is_pure,
                                          const Twine &Name,
@@ -489,7 +489,7 @@ CallInst *IRBuilderBPF::CreateHelperCall(bpf_func_id func_id,
   return call;
 }
 
-CallInst *IRBuilderBPF::createCall(FunctionType *callee_type,
+CallInst *IRBuilderBPF::createCall(llvm::FunctionType *callee_type,
                                    Value *callee,
                                    ArrayRef<Value *> args,
                                    const Twine &Name)
@@ -523,7 +523,7 @@ CallInst *IRBuilderBPF::createMapLookup(const std::string &map_name,
   // Return: Map value or NULL
 
   assert(key->getType()->isPointerTy());
-  FunctionType *lookup_func_type = FunctionType::get(
+  llvm::FunctionType *lookup_func_type = llvm::FunctionType::get(
       getPtrTy(), { map_ptr->getType(), key->getType() }, false);
   llvm::PointerType *lookup_func_ptr_type = llvm::PointerType::get(getContext(),
                                                                    0);
@@ -544,7 +544,7 @@ CallInst *IRBuilderBPF::createPerCpuMapLookup(const std::string &map_name,
   // Return: Map value or NULL
 
   assert(key->getType()->isPointerTy());
-  FunctionType *lookup_func_type = FunctionType::get(
+  llvm::FunctionType *lookup_func_type = llvm::FunctionType::get(
       getPtrTy(), { map_ptr->getType(), key->getType(), getInt32Ty() }, false);
   llvm::PointerType *lookup_func_ptr_type = llvm::PointerType::get(getContext(),
                                                                    0);
@@ -1101,7 +1101,7 @@ void IRBuilderBPF::CreateMapUpdateElem(const std::string &map_ident,
 
   // long map_update_elem(struct bpf_map * map, void *key, void * value, u64
   // flags) Return: 0 on success or negative error
-  FunctionType *update_func_type = FunctionType::get(
+  llvm::FunctionType *update_func_type = llvm::FunctionType::get(
       getInt64Ty(),
       { map_ptr->getType(), key->getType(), val->getType(), getInt64Ty() },
       false);
@@ -1141,7 +1141,7 @@ Value *IRBuilderBPF::CreateForRange(Value *iters,
   CreateCondBr(is_positive, is_positive_block, merge_block);
   SetInsertPoint(is_positive_block);
 
-  FunctionType *bpf_loop_type = FunctionType::get(
+  llvm::FunctionType *bpf_loop_type = llvm::FunctionType::get(
       getInt64Ty(),
       { getInt32Ty(), callback->getType(), getPtrTy(), getInt64Ty() },
       false);
@@ -1181,7 +1181,7 @@ Value *IRBuilderBPF::CreateForEachMapElem(Map &map,
   // callback is long (*callback_fn)(struct bpf_map *map, const void *key, void
   // *value, void *ctx);
 
-  FunctionType *for_each_map_type = FunctionType::get(
+  llvm::FunctionType *for_each_map_type = llvm::FunctionType::get(
       getInt64Ty(),
       { map_ptr->getType(), callback->getType(), getPtrTy(), getInt64Ty() },
       false);
@@ -1338,7 +1338,7 @@ void IRBuilderBPF::CreateProbeRead(Value *dst,
 
   auto read_fn = selectProbeReadHelper(as, false);
 
-  FunctionType *proberead_func_type = FunctionType::get(
+  llvm::FunctionType *proberead_func_type = llvm::FunctionType::get(
       getInt64Ty(), { dst->getType(), getInt32Ty(), src->getType() }, false);
   llvm::PointerType *proberead_func_ptr_type = llvm::PointerType::get(
       getContext(), 0);
@@ -1380,7 +1380,7 @@ CallInst *IRBuilderBPF::CreateProbeReadStr(Value *dst,
 
   auto read_fn = selectProbeReadHelper(as, true);
   // int bpf_probe_read_str(void *dst, int size, const void *unsafe_ptr)
-  FunctionType *probereadstr_func_type = FunctionType::get(
+  llvm::FunctionType *probereadstr_func_type = llvm::FunctionType::get(
       getInt64Ty(), { dst->getType(), getInt32Ty(), src->getType() }, false);
   llvm::PointerType *probereadstr_func_ptr_type = llvm::PointerType::get(
       getContext(), 0);
@@ -1542,7 +1542,8 @@ Value *IRBuilderBPF::CreateGetNs(TimestampMode ts, const Location &loc)
 
   // u64 ktime_get_*ns()
   // Return: current ktime
-  FunctionType *gettime_func_type = FunctionType::get(getInt64Ty(), false);
+  llvm::FunctionType *gettime_func_type = llvm::FunctionType::get(getInt64Ty(),
+                                                                  false);
   return CreateHelperCall(fn, gettime_func_type, {}, false, "get_ns", loc);
 }
 
@@ -1550,7 +1551,8 @@ CallInst *IRBuilderBPF::CreateJiffies64(const Location &loc)
 {
   // u64 bpf_jiffies64()
   // Return: jiffies (BITS_PER_LONG == 64) or jiffies_64 (otherwise)
-  FunctionType *jiffies64_func_type = FunctionType::get(getInt64Ty(), false);
+  llvm::FunctionType *jiffies64_func_type = llvm::FunctionType::get(
+      getInt64Ty(), false);
   return CreateHelperCall(
       BPF_FUNC_jiffies64, jiffies64_func_type, {}, false, "jiffies64", loc);
 }
@@ -1674,7 +1676,8 @@ CallInst *IRBuilderBPF::CreateGetPidTgid(const Location &loc)
 {
   // u64 bpf_get_current_pid_tgid(void)
   // Return: current->tgid << 32 | current->pid
-  FunctionType *getpidtgid_func_type = FunctionType::get(getInt64Ty(), false);
+  llvm::FunctionType *getpidtgid_func_type = llvm::FunctionType::get(
+      getInt64Ty(), false);
   auto *res = CreateHelperCall(BPF_FUNC_get_current_pid_tgid,
                                getpidtgid_func_type,
                                {},
@@ -1695,14 +1698,15 @@ void IRBuilderBPF::CreateGetNsPidTgid(Value *dev,
   const auto &layout = module_.getDataLayout();
   auto struct_size = layout.getTypeAllocSize(BpfPidnsInfoType());
 
-  FunctionType *getnspidtgid_func_type = FunctionType::get(getInt64Ty(),
-                                                           {
-                                                               getInt64Ty(),
-                                                               getInt64Ty(),
-                                                               getPtrTy(),
-                                                               getInt32Ty(),
-                                                           },
-                                                           false);
+  llvm::FunctionType *getnspidtgid_func_type = llvm::FunctionType::get(
+      getInt64Ty(),
+      {
+          getInt64Ty(),
+          getInt64Ty(),
+          getPtrTy(),
+          getInt32Ty(),
+      },
+      false);
   CallInst *call = CreateHelperCall(BPF_FUNC_get_ns_current_pid_tgid,
                                     getnspidtgid_func_type,
                                     { dev, ino, ret, getInt32(struct_size) },
@@ -1726,7 +1730,8 @@ CallInst *IRBuilderBPF::CreateGetCurrentCgroupId(const Location &loc)
 {
   // u64 bpf_get_current_cgroup_id(void)
   // Return: 64-bit cgroup-v2 id
-  FunctionType *getcgroupid_func_type = FunctionType::get(getInt64Ty(), false);
+  llvm::FunctionType *getcgroupid_func_type = llvm::FunctionType::get(
+      getInt64Ty(), false);
   return CreateHelperCall(BPF_FUNC_get_current_cgroup_id,
                           getcgroupid_func_type,
                           {},
@@ -1739,7 +1744,8 @@ CallInst *IRBuilderBPF::CreateGetUidGid(const Location &loc)
 {
   // u64 bpf_get_current_uid_gid(void)
   // Return: current_gid << 32 | current_uid
-  FunctionType *getuidgid_func_type = FunctionType::get(getInt64Ty(), false);
+  llvm::FunctionType *getuidgid_func_type = llvm::FunctionType::get(
+      getInt64Ty(), false);
   return CreateHelperCall(BPF_FUNC_get_current_uid_gid,
                           getuidgid_func_type,
                           {},
@@ -1752,7 +1758,8 @@ CallInst *IRBuilderBPF::CreateGetCpuId(const Location &loc)
 {
   // u32 bpf_get_smp_processor_id(void)
   // Return: SMP processor ID
-  FunctionType *getcpuid_func_type = FunctionType::get(getInt64Ty(), false);
+  llvm::FunctionType *getcpuid_func_type = llvm::FunctionType::get(getInt64Ty(),
+                                                                   false);
   return CreateHelperCall(BPF_FUNC_get_smp_processor_id,
                           getcpuid_func_type,
                           {},
@@ -1765,7 +1772,8 @@ CallInst *IRBuilderBPF::CreateGetCurrentTask(const Location &loc)
 {
   // u64 bpf_get_current_task(void)
   // Return: current task_struct
-  FunctionType *getcurtask_func_type = FunctionType::get(getInt64Ty(), false);
+  llvm::FunctionType *getcurtask_func_type = llvm::FunctionType::get(
+      getInt64Ty(), false);
   return CreateHelperCall(BPF_FUNC_get_current_task,
                           getcurtask_func_type,
                           {},
@@ -1778,7 +1786,8 @@ CallInst *IRBuilderBPF::CreateGetRandom(const Location &loc)
 {
   // u32 bpf_get_prandom_u32(void)
   // Return: random
-  FunctionType *getrandom_func_type = FunctionType::get(getInt32Ty(), false);
+  llvm::FunctionType *getrandom_func_type = llvm::FunctionType::get(
+      getInt32Ty(), false);
   return CreateHelperCall(BPF_FUNC_get_prandom_u32,
                           getrandom_func_type,
                           {},
@@ -1805,7 +1814,7 @@ CallInst *IRBuilderBPF::CreateGetStack(Value *ctx,
   // long bpf_get_stack(void *ctx, void *buf, u32 size, u64 flags)
   // Return: The non-negative copied *buf* length equal to or less than
   // *size* on success, or a negative error in case of failure.
-  FunctionType *getstack_func_type = FunctionType::get(
+  llvm::FunctionType *getstack_func_type = llvm::FunctionType::get(
       getInt64Ty(),
       { getPtrTy(), getPtrTy(), getInt32Ty(), getInt64Ty() },
       false);
@@ -1826,9 +1835,8 @@ CallInst *IRBuilderBPF::CreateGetFuncIp(Value *ctx, const Location &loc)
   // 		Address of the traced function for kprobe.
   //		0 for kprobes placed within the function (not at the entry).
   //		Address of the probe for uprobe and return uprobe.
-  FunctionType *getfuncip_func_type = FunctionType::get(getInt64Ty(),
-                                                        { getPtrTy() },
-                                                        false);
+  llvm::FunctionType *getfuncip_func_type = llvm::FunctionType::get(
+      getInt64Ty(), { getPtrTy() }, false);
   return CreateHelperCall(BPF_FUNC_get_func_ip,
                           getfuncip_func_type,
                           { ctx },
@@ -1845,7 +1853,7 @@ CallInst *IRBuilderBPF::CreatePerCpuPtr(Value *var,
   // Return:
   //    A pointer pointing to the kernel percpu variable on
   //    cpu, or NULL, if cpu is invalid.
-  FunctionType *percpuptr_func_type = FunctionType::get(
+  llvm::FunctionType *percpuptr_func_type = llvm::FunctionType::get(
       getPtrTy(), { getPtrTy(), getInt32Ty() }, false);
   return CreateHelperCall(BPF_FUNC_per_cpu_ptr,
                           percpuptr_func_type,
@@ -1861,9 +1869,8 @@ CallInst *IRBuilderBPF::CreateThisCpuPtr(Value *var, const Location &loc)
   // Return:
   //    A pointer pointing to the kernel percpu variable on
   //    this cpu. May never be NULL.
-  FunctionType *percpuptr_func_type = FunctionType::get(getPtrTy(),
-                                                        { getPtrTy() },
-                                                        false);
+  llvm::FunctionType *percpuptr_func_type = llvm::FunctionType::get(
+      getPtrTy(), { getPtrTy() }, false);
   return CreateHelperCall(BPF_FUNC_this_cpu_ptr,
                           percpuptr_func_type,
                           { var },
@@ -1882,7 +1889,7 @@ void IRBuilderBPF::CreateGetCurrentComm(AllocaInst *buf,
 
   // long bpf_get_current_comm(char *buf, int size_of_buf)
   // Return: 0 on success or negative error
-  FunctionType *getcomm_func_type = FunctionType::get(
+  llvm::FunctionType *getcomm_func_type = llvm::FunctionType::get(
       getInt64Ty(), { buf->getType(), getInt64Ty() }, false);
   CallInst *call = CreateHelperCall(BPF_FUNC_get_current_comm,
                                     getcomm_func_type,
@@ -1898,7 +1905,7 @@ CallInst *IRBuilderBPF::CreateGetSocketCookie(Value *var, const Location &loc)
   // u64 bpf_get_socket_cookie(struct sock *sk)
   // Return:
   //    A 8-byte long unique number or 0 if *sk* is NULL.
-  FunctionType *get_socket_cookie_func_type = FunctionType::get(
+  llvm::FunctionType *get_socket_cookie_func_type = llvm::FunctionType::get(
       getInt64Ty(), { var->getType() }, false);
   return CreateHelperCall(BPF_FUNC_get_socket_cookie,
                           get_socket_cookie_func_type,
@@ -1921,7 +1928,7 @@ void IRBuilderBPF::CreateRingbufOutput(Value *data,
   Value *map_ptr = GetMapVar(to_string(MapType::Ringbuf));
 
   // long bpf_ringbuf_output(void *ringbuf, void *data, u64 size, u64 flags)
-  FunctionType *ringbuf_output_func_type = FunctionType::get(
+  llvm::FunctionType *ringbuf_output_func_type = llvm::FunctionType::get(
       getInt64Ty(),
       { map_ptr->getType(), data->getType(), getInt64Ty(), getInt64Ty() },
       false);
@@ -2039,7 +2046,7 @@ void IRBuilderBPF::CreateTracePrintk(Value *fmt_ptr,
   }
 
   // long bpf_trace_printk(const char *fmt, u32 fmt_size, ...)
-  FunctionType *traceprintk_func_type = FunctionType::get(
+  llvm::FunctionType *traceprintk_func_type = llvm::FunctionType::get(
       getInt64Ty(), { getPtrTy(), getInt32Ty() }, true);
 
   CreateHelperCall(BPF_FUNC_trace_printk,
@@ -2057,9 +2064,8 @@ void IRBuilderBPF::CreateSignal(Value *sig,
   // target_thread = false: long bpf_send_signal(u32 sig)
   // target_thread = true:  long bpf_send_signal_thread(u32 sig)
   // Return: 0 or error
-  FunctionType *signal_func_type = FunctionType::get(getInt64Ty(),
-                                                     { getInt32Ty() },
-                                                     false);
+  llvm::FunctionType *signal_func_type = llvm::FunctionType::get(
+      getInt64Ty(), { getInt32Ty() }, false);
   llvm::PointerType *signal_func_ptr_type = llvm::PointerType::get(getContext(),
                                                                    0);
 
@@ -2094,13 +2100,14 @@ CallInst *IRBuilderBPF::CreateSkbOutput(Value *skb,
 
   // long bpf_skb_output(void *skb, struct bpf_map *map, u64 flags,
   //                     void *data, u64 size)
-  FunctionType *skb_output_func_type = FunctionType::get(getInt64Ty(),
-                                                         { skb->getType(),
-                                                           map_ptr->getType(),
-                                                           getInt64Ty(),
-                                                           data->getType(),
-                                                           getInt64Ty() },
-                                                         false);
+  llvm::FunctionType *skb_output_func_type = llvm::FunctionType::get(
+      getInt64Ty(),
+      { skb->getType(),
+        map_ptr->getType(),
+        getInt64Ty(),
+        data->getType(),
+        getInt64Ty() },
+      false);
 
   llvm::PointerType *skb_output_func_ptr_type = llvm::PointerType::get(
       getContext(), 0);
@@ -2321,7 +2328,7 @@ void IRBuilderBPF::CreatePath(Value *buf,
 {
   // int bpf_d_path(struct path *path, char *buf, u32 sz)
   // Return: 0 or error
-  FunctionType *d_path_func_type = FunctionType::get(
+  llvm::FunctionType *d_path_func_type = llvm::FunctionType::get(
       getInt64Ty(), { getPtrTy(), buf->getType(), getInt32Ty() }, false);
   CallInst *call = CreateHelperCall(bpf_func_id::BPF_FUNC_d_path,
                                     d_path_func_type,
@@ -2342,7 +2349,7 @@ void IRBuilderBPF::CreateSeqPrintf(Value *ctx,
   // long bpf_seq_printf(struct seq_file *m, const char *fmt, __u32 fmt_size,
   //                     const void *data, __u32 data_len)
   // Return: 0 or error
-  FunctionType *seq_printf_func_type = FunctionType::get(
+  llvm::FunctionType *seq_printf_func_type = llvm::FunctionType::get(
       getInt64Ty(),
       { getInt64Ty(), getPtrTy(), getInt32Ty(), getPtrTy(), getInt32Ty() },
       false);

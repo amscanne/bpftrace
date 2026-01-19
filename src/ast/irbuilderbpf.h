@@ -146,12 +146,12 @@ public:
   void CreateCheckSetRecursion(const Location &loc, int early_exit_ret);
   void CreateUnSetRecursion(const Location &loc);
   CallInst *CreateHelperCall(bpf_func_id func_id,
-                             FunctionType *helper_type,
+                             llvm::FunctionType *helper_type,
                              ArrayRef<Value *> args,
                              bool is_pure,
                              const Twine &Name,
                              const Location &loc);
-  CallInst *createCall(FunctionType *callee_type,
+  CallInst *createCall(llvm::FunctionType *callee_type,
                        Value *callee,
                        ArrayRef<Value *> args,
                        const Twine &Name);

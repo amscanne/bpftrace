@@ -12,6 +12,7 @@
 #include "ast/clone.h"
 #include "ast/context.h"
 #include "ast/integer_types.h"
+#include "btf/btf.h"
 #include "diagnostic.h"
 #include "probe_types.h"
 #include "types.h"
@@ -180,6 +181,9 @@ class TypeSpec : public VariantNode<NamedType,
 public:
   using VariantNode::VariantNode;
   TypeSpec() : TypeSpec(static_cast<NamedType*>(nullptr)) {};
+
+  // Given BTF, this resolves the type as an internal SizedType.
+  SizedType resolve(btf::Types &types);
 };
 
 class FieldDecl : public Node {
@@ -1583,7 +1587,7 @@ public:
   // a binary operation. There isn't enough state in the parser itself to
   // make this determination, so it is deferred until later when there is
   // sufficient type information to resolve one way or another.
-  Expression lhs;
+  std::variant<Expression, TypeSpec> lhs;
   Operator op;
   Expression rhs;
 };

@@ -284,10 +284,10 @@ private:
   // invalid probes that still need to be visited.
   void generateProbe(Probe &probe,
                      const std::string &name,
-                     FunctionType *func_type);
+                     llvm::FunctionType *func_type);
 
   // Generate a probe and register it to the BPFtrace class.
-  void add_probe(AttachPoint &ap, Probe &probe, FunctionType *func_type);
+  void add_probe(AttachPoint &ap, Probe &probe, llvm::FunctionType *func_type);
 
   [[nodiscard]] ScopedExpr getMapKey(Map &map, Expression &key_expr);
   [[nodiscard]] ScopedExpr getMultiMapKey(
@@ -1956,9 +1956,9 @@ ScopedExpr CodegenLLVM::visit(Call &call)
       for (const auto &expr : call.vargs) {
         arg_types.push_back(b_.GetType(expr.type()));
       }
-      FunctionType *function_type = FunctionType::get(result_type,
-                                                      arg_types,
-                                                      false);
+      llvm::FunctionType *function_type = llvm::FunctionType::get(result_type,
+                                                                  arg_types,
+                                                                  false);
       func = llvm::Function::Create(function_type,
                                     llvm::Function::ExternalLinkage,
                                     call.func,
@@ -3105,7 +3105,7 @@ ScopedExpr CodegenLLVM::visit(BlockExpr &block_expr)
 
 void CodegenLLVM::generateProbe(Probe &probe,
                                 const std::string &name,
-                                FunctionType *func_type)
+                                llvm::FunctionType *func_type)
 {
   auto probe_type = probetype(current_attach_point_->provider);
   int index = probe.index();
@@ -3133,7 +3133,7 @@ void CodegenLLVM::generateProbe(Probe &probe,
 
 void CodegenLLVM::add_probe(AttachPoint &ap,
                             Probe &probe,
-                            FunctionType *func_type)
+                            llvm::FunctionType *func_type)
 {
   current_attach_point_ = &ap;
   probefull_ = ap.name();
@@ -3157,7 +3157,7 @@ ScopedExpr CodegenLLVM::visit(Subprog &subprog)
                          [this](SubprogArg *arg) {
                            return b_.GetType(arg->typeof->type());
                          });
-  FunctionType *func_type = FunctionType::get(
+  llvm::FunctionType *func_type = llvm::FunctionType::get(
       b_.GetType(subprog.return_type->type()), arg_types, false);
 
   auto *func = llvm::Function::Create(
@@ -3251,9 +3251,10 @@ int CodegenLLVM::getReturnValueForProbe(ProbeType probe_type)
 
 ScopedExpr CodegenLLVM::visit(Probe &probe)
 {
-  FunctionType *func_type = FunctionType::get(b_.getInt64Ty(),
-                                              { b_.getPtrTy() }, // ctx
-                                              false);
+  llvm::FunctionType *func_type = llvm::FunctionType::get(
+      b_.getInt64Ty(),
+      { b_.getPtrTy() }, // ctx
+      false);
 
   // We begin by saving state that gets changed by the codegen pass, so we
   // can restore it for the next pass (printf_id_, time_id_).
@@ -3530,7 +3531,7 @@ llvm::Function *CodegenLLVM::createLog2Function()
   //   return ((l + 1) << k) + x + 1;
   // }
 
-  FunctionType *log2_func_type = FunctionType::get(
+  llvm::FunctionType *log2_func_type = llvm::FunctionType::get(
       b_.getInt64Ty(), { b_.getInt64Ty(), b_.getInt64Ty() }, false);
   auto *log2_func = llvm::Function::Create(
       log2_func_type, llvm::Function::InternalLinkage, "log2", module_.get());
@@ -3635,7 +3636,7 @@ llvm::Function *CodegenLLVM::createLinearFunction()
   // }
 
   // inlined function initialization
-  FunctionType *linear_func_type = FunctionType::get(
+  llvm::FunctionType *linear_func_type = llvm::FunctionType::get(
       b_.getInt64Ty(),
       { b_.getInt64Ty(), b_.getInt64Ty(), b_.getInt64Ty(), b_.getInt64Ty() },
       false);
@@ -4324,7 +4325,9 @@ llvm::Function *CodegenLLVM::createForCallback(
   auto *saved_scope = scope_;
 
   // All callbacks in BPF will be generated with a standard integer return.
-  FunctionType *callback_type = FunctionType::get(b_.getInt64Ty(), args, false);
+  llvm::FunctionType *callback_type = llvm::FunctionType::get(b_.getInt64Ty(),
+                                                              args,
+                                                              false);
   auto *callback = llvm::Function::Create(
       callback_type,
       llvm::Function::LinkageTypes::InternalLinkage,

@@ -950,21 +950,35 @@ non_if_expr:
                 ;
 
 sizeof_expr:
-        SIZEOF "(" expr ")" { $$ = driver.ctx.make_node<ast::Sizeof>(@$, $3); }
+                SIZEOF "(" keyword_type_spec ")" { $$ = driver.ctx.make_node<ast::Sizeof>(@$, $3); }
+        |       SIZEOF "(" ident_type_spec ")" { $$ = driver.ctx.make_node<ast::Sizeof>(@$, $3); }
+        |       SIZEOF "(" expr ")" { $$ = driver.ctx.make_node<ast::Sizeof>(@$, $3); }
                 ;
 
 offsetof_expr:
-        OFFSETOF "(" expr "," struct_field ")" { $$ = driver.ctx.make_node<ast::Offsetof>(@$, $3, $5); }
+                OFFSETOF "(" keyword_type_spec "," struct_field ")" { $$ = driver.ctx.make_node<ast::Offsetof>(@$, $3, $5); }
+        |       OFFSETOF "(" ident_type_spec "," struct_field ")" { $$ = driver.ctx.make_node<ast::Offsetof>(@$, $3, $5); }
+        |       OFFSETOF "(" expr "," struct_field ")" { $$ = driver.ctx.make_node<ast::Offsetof>(@$, $3, $5); }
                 ;
 
 typeof_expr:
-        TYPEOF "(" expr ")" { $$ = driver.ctx.make_node<ast::Typeof>(@$, $3); }
+                TYPEOF "(" keyword_type_spec ")" { $$ = driver.ctx.make_node<ast::Typeof>(@$, $3); }
+        |       TYPEOF "(" ident_type_spec ")" { $$ = driver.ctx.make_node<ast::Typeof>(@$, $3); }
+        |       TYPEOF "(" expr ")" { $$ = driver.ctx.make_node<ast::Typeof>(@$, $3); }
                 ;
 
 typeinfo_expr:
-        TYPEINFO "(" expr ")" {
-                  auto typeof_node = driver.ctx.make_node<ast::Typeof>(@$, $3);
-                  $$ = driver.ctx.make_node<ast::Typeinfo>(@$, typeof_node);
+                TYPEINFO "(" keyword_type_spec ")" {
+                  auto typeof = driver.ctx.make_node<ast::Typeof>(@$, $3);
+                  $$ = driver.ctx.make_node<ast::Typeinfo>(@$, typeof);
+                }
+        |       TYPEINFO "(" ident_type_spec ")" {
+                  auto typeof = driver.ctx.make_node<ast::Typeof>(@$, $3);
+                  $$ = driver.ctx.make_node<ast::Typeinfo>(@$, typeof);
+                }
+        |       TYPEINFO "(" expr ")" {
+                  auto typeof = driver.ctx.make_node<ast::Typeof>(@$, $3);
+                  $$ = driver.ctx.make_node<ast::Typeinfo>(@$, typeof);
                 }
                 ;
 
