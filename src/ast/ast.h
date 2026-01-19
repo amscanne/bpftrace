@@ -160,6 +160,7 @@ class UnionType;
 class EnumType;
 class PointerType;
 class ArrayType;
+class FunctionType;
 class ConstType;
 class VolatileType;
 class RestrictType;
@@ -171,6 +172,7 @@ class TypeSpec : public VariantNode<NamedType,
                                      EnumType,
                                      PointerType,
                                      ArrayType,
+                                     FunctionType,
                                      ConstType,
                                      VolatileType,
                                      RestrictType,
@@ -290,6 +292,32 @@ public:
   std::strong_ordering operator<=>(const PointerType &other) const { return pointee <=> other.pointee; }
 
   TypeSpec pointee;
+};
+
+class FunctionType : public Node {
+public:
+  explicit FunctionType(ASTContext &ctx, Location &&loc, TypeSpec return_type, std::vector<TypeSpec> params)
+      : Node(ctx, std::move(loc)),
+        return_type(std::move(return_type)),
+        params(std::move(params)) {};
+  explicit FunctionType(ASTContext &ctx, const Location &loc, const FunctionType &other)
+      : Node(ctx, loc + other.loc),
+        return_type(clone(ctx, loc, other.return_type)),
+        params(clone(ctx, loc, other.params)) {};
+
+  bool operator==(const FunctionType &other) const
+  {
+    return return_type == other.return_type && params == other.params;
+  }
+  std::strong_ordering operator<=>(const FunctionType &other) const
+  {
+    if (auto cmp = return_type <=> other.return_type; cmp != 0)
+      return cmp;
+    return params <=> other.params;
+  }
+
+  TypeSpec return_type;
+  std::vector<TypeSpec> params;
 };
 
 class ConstType : public Node {

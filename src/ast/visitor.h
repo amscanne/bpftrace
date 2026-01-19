@@ -338,6 +338,10 @@ public:
   {
     return default_value();
   }
+  R visit([[maybe_unused]] FunctionType &function_type)
+  {
+    return default_value();
+  }
   R visit([[maybe_unused]] ArrayType &array_type)
   {
     return default_value();

@@ -160,7 +160,8 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %type <ast::CStatementList> c_definitions
 %type <ast::Sizeof *> sizeof_expr
 %type <ast::Offsetof *> offsetof_expr
-%type <ast::TypeSpec> type_spec nonexpr_type_spec expr_base_type nonexpr_base_type
+%type <ast::TypeSpec> type_spec nonexpr_type_spec expr_base_type nonexpr_base_type keyword_type_base keyword_type_spec ident_type_spec func_param
+%type <std::vector<ast::TypeSpec>> func_params func_params_list
 %type <ast::Typeof *> typeof_expr any_type
 %type <ast::FieldDecl *> field_decl
 %type <std::vector<ast::FieldDecl *>> field_decl_list
@@ -231,9 +232,10 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %left PLUS MINUS
 %left MUL DIV MOD
 %right LNOT BNOT
+%right LBRACKET RBRACKET ATTRIBUTE
+%left CONST VOLATILE RESTRICT
 %left DOT PTR
 %right PAREN RPAREN
-%right LBRACKET RBRACKET
 
 // In order to support the parsing of full programs and the parsing of just
 // expressions (used while expanding C macros, for example), use the trick
@@ -303,27 +305,106 @@ import_root_stmt:
                 IMPORT STRING ";" { $$ = driver.ctx.make_node<ast::RootImport>(@$, $2); }
                 ;
 
+// These are types that start with a keyword that disambiguates immediately
+// from an expression. These can be parsed directly and unambiguously as casts.
+keyword_type_base:
+                STRUCT ident                         { $$ = driver.ctx.make_node<ast::StructType>(@$, $2); }
+        |       STRUCT LBRACE field_decl_list RBRACE { $$ = driver.ctx.make_node<ast::StructType>(@$, $3); }
+        |       UNION ident                          { $$ = driver.ctx.make_node<ast::UnionType>(@$, $2); }
+        |       UNION LBRACE field_decl_list RBRACE  { $$ = driver.ctx.make_node<ast::UnionType>(@$, $3); }
+        |       ENUM ident                           { $$ = driver.ctx.make_node<ast::EnumType>(@$, $2); }
+        |       CONST type_spec                      { $$ = driver.ctx.make_node<ast::ConstType>(@$, $2); }
+        |       VOLATILE type_spec                   { $$ = driver.ctx.make_node<ast::VolatileType>(@$, $2); }
+        |       RESTRICT type_spec                   { $$ = driver.ctx.make_node<ast::RestrictType>(@$, $2); }
+                ;
+
+keyword_type_spec:
+                keyword_type_base                 { $$ = $1; }
+        |       keyword_type_spec "*"             { $$ = driver.ctx.make_node<ast::PointerType>(@$, $1); }
+        |       keyword_type_spec "[" "]"         { $$ = driver.ctx.make_node<ast::PointerType>(@$, $1); }
+        |       keyword_type_spec "[" integer "]" { $$ = driver.ctx.make_node<ast::ArrayType>(@$, $1, $3->value); }
+        |       keyword_type_spec ATTRIBUTE LPAREN LPAREN IDENT LPAREN STRING RPAREN RPAREN RPAREN {
+                  if ($5 == "btf_type_tag") {
+                    $$ = driver.ctx.make_node<ast::TypeTagType>(@1 + @10, $1, $7);
+                  } else {
+                    $$ = $1; // Ignore other attributes.
+                  }
+                }
+        |       keyword_type_spec LPAREN "*" RPAREN LPAREN func_params RPAREN {
+                  // Function pointer: type (*)()
+                  auto func_type = driver.ctx.make_node<ast::FunctionType>(@5 + @7, $1, $6);
+                  $$ = driver.ctx.make_node<ast::PointerType>(@$, func_type);
+                }
+        |       keyword_type_spec LPAREN "*" "*" RPAREN LPAREN func_params RPAREN {
+                  // Pointer to function pointer: type (**)()
+                  auto func_type = driver.ctx.make_node<ast::FunctionType>(@6 + @8, $1, $7);
+                  auto ptr1 = driver.ctx.make_node<ast::PointerType>(@$, func_type);
+                  $$ = driver.ctx.make_node<ast::PointerType>(@$, ptr1);
+                }
+                ;
+
+// Unlike keyword_type_spec, these types start with something that is not
+// immediately distinguishable from an expression. They MUST have at least one
+// type derivation operator (*,[],...) to be unambiguous.
+ident_type_spec:
+                IDENT "*"                           { $$ = driver.ctx.make_node<ast::PointerType>(@$, driver.ctx.make_node<ast::NamedType>(@1, $1)); }
+        |       IDENT "[" "]"                       { $$ = driver.ctx.make_node<ast::PointerType>(@$, driver.ctx.make_node<ast::NamedType>(@1, $1)); }
+        |       IDENT "[" integer "]"               { $$ = driver.ctx.make_node<ast::ArrayType>(@$, driver.ctx.make_node<ast::NamedType>(@1, $1), $3->value); }
+        |       IDENT LPAREN "*" RPAREN LPAREN func_params RPAREN {
+                  // Function pointer: type (*)().
+                  auto base = driver.ctx.make_node<ast::NamedType>(@1, $1);
+                  auto func_type = driver.ctx.make_node<ast::FunctionType>(@5 + @7, base, $6);
+                  $$ = driver.ctx.make_node<ast::PointerType>(@$, func_type);
+                }
+        |       ident_type_spec "*"                 { $$ = driver.ctx.make_node<ast::PointerType>(@$, $1); }
+        |       ident_type_spec "[" "]"             { $$ = driver.ctx.make_node<ast::PointerType>(@$, $1); }
+        |       ident_type_spec "[" integer "]"     { $$ = driver.ctx.make_node<ast::ArrayType>(@$, $1, $3->value); }
+        |       ident_type_spec LPAREN "*" RPAREN LPAREN func_params RPAREN {
+                  // Function pointer applied to existing type: type_spec (*)().
+                  auto func_type = driver.ctx.make_node<ast::FunctionType>(@5 + @7, $1, $6);
+                  $$ = driver.ctx.make_node<ast::PointerType>(@$, func_type);
+                }
+        |       ident_type_spec ATTRIBUTE LPAREN LPAREN IDENT LPAREN STRING RPAREN RPAREN RPAREN {
+                  if ($5 == "btf_type_tag") {
+                    $$ = driver.ctx.make_node<ast::TypeTagType>(@$, $1, $7);
+                  } else {
+                    $$ = $1; // Ignore other attributes.
+                  }
+                }
+                ;
+
+func_params:
+                func_params_list { $$ = $1; }
+        |       %empty           { $$ = std::vector<ast::TypeSpec>(); }
+                ;
+
+func_params_list:
+                func_params_list COMMA func_param { $$ = std::move($1); $$.push_back($3); }
+        |       func_param                        { $$ = std::vector<ast::TypeSpec>{$1}; }
+                ;
+
+func_param:
+                type_spec { $$ = $1; }
+                ;
+
 nonexpr_base_type:
                 STRUCT ident                         { $$ = driver.ctx.make_node<ast::StructType>(@$, $2); }
         |       STRUCT LBRACE field_decl_list RBRACE { $$ = driver.ctx.make_node<ast::StructType>(@$, $3);}
         |       UNION ident                          { $$ = driver.ctx.make_node<ast::UnionType>(@$, $2); }
         |       UNION LBRACE field_decl_list RBRACE  { $$ = driver.ctx.make_node<ast::UnionType>(@$, $3); }
         |       ENUM ident                           { $$ = driver.ctx.make_node<ast::EnumType>(@$, $2); }
-        |       CONST expr_base_type                 { $$ = driver.ctx.make_node<ast::ConstType>(@$, $2); }
-        |       VOLATILE expr_base_type              { $$ = driver.ctx.make_node<ast::VolatileType>(@$, $2); }
-        |       RESTRICT expr_base_type              { $$ = driver.ctx.make_node<ast::RestrictType>(@$, $2); }
-        |       CONST nonexpr_type_spec              { $$ = driver.ctx.make_node<ast::ConstType>(@$, $2); }
-        |       VOLATILE nonexpr_type_spec           { $$ = driver.ctx.make_node<ast::VolatileType>(@$, $2); }
-        |       RESTRICT nonexpr_type_spec           { $$ = driver.ctx.make_node<ast::RestrictType>(@$, $2); }
                 ;
 
 expr_base_type:
-        |       IDENT                 { $$ = driver.ctx.make_node<ast::NamedType>(@1, $1); }
-        |       IDENT "[" integer "]" { $$ = driver.ctx.make_node<ast::ArrayType>(@1 + @4, $1, $3->value); }
+                IDENT %prec LOW           { $$ = driver.ctx.make_node<ast::NamedType>(@1, $1); }
+        |       IDENT "[" integer "]"     { $$ = driver.ctx.make_node<ast::ArrayType>(@1 + @4, $1, $3->value); }
                 ;
 
 nonexpr_type_spec:
                 nonexpr_base_type { $$ = $1; }
+        |       CONST type_spec   { $$ = driver.ctx.make_node<ast::ConstType>(@$, $2); }
+        |       VOLATILE type_spec { $$ = driver.ctx.make_node<ast::VolatileType>(@$, $2); }
+        |       RESTRICT type_spec { $$ = driver.ctx.make_node<ast::RestrictType>(@$, $2); }
         |       type_spec "*"     { $$ = driver.ctx.make_node<ast::PointerType>(@1 + @2, $1); }
         |       type_spec "[" "]" { $$ = driver.ctx.make_node<ast::PointerType>(@1 + @3, $1); }
         |       type_spec ATTRIBUTE LPAREN LPAREN IDENT LPAREN STRING RPAREN RPAREN RPAREN {
@@ -833,12 +914,9 @@ unary_expr:
         |       primary_expr                                     { $$ = $1; }
         |       prefix_expr                                      { $$ = $1; }
         |       postfix_expr                                     { $$ = $1; }
-        |       LPAREN nonexpr_type_spec RPAREN unary_expr       { $$ = driver.ctx.make_node<ast::Cast>(@$, $2, $4); }
+        |       LPAREN keyword_type_spec RPAREN unary_expr       { $$ = driver.ctx.make_node<ast::Cast>(@$, $2, $4); }
+        |       LPAREN ident_type_spec RPAREN unary_expr         { $$ = driver.ctx.make_node<ast::Cast>(@$, $2, $4); }
         |       LPAREN expr RPAREN ambiguous_operator unary_expr { $$ = driver.ctx.make_node<ast::CastOrBinop>(@$, $2, $4, $5); }
-        |       LPAREN expr RPAREN unary_operator unary_expr     { $$ = driver.ctx.make_node<ast::Binop>(@$, $2, $4, $5); }
-        |       LPAREN expr RPAREN primary_expr                  { $$ = driver.ctx.make_node<ast::Cast>(@$, $2, $4); }
-        |       LPAREN expr RPAREN prefix_expr                   { $$ = driver.ctx.make_node<ast::Cast>(@$, $2, $4); }
-        |       LPAREN expr RPAREN postfix_expr                  { $$ = driver.ctx.make_node<ast::Cast>(@$, $2, $4); }
                 ;
 
 expr:
