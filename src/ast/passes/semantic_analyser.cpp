@@ -2271,7 +2271,8 @@ void SemanticAnalyser::binop_int(Binop &binop)
   }
 
   if (leftTy.IsBoolTy()) {
-    auto *typeof = ctx_.make_node<Typeof>(Location(binop.right.loc()), leftTy);
+    auto *typeof = ctx_.make_node<Typeof>(
+        Location(binop.right.loc()), clone(ctx_, binop.left.loc(), binop.left));
     binop.right = ctx_.make_node<Cast>(
         Location(binop.right.loc()),
         typeof,
@@ -2279,7 +2280,9 @@ void SemanticAnalyser::binop_int(Binop &binop)
     visit(binop.right);
     return;
   } else if (rightTy.IsBoolTy()) {
-    auto *typeof = ctx_.make_node<Typeof>(Location(binop.left.loc()), rightTy);
+    auto *typeof = ctx_.make_node<Typeof>(
+        Location(binop.left.loc()),
+        clone(ctx_, binop.right.loc(), binop.right));
     binop.left = ctx_.make_node<Cast>(
         Location(binop.left.loc()),
         typeof,
